@@ -5,6 +5,7 @@ Two small native companions to [iopix](https://github.com/avandeputte/iopix), th
 - **iopix for iPhone**: the iopix web app in a native shell, plus
   - **Send to iopix** in the share sheet (Photos, Files, any app that shares photos or videos),
   - a button to pick photos and videos from the camera roll and send them,
+  - the same folder choice as the Mac app (Send to iopix › Folder in iopix), used by the share sheet too,
   - optionally, a list of the new photos and videos in the library each time the app is opened, where you pick
     which ones to send and which to ignore.
 - **iopix Uploader for Mac**: a menu bar app that

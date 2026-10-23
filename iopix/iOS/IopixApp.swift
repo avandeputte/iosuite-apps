@@ -136,6 +136,8 @@ struct UploadsView: View {
                     }
                 }
 
+                DestinationSection()
+
                 Section {
                     TextField("Server address", text: $serverText)
                         .textInputAutocapitalization(.never)
