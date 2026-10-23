@@ -3,6 +3,8 @@ import AppKit
 import CoreSpotlight
 import UniformTypeIdentifiers
 import WidgetKit
+import ImageIO
+import os
 
 /// Desktop picture, screen saver folder, widget pictures, offline folders and Spotlight, kept up to date in the
 /// background while the app runs.
@@ -26,10 +28,16 @@ final class DesktopExtras: ObservableObject {
         timer = Task {
             var round = 0
             while !Task.isCancelled {
-                if (try? await IopixClient.shared.account())?.signedIn == true {
+                let account = try? await IopixClient.shared.account()
+                log.notice("extras round \(round, privacy: .public): signed in \(account?.signedIn == true, privacy: .public)")
+                if account?.signedIn == true {
                     if round % max(MacPrefs.shared.wallpaperHours * 6, 1) == 0 { await changeWallpaper() }
-                    if round % 18 == 0 { await refreshWidget() }       // every 3 hours
+                    if round % 3 == 0 { await refreshWidget() }       // every 30 minutes (a newly picked album shows soon)
                     if round % 36 == 0 { await refreshScreenSaver(); await syncOffline(); await indexSpotlight() }  // every 6 hours
+                }
+                guard account?.signedIn == true else {  // not signed in yet (or iopix out of reach): try again soon
+                    try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+                    continue
                 }
                 round += 1
                 try? await Task.sleep(nanoseconds: 10 * 60 * 1_000_000_000)
@@ -70,29 +78,82 @@ final class DesktopExtras: ObservableObject {
 
     // MARK: widget
 
-    /// The widget shows pictures the app leaves in the shared folder (the widget cannot sign in to iopix).
+    /// The widgets show pictures the app leaves in the shared folder: the album list (to pick from), and up to 24
+    /// photos for each source a widget on this Mac shows (Rediscover always).
+    private let log = Logger(subsystem: "net.iothing.iopix", category: "extras")
+
     func refreshWidget() async {
-        guard let folder = widgetFolder else { return }
-        var title = "On this day"
-        var ids = await PhotoSource.ids(.onThisDay, max: 12)
-        let c = Calendar.current.dateComponents([.month, .day], from: Date())
-        let check = try? await IopixClient.shared.json("api/photos", query: [URLQueryItem(name: "md", value: String(format: "%02d-%02d", c.month ?? 1, c.day ?? 1))])
-        if (check?["count"] as? NSNumber)?.intValue ?? 0 == 0 { title = "Rediscover"; ids = await PhotoSource.ids(.random, max: 12) }
-        guard !ids.isEmpty else { return }
-        let tmp = folder.deletingLastPathComponent().appendingPathComponent("Widget-new", isDirectory: true)
-        try? FileManager.default.removeItem(at: tmp)
-        var entries: [[String: Any]] = []
-        for id in ids {
-            guard let f = await PhotoSource.download(id, to: tmp) else { continue }
-            var year = ""
-            if let info = try? await IopixClient.shared.json("api/photo/\(id)"), let taken = info["taken"] as? String { year = String(taken.prefix(4)) }
-            entries.append(["id": id, "file": f.lastPathComponent, "title": title, "year": year])
+        guard let folder = WidgetStore.folder else { log.error("widget: no App Group folder"); return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        if let st = try? await IopixClient.shared.json("api/state") {
+            let albums: [[String: Any]] = (st["albums"] as? [[String: Any]] ?? []).compactMap { a in
+                guard let id = (a["id"] as? NSNumber)?.intValue, let name = a["name"] as? String else { return nil }
+                return ["id": id, "name": name]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: albums) { try? data.write(to: folder.appendingPathComponent("albums.json")) }
         }
-        guard !entries.isEmpty, let data = try? JSONSerialization.data(withJSONObject: entries) else { return }
-        try? data.write(to: tmp.appendingPathComponent("photos.json"))
-        try? FileManager.default.removeItem(at: folder)
-        try? FileManager.default.moveItem(at: tmp, to: folder)
+        var keys: Set<String> = ["random"]
+        let infos: [WidgetInfo] = await withCheckedContinuation { c in
+            WidgetCenter.shared.getCurrentConfigurations { c.resume(returning: (try? $0.get()) ?? []) }
+        }
+        do {
+            for info in infos {
+                keys.insert(info.widgetConfigurationIntent(of: SelectPhotos.self)?.source?.id ?? "random")
+            }
+        }
+        for key in keys { await prepareWidget(key, in: folder) }
+        log.notice("widget: prepared \(keys.sorted().joined(separator: ","), privacy: .public)")
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    private func prepareWidget(_ key: String, in folder: URL) async {
+        let client = IopixClient.shared
+        var ids: [Int] = [], times: [Double] = []
+        if key == "random" {
+            if let j = try? await client.json("api/random", query: [URLQueryItem(name: "n", value: "24")]) {
+                ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+                times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+            }
+        } else {
+            let q = key == "favorites" ? URLQueryItem(name: "fav", value: "1") : URLQueryItem(name: "ualbum", value: String(key.dropFirst("album-".count)))
+            if let j = try? await client.json("api/photos", query: [q, URLQueryItem(name: "type", value: "photo")]) {
+                let all = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+                let ts = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+                let pick = Array(all.indices.shuffled().prefix(24))
+                ids = pick.map { all[$0] }
+                times = pick.map { $0 < ts.count ? ts[$0] : 0 }
+            }
+        }
+        guard !ids.isEmpty else { log.notice("widget: no photos for \(key, privacy: .public)"); return }
+        let tmp = folder.appendingPathComponent(key + "-new", isDirectory: true)
+        try? FileManager.default.removeItem(at: tmp)
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        var entries: [[String: Any]] = []
+        for (i, id) in ids.enumerated() {
+            guard let (data, resp) = try? await client.session.data(for: client.request("preview/\(id)")),
+                  (resp as? HTTPURLResponse)?.statusCode == 200, let small = Self.shrink(data, to: 900) else { continue }
+            let file = tmp.appendingPathComponent("\(id).jpg")
+            guard (try? small.write(to: file)) != nil else { continue }
+            let year = i < times.count && times[i] > 0 ? String(Calendar.current.component(.year, from: Date(timeIntervalSince1970: times[i]))) : ""
+            entries.append(["id": id, "file": file.lastPathComponent, "year": year])
+        }
+        guard !entries.isEmpty, let json = try? JSONSerialization.data(withJSONObject: entries) else { return }
+        try? json.write(to: tmp.appendingPathComponent("photos.json"))
+        let dst = folder.appendingPathComponent(key, isDirectory: true)
+        try? FileManager.default.removeItem(at: dst)
+        try? FileManager.default.moveItem(at: tmp, to: dst)
+    }
+
+    /// A smaller JPEG (widgets are a few hundred points wide).
+    static func shrink(_ data: Data, to side: Int) -> Data? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                                   kCGImageSourceThumbnailMaxPixelSize: side,
+                                                                   kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let dst = CGImageDestinationCreateWithData(out, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dst, img, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(dst) ? out as Data : nil
     }
 
     // MARK: offline folders

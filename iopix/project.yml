@@ -89,6 +89,7 @@ targets:
     sources:
       - Mac
       - Shared
+      - MacWidgetShared
     dependencies:
       - target: iopixMacShare
       - target: iopixMacWidget
@@ -220,6 +221,7 @@ targets:
     platform: macOS
     sources:
       - MacWidget
+      - MacWidgetShared
     entitlements:
       path: MacWidget/iopixMacWidget.entitlements
       properties:

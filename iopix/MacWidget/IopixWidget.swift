@@ -1,51 +1,44 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 
-/// On this day (or Rediscover) on the desktop and in Notification Center. The pictures come from the iopix app,
-/// which leaves them in the shared App Group folder.
+/// Photos from iopix on the desktop and in Notification Center: Rediscover, the favorites or an album, a different
+/// one every 20 minutes. The iopix app prepares the pictures (the widget cannot sign in to iopix itself).
 struct PhotoEntry: TimelineEntry {
     let date: Date
     let id: Int?
     let image: NSImage?
     let title: String
     let year: String
+    var note: String?
 }
 
-struct Provider: TimelineProvider {
-    private var folder: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "69M2JRAT8P.net.iothing.iopix")?
-            .appendingPathComponent("Widget", isDirectory: true)
-    }
-
-    private func photos() -> [(id: Int, file: URL, title: String, year: String)] {
-        guard let folder, let data = try? Data(contentsOf: folder.appendingPathComponent("photos.json")),
-              let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return list.compactMap { p in
-            guard let id = p["id"] as? Int, let file = p["file"] as? String else { return nil }
-            return (id, folder.appendingPathComponent(file), p["title"] as? String ?? "iopix", p["year"] as? String ?? "")
-        }
-    }
-
+struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> PhotoEntry {
-        PhotoEntry(date: Date(), id: nil, image: nil, title: "On this day", year: "")
+        PhotoEntry(date: Date(), id: nil, image: nil, title: "iopix", year: "")
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (PhotoEntry) -> Void) {
-        let p = photos().first
-        completion(PhotoEntry(date: Date(), id: p?.id, image: p.flatMap { NSImage(contentsOf: $0.file) }, title: p?.title ?? "On this day", year: p?.year ?? ""))
+    func snapshot(for configuration: SelectPhotos, in context: Context) async -> PhotoEntry {
+        entries(for: configuration).first ?? placeholder(in: context)
     }
 
-    /// A different photo every half hour.
-    func getTimeline(in context: Context, completion: @escaping (Timeline<PhotoEntry>) -> Void) {
-        let list = photos()
-        guard !list.isEmpty else {
-            completion(Timeline(entries: [placeholder(in: context)], policy: .after(Date().addingTimeInterval(1800))))
-            return
+    func timeline(for configuration: SelectPhotos, in context: Context) async -> Timeline<PhotoEntry> {
+        let list = entries(for: configuration)
+        // check again in a while: the app adds the photos of a newly picked album when it next runs
+        return Timeline(entries: list, policy: list.count > 1 ? .atEnd : .after(Date().addingTimeInterval(600)))
+    }
+
+    private func entries(for configuration: SelectPhotos) -> [PhotoEntry] {
+        let source = configuration.source ?? .random
+        let photos = WidgetStore.photos(source.id).shuffled()
+        let title = source.id == "random" ? "Rediscover" : source.name
+        guard !photos.isEmpty else {
+            return [PhotoEntry(date: Date(), id: nil, image: nil, title: title, year: "",
+                               note: "Open iopix and sign in. Its photos appear here within a few minutes.")]
         }
-        let entries = list.enumerated().map { i, p in
-            PhotoEntry(date: Date().addingTimeInterval(Double(i) * 1800), id: p.id, image: NSImage(contentsOf: p.file), title: p.title, year: p.year)
+        return photos.enumerated().map { i, p in
+            PhotoEntry(date: Date().addingTimeInterval(Double(i) * 1200), id: p.id, image: NSImage(contentsOf: p.file), title: title, year: p.year)
         }
-        completion(Timeline(entries: entries, policy: .atEnd))
     }
 }
 
@@ -55,7 +48,8 @@ struct PhotoWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Spacer()
-            Text(entry.title).font(.headline)
+            if let note = entry.note { Text(note).font(.caption).padding(.bottom, 4) }
+            Text(entry.title).font(.headline).lineLimit(1)
             if !entry.year.isEmpty { Text(entry.year).font(.caption) }
         }
         .foregroundStyle(.white)
@@ -67,21 +61,21 @@ struct PhotoWidgetView: View {
                 if let image = entry.image {
                     Image(nsImage: image).resizable().scaledToFill()
                 } else {
-                    Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.white.opacity(0.6))
+                    Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.white.opacity(0.5))
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
             }
         }
-        .widgetURL(entry.id.flatMap { URL(string: "iopix://photo/\($0)") } ?? URL(string: "iopix://today"))
+        .widgetURL(entry.id.flatMap { URL(string: "iopix://photo/\($0)") } ?? URL(string: "iopix://main"))
     }
 }
 
 @main
 struct IopixWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "iopix.onthisday", provider: Provider()) { PhotoWidgetView(entry: $0) }
+        AppIntentConfiguration(kind: "iopix.photos", intent: SelectPhotos.self, provider: Provider()) { PhotoWidgetView(entry: $0) }
             .configurationDisplayName("iopix")
-            .description("On this day in your iopix library, or photos to rediscover.")
+            .description("Photos from iopix: Rediscover, your favorites or an album. Right-click it › Edit to choose.")
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
     }
 }

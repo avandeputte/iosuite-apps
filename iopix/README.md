@@ -23,7 +23,7 @@ Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hos
   - **notifications** (new photos to review, uploads done, an optional daily On this day), a **Dock badge** and
     progress bar,
   - **desktop picture** and a **screen saver folder** (Pictures › iopix Screen Saver for macOS's photo screen saver)
-    from On this day, favorites, random photos or a person, a desktop **widget**,
+    from On this day, favorites, random photos or a person, a desktop **widget** (Rediscover, favorites or an album, picked with Edit "iopix"),
   - **Shortcuts** actions (Send to iopix, Show On this day, Search iopix, Review new photos) and iopix people,
     folders, places and albums in **Spotlight**,
   - **offline folders**: favorites, albums or people kept as originals in Pictures › iopix Offline.
