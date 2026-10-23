@@ -20,7 +20,8 @@ Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hos
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
 
 - **iopix for Apple TV**: a native viewer (the Apple TV has no web view): sign in by picking an account,
-  Rediscover, Folders, Albums, People and Years, full-screen photos you move through with the remote, a slideshow on
+  On This Day (grouped by year), Rediscover, Folders, Albums, People, Years and Search (people, folders, photos by
+  words, and "looks like" when content search is on), full-screen photos you move through with the remote, a slideshow on
   ⏯, and videos. It only shows; nothing is changed from the TV. Same bundle id as the iPhone app, so both are one
   app in App Store Connect and TestFlight.
 

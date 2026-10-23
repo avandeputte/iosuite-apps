@@ -5,6 +5,7 @@ import UIKit
 struct PhotoList: Equatable {
     var ids: [Int] = []
     var videos: Set<Int> = []  // positions in ids
+    var times: [Double] = []   // when each was taken (seconds since 1970), when known
 
     func isVideo(_ i: Int) -> Bool { videos.contains(i) }
 
@@ -12,7 +13,8 @@ struct PhotoList: Equatable {
         let j = try await IopixClient.shared.json("api/photos", query: query)
         let ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
         let vids = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
-        return PhotoList(ids: ids, videos: vids)
+        let times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        return PhotoList(ids: ids, videos: vids, times: times)
     }
 }
 

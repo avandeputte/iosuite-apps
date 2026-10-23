@@ -7,12 +7,14 @@ struct TVLibrary: View {
 
     var body: some View {
         TabView {
+            NavigationStack { OnThisDayView() }.tabItem { Text("On This Day") }
             RediscoverView().tabItem { Text("Rediscover") }
             NavigationStack { FolderView(parent: nil, title: "Folders") }.tabItem { Text("Folders") }
             NavigationStack { AlbumsView() }.tabItem { Text("Albums") }
             NavigationStack { PeopleView() }.tabItem { Text("People") }
             NavigationStack { YearsView() }.tabItem { Text("Years") }
-            SettingsTV(signedOut: signedOut).tabItem { Text("Settings") }
+            NavigationStack { SearchView() }.tabItem { Image(systemName: "magnifyingglass") }
+            SettingsTV(signedOut: signedOut).tabItem { Image(systemName: "gearshape") }
         }
         .environmentObject(store)
         .task { await store.load() }
@@ -203,6 +205,7 @@ struct SettingsTV: View {
 struct PhotoGrid: View {
     let query: [URLQueryItem]
     var showsTitle = false
+    var emptyText: String?
     @State private var list: PhotoList?
     @State private var viewer: ViewerStart?
     @State private var problem: String?
@@ -220,6 +223,8 @@ struct PhotoGrid: View {
                 PhotoTiles(list: list) { viewer = ViewerStart(list: list, index: $0, playing: false) }
             } else if let problem {
                 Text(problem).foregroundStyle(.secondary).padding(60)
+            } else if let list, list.ids.isEmpty, let emptyText {
+                Text(emptyText).foregroundStyle(.secondary).padding(60)
             } else if list == nil {
                 ProgressView().frame(maxWidth: .infinity).padding(60)
             }
