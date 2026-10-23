@@ -1,6 +1,6 @@
-# iopix for iPhone and Mac
+# iopix for iPhone, Mac and Apple TV
 
-Two small native companions to [iopix](https://github.com/avandeputte/iopix), the self-hosted photo library.
+Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hosted photo library.
 
 - **iopix for iPhone**: the iopix web app in a native shell, plus
   - **Send to iopix** in the share sheet (Photos, Files, any app that shares photos or videos),
@@ -18,6 +18,11 @@ Two small native companions to [iopix](https://github.com/avandeputte/iopix), th
     pattern of your own such as `Phone/{yyyy}-{mm}`, or one fixed folder such as `Upload`; missing folders are
     created by iopix (patterns and fixed folders need an iopix release that supports them),
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
+
+- **iopix for Apple TV**: a native viewer (the Apple TV has no web view): sign in by picking an account,
+  Rediscover, Folders, Albums, People and Years, full-screen photos you move through with the remote, a slideshow on
+  ⏯, and videos. It only shows; nothing is changed from the TV. Same bundle id as the iPhone app, so both are one
+  app in App Store Connect and TestFlight.
 
 The apps only send files. iopix does everything else on the server: it puts each file in the library's dated
 folders, writes the database rows and sidecars, and skips anything that is already in the library (same
@@ -65,7 +70,8 @@ Needs a paid Apple Developer Program membership (the free Personal Team cannot u
 1. Put the paid team's id in `project.yml` (`DEVELOPMENT_TEAM`).
 2. In App Store Connect, create the app (bundle id `net.iothing.iopix`) and an API key with the App Manager role
    (Users and Access › Integrations). Save the `.p8` file as `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`.
-3. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads. The build number is the build's
+3. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads the iPhone app; add `tvos` for the
+   Apple TV app. The build number is the build's
    date and time, so every upload counts as newer.
 4. In TestFlight, add yourself (and family) as internal testers; they install from Apple's TestFlight app.
 
@@ -94,3 +100,4 @@ only runs on your own Mac.
 | `iOS` | the iPhone app |
 | `ShareExtension` | the share sheet extension |
 | `Mac` | the Mac app: window and menu bar |
+| `TV` | the Apple TV app |

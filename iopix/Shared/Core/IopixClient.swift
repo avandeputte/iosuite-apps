@@ -113,6 +113,40 @@ final class IopixClient: NSObject {
                        canWrite: j["canWrite"] as? Bool ?? false)
     }
 
+    /// The accounts on the sign-in screen: name, and whether it needs a password.
+    func accounts() async throws -> [(name: String, needsPassword: Bool)] {
+        let (data, resp) = try await session.data(for: request("api/auth/accounts"))
+        let j = try check(data, resp)
+        return (j["accounts"] as? [[String: Any]] ?? []).compactMap { a in
+            guard let n = a["name"] as? String else { return nil }
+            return (n, !(a["passwordless"] as? Bool ?? false))
+        }
+    }
+
+    /// Signs in with a name and password (the Apple TV has no web page to sign in on).
+    func signIn(name: String, password: String) async throws {
+        var r = request("api/auth/login", method: "POST")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "password": password])
+        let (data, resp) = try await session.data(for: r)
+        if let http = resp as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 429 || http.statusCode == 403 {
+            let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["detail"] as? String
+            throw IopixError.notAllowed(detail ?? "Wrong user name or password")
+        }
+        _ = try check(data, resp)
+    }
+
+    /// Any JSON endpoint, as a dictionary.
+    func json(_ path: String, query: [URLQueryItem] = []) async throws -> [String: Any] {
+        var r = request(path)
+        if !query.isEmpty, var c = URLComponents(url: r.url!, resolvingAgainstBaseURL: false) {
+            c.queryItems = query
+            r.url = c.url
+        }
+        let (data, resp) = try await session.data(for: r)
+        return try check(data, resp)
+    }
+
     func signOut() async {
         _ = try? await session.data(for: request("api/auth/logout", method: "POST"))
         forgetCookies()

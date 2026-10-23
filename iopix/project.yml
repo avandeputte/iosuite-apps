@@ -105,3 +105,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix.uploader
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
+  iopixTV:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - TV
+      - Shared/Core
+    info:
+      path: TV/Info.plist
+      properties:
+        CFBundleDisplayName: iopix
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: iopix connects to your photo server on your home network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_NAME: iopix
+        # the same id as the iPhone app: one App Store Connect app (and one TestFlight) for both
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix
+        TARGETED_DEVICE_FAMILY: "3"
+        ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
