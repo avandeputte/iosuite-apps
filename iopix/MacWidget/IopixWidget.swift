@@ -36,7 +36,9 @@ struct Provider: AppIntentTimelineProvider {
             return [PhotoEntry(date: Date(), id: nil, image: nil, title: title, year: "",
                                note: "Open iopix and sign in. Its photos appear here within a few minutes.")]
         }
-        return photos.enumerated().map { i, p in
+        // a few entries at a time: each carries its picture, and a widget's schedule must stay small (24 of
+        // them made macOS drop the whole schedule and show the placeholder); .atEnd asks for the next few
+        return photos.prefix(6).enumerated().map { i, p in
             PhotoEntry(date: Date().addingTimeInterval(Double(i) * 1200), id: p.id, image: WidgetStore.image(p.file), title: title, year: p.year)
         }
     }

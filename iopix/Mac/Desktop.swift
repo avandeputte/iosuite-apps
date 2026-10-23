@@ -131,7 +131,7 @@ final class DesktopExtras: ObservableObject {
         var entries: [[String: Any]] = []
         for (i, id) in ids.enumerated() {
             guard let (data, resp) = try? await client.session.data(for: client.request("preview/\(id)")),
-                  (resp as? HTTPURLResponse)?.statusCode == 200, let small = Self.shrink(data, to: 900) else { continue }
+                  (resp as? HTTPURLResponse)?.statusCode == 200, let small = Self.shrink(data, to: 640) else { continue }
             let file = tmp.appendingPathComponent("\(id).jpg")
             guard (try? small.write(to: file)) != nil else { continue }
             let year = i < times.count && times[i] > 0 ? String(Calendar.current.component(.year, from: Date(timeIntervalSince1970: times[i]))) : ""
