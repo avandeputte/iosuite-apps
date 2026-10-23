@@ -9,6 +9,19 @@ struct IopixMenuApp: App {
     @StateObject private var watcher = PhotosWatcher.shared
 
     var body: some Scene {
+        Window("iopix", id: "main") {
+            MainWindow()
+                .environmentObject(queue)
+                .environmentObject(watcher)
+        }
+        .defaultSize(width: 1280, height: 860)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Send Files…") { queue.add(files: MacFiles.choose()) }
+                    .keyboardShortcut("u", modifiers: [.command, .shift])
+            }
+        }
+
         MenuBarExtra {
             MenuView()
                 .environmentObject(queue)
@@ -31,7 +44,7 @@ struct IopixMenuApp: App {
         }
         .defaultSize(width: 640, height: 560)
 
-        Window("iopix Uploader Settings", id: "settings") {
+        Window("iopix Settings", id: "settings") {
             SettingsView().environmentObject(queue).environmentObject(watcher)
         }
         .windowResizability(.contentSize)
@@ -117,7 +130,7 @@ struct MenuView: View {
 
             Divider()
             HStack {
-                Button("Open iopix") { NSWorkspace.shared.open(AppConfig.serverURL) }
+                Button("Open iopix") { show("main") }
                 Button("Settings…") { show("settings") }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
@@ -163,17 +176,7 @@ struct MenuView: View {
         }
     }
 
-    private func pickFiles() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = true
-        panel.allowedContentTypes = [.image, .movie, .folder]
-        panel.message = "Choose photos and videos to send to iopix"
-        NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK {
-            queue.add(files: panel.urls.flatMap(Self.expand))
-        }
-    }
+    private func pickFiles() { queue.add(files: MacFiles.choose()) }
 
     /// A dropped folder stands for the photos and videos in it (and its subfolders).
     static func expand(_ url: URL) -> [URL] {

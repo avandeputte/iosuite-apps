@@ -8,7 +8,9 @@ Two small native companions to [iopix](https://github.com/avandeputte/iopix), th
   - the same folder choice as the Mac app (Send to iopix › Folder in iopix), used by the share sheet too,
   - optionally, a list of the new photos and videos in the library each time the app is opened, where you pick
     which ones to send and which to ignore.
-- **iopix Uploader for Mac**: a menu bar app that
+- **iopix for Mac**: the iopix web app in its own window (Dock icon, Send Files in the toolbar and the File menu,
+  drop photos on the window, downloads go to Downloads), plus a menu bar icon that keeps working with the window
+  closed. It
   - watches the Photos library and lists every photo and video added to it from the moment watching is turned on;
     you pick which ones to send and which to ignore (Review… in the menu),
   - takes files and folders dropped on it (or chosen with the button),
@@ -53,7 +55,7 @@ The Xcode project is generated from `project.yml` and not kept in git.
 3. The iPhone app and its share extension share an App Group, `group.net.iothing.iopix`, for the sign-in and the
    queue. Xcode registers it with automatic signing. If the bundle ids `net.iothing.iopix*` are taken on your
    account, change them and the group in `project.yml`, and the group in `Shared/Core/AppConfig.swift`.
-4. Run the `iopix` scheme on your iPhone, and `iopixUploader` on the Mac. The Mac app runs signed for this Mac
+4. Run the `iopix` scheme on your iPhone, and `iopixUploader` (it builds iopix.app) on the Mac. The Mac app runs signed for this Mac
    only; turn on *Open at login* in its settings.
 
 ## Good to know
@@ -74,4 +76,4 @@ The Xcode project is generated from `project.yml` and not kept in git.
 | `Shared/App` | upload queue, Photos library watcher, the web view (both apps) |
 | `iOS` | the iPhone app |
 | `ShareExtension` | the share sheet extension |
-| `Mac` | the menu bar app |
+| `Mac` | the Mac app: window and menu bar |

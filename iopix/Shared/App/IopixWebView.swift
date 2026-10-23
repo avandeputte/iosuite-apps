@@ -75,6 +75,11 @@ struct IopixWebView: PlatformViewRepresentable {
         #endif
         cfg.websiteDataStore.httpCookieStore.add(context.coordinator)
         context.coordinator.web = web
+        #if os(macOS)
+        context.coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name("iopixReload"), object: nil, queue: .main) { [weak web] _ in
+            web?.reload()
+        }
+        #endif
         web.load(URLRequest(url: url))
         return web
     }
@@ -121,6 +126,54 @@ struct IopixWebView: PlatformViewRepresentable {
 
         #if os(iOS)
         @objc func reload(_ sender: UIRefreshControl) { web?.reload() }
+        #else
+        var reloadObserver: NSObjectProtocol?
+
+        /// The page's own "choose files" buttons (uploads inside the web app).
+        func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+            panel.canChooseDirectories = parameters.allowsDirectories
+            panel.canChooseFiles = true
+            panel.begin { completionHandler($0 == .OK ? panel.urls : nil) }
+        }
+
+        /// Exports and downloads from the page land in Downloads.
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                     decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            let attachment = ((navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? "").lowercased().hasPrefix("attachment")
+            decisionHandler(attachment || !navigationResponse.canShowMIMEType ? .download : .allow)
+        }
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
         #endif
     }
 }
+
+#if os(macOS)
+extension IopixWebView.Coordinator: WKDownloadDelegate {
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
+                  completionHandler: @escaping (URL?) -> Void) {
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        var dst = folder.appendingPathComponent(suggestedFilename)
+        let base = dst.deletingPathExtension().lastPathComponent, ext = dst.pathExtension
+        var n = 2
+        while FileManager.default.fileExists(atPath: dst.path) {
+            dst = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+            n += 1
+        }
+        completionHandler(dst)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        if let url = download.progress.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+}
+#endif

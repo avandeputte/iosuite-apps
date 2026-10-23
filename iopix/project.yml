@@ -89,16 +89,16 @@ targets:
     info:
       path: Mac/Info.plist
       properties:
-        CFBundleDisplayName: iopix Uploader
-        LSUIElement: true
+        CFBundleDisplayName: iopix
+        LSUIElement: false
         LSApplicationCategoryType: public.app-category.photography
-        NSPhotoLibraryUsageDescription: iopix Uploader sends the photos and videos added to your Photos library to your iopix library.
+        NSPhotoLibraryUsageDescription: iopix sends the photos and videos added to your Photos library to your iopix library.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoadsInWebContent: true
     settings:
       base:
-        PRODUCT_NAME: iopix Uploader
+        PRODUCT_NAME: iopix
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix.uploader
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
