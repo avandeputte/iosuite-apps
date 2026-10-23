@@ -58,6 +58,17 @@ The Xcode project is generated from `project.yml` and not kept in git.
 4. Run the `iopix` scheme on your iPhone, and `iopixUploader` (it builds iopix.app) on the Mac. The Mac app runs signed for this Mac
    only; turn on *Open at login* in its settings.
 
+## TestFlight
+
+Needs a paid Apple Developer Program membership (the free Personal Team cannot upload).
+
+1. Put the paid team's id in `project.yml` (`DEVELOPMENT_TEAM`).
+2. In App Store Connect, create the app (bundle id `net.iothing.iopix`) and an API key with the App Manager role
+   (Users and Access › Integrations). Save the `.p8` file as `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`.
+3. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads. The build number is the build's
+   date and time, so every upload counts as newer.
+4. In TestFlight, add yourself (and family) as internal testers; they install from Apple's TestFlight app.
+
 ## Good to know
 
 - The original of each photo is sent, as it came from the camera: edits made in Apple Photos are not, and of a

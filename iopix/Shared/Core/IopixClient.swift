@@ -85,6 +85,25 @@ final class IopixClient: NSObject {
         }
     }
 
+    /// Is there an iopix at this address? nil when there is (or a sign-in page in front of it, such as
+    /// Cloudflare Access's), otherwise what went wrong, in plain words.
+    func probe(_ url: URL) async -> String? {
+        var r = URLRequest(url: url.appendingPathComponent("api/status"), timeoutInterval: 15)
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, resp) = try await session.data(for: r)
+            guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
+            if http.url?.host?.lowercased() != url.host?.lowercased() { return nil }  // sent to a sign-in page first
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["appVersion"] != nil { return nil }
+            if http.statusCode == 401 || http.statusCode == 403 { return nil }
+            return "That address answers, but it isn't an iopix server."
+        } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
+            return "No server by that name. Check the address."
+        } catch {
+            return "Couldn't reach that address: \(error.localizedDescription)"
+        }
+    }
+
     func account() async throws -> Account {
         let (data, resp) = try await session.data(for: request("api/auth/me"))
         let j = try check(data, resp)

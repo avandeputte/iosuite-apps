@@ -41,6 +41,9 @@ enum AppConfig {
         set { defaults.set(newValue.absoluteString, forKey: "server") }
     }
 
+    /// False until someone has entered a server address (the iPhone app asks on first launch).
+    static var hasServer: Bool { defaults.string(forKey: "server") != nil }
+
     /// Turns what someone typed ("photo.example.net", "192.168.1.10:8600/") into a server address, or nil.
     static func normalisedServer(_ typed: String) -> URL? {
         var s = typed.trimmingCharacters(in: .whitespacesAndNewlines)

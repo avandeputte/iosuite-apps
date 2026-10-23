@@ -27,7 +27,22 @@ struct RootView: View {
     @State private var showUploads = false
     @State private var server = AppConfig.serverURL
 
+    @State private var needsServer = !AppConfig.hasServer
+
     var body: some View {
+        if needsServer {
+            ServerSetupView { url in
+                AppConfig.serverURL = url
+                server = url
+                needsServer = false
+                Task { await queue.refreshAccount() }
+            }
+        } else {
+            library
+        }
+    }
+
+    private var library: some View {
         IopixWebView(url: server) { Task { await queue.refreshAccount() } }
             .id(server)
             .background(Color(.systemBackground))
@@ -225,6 +240,55 @@ struct ItemRow: View {
             } else {
                 Text(item.stateText).font(.caption).foregroundStyle(item.state == .failed ? .red : .secondary)
             }
+        }
+    }
+}
+
+/// First launch: which iopix to connect to.
+struct ServerSetupView: View {
+    let done: (URL) -> Void
+    @State private var text = ""
+    @State private var checking = false
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image("Mark").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
+            Text("Connect to your iopix").font(.title2.bold())
+            Text("Enter the address you use for iopix in the browser.")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+            TextField("photos.example.com", text: $text)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .textContentType(.URL)
+                .submitLabel(.go)
+                .onSubmit(connect)
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+            if let problem { Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center) }
+            Button(action: connect) {
+                Group { if checking { ProgressView() } else { Text("Connect") } }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || checking)
+            Spacer()
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: 480)
+    }
+
+    private func connect() {
+        guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
+        checking = true
+        problem = nil
+        Task {
+            problem = await IopixClient.shared.probe(url)
+            checking = false
+            if problem == nil { done(url) }
         }
     }
 }

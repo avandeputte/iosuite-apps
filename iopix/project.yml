@@ -31,6 +31,8 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: iopix
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.photography
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
@@ -63,6 +65,7 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: iopix
+        ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSExtension:
