@@ -39,8 +39,8 @@ enum PhotoLibrary {
     }
 }
 
-/// Watches the Photos library and queues every photo or video added to it after watching was turned on.
-/// Photos that were already in the library then are left alone (iopix skips duplicates anyway).
+/// Watches the Photos library and lists every photo or video added to it after watching was turned on, for
+/// the person to pick what is sent. Photos that were already in the library then are left alone.
 @MainActor
 final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     static let shared = PhotosWatcher()
@@ -93,7 +93,7 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
         start()
     }
 
-    /// Queues the photos and videos taken in the last few days, whether or not they were seen before.
+    /// Lists the photos and videos taken in the last few days for review, whether or not they were seen before.
     func sendRecent(days: Int) {
         guard authorized else { return }
         let since = Date().addingTimeInterval(-Double(days) * 86400)

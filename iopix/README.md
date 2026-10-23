@@ -5,9 +5,11 @@ Two small native companions to [iopix](https://github.com/avandeputte/iopix), th
 - **iopix for iPhone**: the iopix web app in a native shell, plus
   - **Send to iopix** in the share sheet (Photos, Files, any app that shares photos or videos),
   - a button to pick photos and videos from the camera roll and send them,
-  - optionally, sending every new photo and video automatically whenever the app is opened.
+  - optionally, a list of the new photos and videos in the library each time the app is opened, where you pick
+    which ones to send and which to ignore.
 - **iopix Uploader for Mac**: a menu bar app that
-  - watches the Photos library and sends every photo and video added to it from the moment watching is turned on,
+  - watches the Photos library and lists every photo and video added to it from the moment watching is turned on;
+    you pick which ones to send and which to ignore (Review… in the menu),
   - takes files and folders dropped on it (or chosen with the button),
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
 
@@ -55,10 +57,10 @@ The Xcode project is generated from `project.yml` and not kept in git.
 - The original of each photo is sent, as it came from the camera: edits made in Apple Photos are not, and of a
   Live Photo only the still is sent.
 - Photos stored only in iCloud are downloaded first.
-- On iPhone, automatic sending runs while the app is open (iOS does not let an app watch the library in the
+- On iPhone, new photos are looked for while the app is open (iOS does not let an app watch the library in the
   background). The share sheet sends while it is open; it says so.
-- Turning watching off and on again later sends what was added in between. *Also send the last 7 days* sends the
-  recent photos again (duplicates are skipped by iopix).
+- An ignored photo does not come back. Turning watching off and on again later lists what was added in between.
+  *Also list the last 7 days* lists the recent photos again (iopix skips the ones it already has).
 
 ## Layout
 

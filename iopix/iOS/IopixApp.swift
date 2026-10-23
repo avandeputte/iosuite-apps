@@ -34,15 +34,15 @@ struct RootView: View {
             .overlay(alignment: .bottomTrailing) {
                 // hidden while the page asks for a sign-in: its sign-in sheet sits right where the button goes
                 // (still shown when iopix can't be reached, so the server address can be changed)
-                if queue.canSend || !queue.pending.isEmpty || queue.offline {
+                if queue.canSend || !queue.pending.isEmpty || !queue.reviewing.isEmpty || queue.offline {
                 Button { showUploads = true } label: {
-                    Image(systemName: queue.pending.isEmpty ? "square.and.arrow.up" : "arrow.up.circle")
+                    Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")
                         .font(.title3.weight(.semibold))
                         .frame(width: 48, height: 48)
                         .background(.regularMaterial, in: Circle())
                         .overlay(alignment: .topTrailing) {
-                            if !queue.pending.isEmpty {
-                                Text("\(queue.pending.count)")
+                            if !queue.pending.isEmpty || !queue.reviewing.isEmpty {
+                                Text("\(queue.pending.count + queue.reviewing.count)")
                                     .font(.caption2.bold())
                                     .padding(4)
                                     .background(Color.accentColor, in: Capsule())
@@ -100,12 +100,19 @@ struct UploadsView: View {
                 }
 
                 Section {
-                    Toggle("Send new photos automatically", isOn: Binding(get: { watcher.enabled }, set: { on in Task { await watcher.setEnabled(on) } }))
+                    Toggle("Look for new photos", isOn: Binding(get: { watcher.enabled }, set: { on in Task { await watcher.setEnabled(on) } }))
+                    if !queue.reviewing.isEmpty {
+                        NavigationLink {
+                            ReviewView()
+                        } label: {
+                            Label("\(queue.reviewing.count) new photo\(queue.reviewing.count == 1 ? "" : "s") to look at", systemImage: "photo.badge.plus")
+                        }
+                    }
                     if watcher.enabled {
-                        Button("Also send the last 7 days") { watcher.sendRecent(days: 7) }
+                        Button("Also list the last 7 days") { watcher.sendRecent(days: 7) }
                     }
                 } footer: {
-                    Text(watcher.note ?? "Photos and videos you take from now on are sent whenever you open iopix. Photos already in iopix are skipped.")
+                    Text(watcher.note ?? "Photos and videos you take from now on are listed here when you open iopix, and you pick which ones to send. Photos already in iopix are skipped.")
                 }
 
                 if !queue.pending.isEmpty {

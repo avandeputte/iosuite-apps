@@ -9,6 +9,7 @@ struct UploadItem: Codable, Identifiable, Equatable {
         case asset(String)  // a photo in the Photos library, read when it is its turn
     }
     enum State: String, Codable {
+        case review    // found in the Photos library, waiting for a send-or-ignore decision
         case waiting, sending, done, duplicate, failed
     }
 
@@ -23,6 +24,7 @@ struct UploadItem: Codable, Identifiable, Equatable {
 
     var stateText: String {
         switch state {
+        case .review: return "New"
         case .waiting: return message ?? "Waiting"
         case .sending: return "Sending"
         case .done: return "In iopix"
@@ -50,7 +52,9 @@ final class UploadQueue: ObservableObject {
 
     var pending: [UploadItem] { items.filter { $0.state == .waiting || $0.state == .sending } }
     var current: UploadItem? { items.first { $0.state == .sending } }
-    var finished: [UploadItem] { items.filter { $0.state != .waiting && $0.state != .sending }.reversed() }
+    var finished: [UploadItem] { items.filter { [.done, .duplicate, .failed].contains($0.state) }.reversed() }
+    /// New photos from the library that wait for a decision.
+    var reviewing: [UploadItem] { items.filter { $0.state == .review } }
     var canSend: Bool { account?.canWrite == true }
 
     init() {
@@ -82,13 +86,26 @@ final class UploadQueue: ObservableObject {
         kick()
     }
 
-    func add(assets: [(id: String, name: String)]) {
-        let queued = Set(items.compactMap { if case .asset(let a) = $0.source, $0.state == .waiting || $0.state == .sending { return a } else { return nil } })
+    /// Photos from the library: held for review (they are sent only once picked) unless `review` is false.
+    func add(assets: [(id: String, name: String)], review: Bool = true) {
+        let queued = Set(items.compactMap { if case .asset(let a) = $0.source, [.review, .waiting, .sending].contains($0.state) { return a } else { return nil } })
         for a in assets where !queued.contains(a.id) {
-            items.append(UploadItem(name: a.name, source: .asset(a.id)))
+            items.append(UploadItem(name: a.name, source: .asset(a.id), state: review ? .review : .waiting))
         }
         save()
         kick()
+    }
+
+    func send(_ ids: Set<UUID>) {
+        for i in items.indices where items[i].state == .review && ids.contains(items[i].id) { items[i].state = .waiting }
+        save()
+        kick()
+    }
+
+    /// Ignored photos leave the list; they stay counted as seen, so they do not come back.
+    func ignore(_ ids: Set<UUID>) {
+        items.removeAll { $0.state == .review && ids.contains($0.id) }
+        save()
     }
 
     func retryFailed() {

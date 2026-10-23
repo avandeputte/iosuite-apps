@@ -15,7 +15,8 @@ struct IopixMenuApp: App {
                 .environmentObject(watcher)
                 .task { await queue.refreshAccount() }
         } label: {
-            Image(systemName: queue.pending.isEmpty ? (queue.needsSignIn ? "photo.badge.exclamationmark" : "photo.stack") : "arrow.up.circle")
+            Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus"
+                  : queue.needsSignIn ? "photo.badge.exclamationmark" : "photo.stack")
         }
         .menuBarExtraStyle(.window)
 
@@ -23,6 +24,12 @@ struct IopixMenuApp: App {
             SignInView().environmentObject(queue)
         }
         .defaultSize(width: 520, height: 720)
+
+        Window("New photos", id: "review") {
+            ReviewView().environmentObject(queue)
+                .frame(minWidth: 480, minHeight: 400)
+        }
+        .defaultSize(width: 640, height: 560)
 
         Window("iopix Uploader Settings", id: "settings") {
             SettingsView().environmentObject(queue).environmentObject(watcher)
@@ -56,12 +63,21 @@ struct MenuView: View {
 
             Toggle(isOn: Binding(get: { watcher.enabled }, set: { on in Task { await watcher.setEnabled(on) } })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Send new photos from Photos")
-                    Text(watcher.note ?? "Photos and videos added to your library from now on go to iopix.")
+                    Text("Look for new photos in Photos")
+                    Text(watcher.note ?? "Photos and videos added to your library from now on are listed here, and you pick which ones go to iopix.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .toggleStyle(.switch)
+
+            if !queue.reviewing.isEmpty {
+                HStack {
+                    Image(systemName: "photo.badge.plus").foregroundStyle(Color.accentColor)
+                    Text("\(queue.reviewing.count) new photo\(queue.reviewing.count == 1 ? "" : "s") to look at")
+                    Spacer()
+                    Button("Review…") { show("review") }.keyboardShortcut(.defaultAction)
+                }
+            }
 
             dropZone
 
@@ -251,7 +267,7 @@ struct SettingsView: View {
                     .onChange(of: atLogin) { _, on in setLogin(on) }
                 if let loginNote { Text(loginNote).font(.caption).foregroundStyle(.orange) }
                 if watcher.enabled {
-                    Button("Also send the photos of the last 7 days") { watcher.sendRecent(days: 7) }
+                    Button("Also list the photos of the last 7 days") { watcher.sendRecent(days: 7) }
                 }
             }
 
