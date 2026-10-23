@@ -37,7 +37,7 @@ struct Provider: AppIntentTimelineProvider {
                                note: "Open iopix and sign in. Its photos appear here within a few minutes.")]
         }
         return photos.enumerated().map { i, p in
-            PhotoEntry(date: Date().addingTimeInterval(Double(i) * 1200), id: p.id, image: NSImage(contentsOf: p.file), title: title, year: p.year)
+            PhotoEntry(date: Date().addingTimeInterval(Double(i) * 1200), id: p.id, image: WidgetStore.image(p.file), title: title, year: p.year)
         }
     }
 }
@@ -50,7 +50,9 @@ struct PhotoWidgetView: View {
             // the photo is part of the widget itself, not its background: macOS removes and tints backgrounds when
             // the desktop is not in front, which left the widget blank
             if let image = entry.image {
-                Image(nsImage: image).resizable().fullColor().scaledToFill()
+                // sized by the widget, not by the picture (a bare scaledToFill image grows to the picture's own size
+                // and pushes everything out of the frame)
+                Color.clear.overlay(Image(nsImage: image).resizable().fullColor().scaledToFill()).clipped()
             } else {
                 Color(red: 0.23, green: 0.29, blue: 0.55)
                 Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.white.opacity(0.5))

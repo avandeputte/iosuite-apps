@@ -139,8 +139,11 @@ final class DesktopExtras: ObservableObject {
         }
         guard !entries.isEmpty, let json = try? JSONSerialization.data(withJSONObject: entries) else { return }
         try? json.write(to: tmp.appendingPathComponent("photos.json"))
+        // the previous set stays one round longer, for a widget still drawing from it
         let dst = folder.appendingPathComponent(key, isDirectory: true)
-        try? FileManager.default.removeItem(at: dst)
+        let prev = folder.appendingPathComponent(key + "-prev", isDirectory: true)
+        try? FileManager.default.removeItem(at: prev)
+        try? FileManager.default.moveItem(at: dst, to: prev)
         try? FileManager.default.moveItem(at: tmp, to: dst)
     }
 

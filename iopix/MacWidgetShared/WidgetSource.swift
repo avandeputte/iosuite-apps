@@ -1,5 +1,8 @@
 import AppIntents
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// What a widget shows: random photos (Rediscover), the favorites, or one album. Shared by the widget, where it is
 /// picked (right-click the widget › Edit "iopix"), and the app, which prepares the photos for it.
@@ -58,6 +61,15 @@ enum WidgetStore {
         let file: URL
         let year: String
     }
+
+    #if canImport(AppKit)
+    /// The picture read into memory now: the app replaces these files when it refreshes, and a lazily read
+    /// NSImage would find nothing left to draw.
+    static func image(_ file: URL) -> NSImage? {
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return NSImage(data: data)
+    }
+    #endif
 
     static func photos(_ key: String) -> [Photo] {
         guard let dir = folder?.appendingPathComponent(key, isDirectory: true),
