@@ -19,6 +19,7 @@ xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist tools/Expo
 rm -f "$DMG"
 mkdir -p "$OUT/dmg" && cp -R "$OUT/iopix.app" "$OUT/dmg/" && ln -sf /Applications "$OUT/dmg/Applications"
 hdiutil create -volname iopix -srcfolder "$OUT/dmg" -ov -format UDZO "$DMG"
+codesign --sign "Developer ID Application" --timestamp "$DMG"  # a signed image passes Gatekeeper as a whole
 xcrun notarytool submit "$DMG" --key "$KEY" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
 xcrun stapler staple "$DMG"
 spctl -a -t open --context context:primary-signature -v "$DMG"
