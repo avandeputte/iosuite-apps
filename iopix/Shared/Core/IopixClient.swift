@@ -16,12 +16,14 @@ enum UploadOutcome: Equatable {
 
 enum IopixError: LocalizedError, Equatable {
     case needsSignIn
+    case needsServerUpdate  // the chosen folder needs a newer iopix
     case notAllowed(String)
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .needsSignIn: return "Sign in to iopix to send photos."
+        case .needsServerUpdate: return "Your iopix server can't put photos in a folder of your choice yet. Update iopix, or pick one of its date layouts in Settings."
         case .notAllowed(let why): return why
         case .server(let why): return why
         }
@@ -104,8 +106,29 @@ final class IopixClient: NSObject {
         }
     }
 
+    /// The folder layouts the server offers, and whether it takes folder patterns of your own.
+    func layouts() async throws -> (layouts: [ServerLayout], patterns: Bool) {
+        let (data, resp) = try await session.data(for: request("api/import/layouts"))
+        let j = try check(data, resp)
+        let list = (j["layouts"] as? [[String: Any]] ?? []).compactMap { l -> ServerLayout? in
+            guard let key = l["key"] as? String else { return nil }
+            return ServerLayout(key: key, pattern: l["pattern"] as? String ?? "", example: l["example"] as? String ?? key)
+        }
+        let patterns = j["patterns"] as? Bool ?? false
+        patternSupport = patterns
+        return (list, patterns)
+    }
+
+    /// Learnt from the server once per launch (nil: not asked yet).
+    private(set) var patternSupport: Bool?
+
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
-    func upload(file: URL, name: String, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
+    func upload(file: URL, name: String, to destination: Destination = .current, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
+        if destination.needsPatterns {
+            if patternSupport != true { _ = try await layouts() }
+            // an older server would ignore the pattern and use its own layout: better not to send than to misfile
+            guard patternSupport == true else { throw IopixError.needsServerUpdate }
+        }
         let boundary = "iopix-\(UUID().uuidString)"
         let body = try Multipart.write(file: file, name: name, boundary: boundary)
         defer { try? FileManager.default.removeItem(at: body) }
@@ -128,7 +151,9 @@ final class IopixClient: NSObject {
 
         var run = request("api/import/\(token)/run", method: "POST")
         run.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        run.httpBody = try JSONSerialization.data(withJSONObject: ["duplicates": "skip"])
+        var fields: [String: Any] = ["duplicates": "skip"]
+        fields.merge(destination.runFields) { _, new in new }
+        run.httpBody = try JSONSerialization.data(withJSONObject: fields)
         let (data2, resp2) = try await session.data(for: run)
         let result = try check(data2, resp2)
         if let added = result["added"] as? [Any], !added.isEmpty { return .added }

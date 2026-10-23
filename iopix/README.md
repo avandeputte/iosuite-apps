@@ -11,6 +11,9 @@ Two small native companions to [iopix](https://github.com/avandeputte/iopix), th
   - watches the Photos library and lists every photo and video added to it from the moment watching is turned on;
     you pick which ones to send and which to ignore (Review… in the menu),
   - takes files and folders dropped on it (or chosen with the button),
+  - lets you choose the folder in iopix: by date taken in one of iopix's layouts (2026/202610 by default), a
+    pattern of your own such as `Phone/{yyyy}-{mm}`, or one fixed folder such as `Upload`; missing folders are
+    created by iopix (patterns and fixed folders need an iopix release that supports them),
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
 
 The apps only send files. iopix does everything else on the server: it puts each file in the library's dated

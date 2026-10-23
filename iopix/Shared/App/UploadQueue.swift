@@ -44,6 +44,7 @@ final class UploadQueue: ObservableObject {
     @Published private(set) var account: Account?
     @Published private(set) var needsSignIn = false
     @Published private(set) var offline = false
+    @Published private(set) var blocked: String?  // why nothing is sent right now, besides sign-in
 
     private var running = false
     private var retry: Task<Void, Never>?
@@ -152,6 +153,7 @@ final class UploadQueue: ObservableObject {
         defer { UIApplication.shared.endBackgroundTask(bg) }
         #endif
         defer { running = false }
+        blocked = nil
         if !canSend { await refreshAccount() }
         guard canSend else { return }
 
@@ -174,6 +176,10 @@ final class UploadQueue: ObservableObject {
                 }
                 if let done = items.first(where: { $0.id == id }), done.state != .failed { removeStoredFile(done) }
                 offline = false
+            } catch IopixError.needsServerUpdate {
+                update(id) { $0.state = .waiting }
+                blocked = IopixError.needsServerUpdate.localizedDescription
+                return
             } catch IopixError.needsSignIn {
                 update(id) { $0.state = .waiting }
                 needsSignIn = true
