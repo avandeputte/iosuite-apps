@@ -16,6 +16,7 @@ struct PhotoViewer: View {
     @State private var index = 0
     @State private var playing = false
     @State private var showInfo = true
+    @State private var panel = false
     @State private var video: AVPlayer?
     @State private var slideshow: Task<Void, Never>?
     @State private var hideInfo: Task<Void, Never>?
@@ -28,6 +29,9 @@ struct PhotoViewer: View {
     var body: some View {
         ZStack {
             Color.black
+            if video == nil {  // the photo itself, blurred, fills the bars beside it
+                RemoteImage(path: "preview/\(current)").blur(radius: 60).opacity(0.55).scaleEffect(1.2).id("bg\(current)")
+            }
             if let video {
                 VideoPlayer(player: video)
                     .onDisappear { video.pause() }
@@ -41,12 +45,19 @@ struct PhotoViewer: View {
             }
         }
         .ignoresSafeArea()
+        .overlay(alignment: .trailing) {
+            if panel && video == nil {
+                InfoPanel(photo: current)
+                    .ignoresSafeArea()
+                    .transition(.move(edge: .trailing))
+            }
+        }
         .overlay(alignment: .bottom) {
-            if showInfo && video == nil {
+            if showInfo && video == nil && !panel {
                     HStack {
                         Text("\(index + 1) of \(ids.count)")
                         Spacer()
-                        Text(playing ? "Slideshow · press ⏯ to pause" : "◀ ▶ to move · ⏯ slideshow\(isVideo ? " · select to play" : "")")
+                        Text(playing ? "Slideshow · press ⏯ to pause" : "◀ ▶ to move · ▲ ▼ info · ⏯ slideshow\(isVideo ? " · select to play" : "")")
                     }
                     .font(.callout)
                     .foregroundStyle(.white)
@@ -59,12 +70,21 @@ struct PhotoViewer: View {
         .focused($focused)
         .onMoveCommand { dir in
             guard video == nil else { return }
-            if dir == .left { step(-1) } else if dir == .right { step(1) }
+            switch dir {
+            case .left: step(-1)
+            case .right: step(1)
+            case .up, .down: withAnimation(.easeInOut(duration: 0.3)) { panel.toggle() }
+            default: break
+            }
         }
         .onPlayPauseCommand { toggleSlideshow() }
-        .onTapGesture { if isVideo && video == nil { play() } }
+        .onTapGesture {
+            if isVideo && video == nil { play() } else if video == nil { withAnimation(.easeInOut(duration: 0.3)) { panel.toggle() } }
+        }
         .onExitCommand {
-            if let v = video { v.pause(); video = nil; focused = true } else { dismiss() }
+            if let v = video { v.pause(); video = nil; focused = true }
+            else if panel { withAnimation { panel = false } }
+            else { dismiss() }
         }
         .onAppear {
             index = min(max(start.index, 0), max(ids.count - 1, 0))

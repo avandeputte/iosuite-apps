@@ -4,8 +4,11 @@ import SwiftUI
 struct TVLibrary: View {
     let signedOut: () -> Void
     @StateObject private var store = LibraryStore()
+    @StateObject private var backdrop = Backdrop()
 
     var body: some View {
+        ZStack {
+        BackdropView()
         TabView {
             NavigationStack { OnThisDayView() }.tabItem { Text("On This Day") }
             RediscoverView().tabItem { Text("Rediscover") }
@@ -16,8 +19,10 @@ struct TVLibrary: View {
             NavigationStack { SearchView() }.tabItem { Image(systemName: "magnifyingglass") }
             SettingsTV(signedOut: signedOut).tabItem { Image(systemName: "gearshape") }
         }
+        }
         .environmentObject(store)
-        .task { await store.load() }
+        .environmentObject(backdrop)
+        .task { backdrop.start(); await store.load() }
     }
 }
 
@@ -68,6 +73,7 @@ struct FolderView: View {
             }
         }
         .navigationTitle(title)
+        .backdrop(parent.flatMap { p in store.folders.first { $0.id == p }?.cover })
         .navigationDestination(for: Folder.self) { FolderView(parent: $0.id, title: $0.name) }
     }
 }
@@ -232,6 +238,7 @@ struct PhotoGrid: View {
         .task {
             do { list = try await PhotoList.load(query) } catch { problem = error.localizedDescription }
         }
+        .backdrop(list?.ids.first)
         .fullScreenCover(item: $viewer) { PhotoViewer(start: $0) }
     }
 }
