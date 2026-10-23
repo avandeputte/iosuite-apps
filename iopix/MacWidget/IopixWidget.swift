@@ -46,27 +46,35 @@ struct PhotoWidgetView: View {
     let entry: PhotoEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Spacer()
-            if let note = entry.note { Text(note).font(.caption).padding(.bottom, 4) }
-            Text(entry.title).font(.headline).lineLimit(1)
-            if !entry.year.isEmpty { Text(entry.year).font(.caption) }
-        }
-        .foregroundStyle(.white)
-        .shadow(radius: 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .containerBackground(for: .widget) {
-            ZStack {
+        ZStack(alignment: .bottomLeading) {
+            // the photo is part of the widget itself, not its background: macOS removes and tints backgrounds when
+            // the desktop is not in front, which left the widget blank
+            if let image = entry.image {
+                Image(nsImage: image).resizable().fullColor().scaledToFill()
+            } else {
                 Color(red: 0.23, green: 0.29, blue: 0.55)
-                if let image = entry.image {
-                    Image(nsImage: image).resizable().scaledToFill()
-                } else {
-                    Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.white.opacity(0.5))
-                }
-                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                Image(systemName: "photo.on.rectangle").font(.largeTitle).foregroundStyle(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 2) {
+                if let note = entry.note { Text(note).font(.caption).padding(.bottom, 4) }
+                Text(entry.title).font(.headline).lineLimit(1)
+                if !entry.year.isEmpty { Text(entry.year).font(.caption) }
+            }
+            .foregroundStyle(.white)
+            .shadow(radius: 4)
+            .padding(14)
         }
+        .containerBackground(for: .widget) { Color.black }
         .widgetURL(entry.id.flatMap { URL(string: "iopix://photo/\($0)") } ?? URL(string: "iopix://main"))
+    }
+}
+
+private extension Image {
+    /// Keeps the photo in its own colours when macOS shows widgets tinted (desktop not in front, or tinted style).
+    @ViewBuilder func fullColor() -> some View {
+        if #available(macOS 15.0, *) { self.widgetAccentedRenderingMode(.fullColor) } else { self }
     }
 }
 
@@ -77,5 +85,7 @@ struct IopixWidget: Widget {
             .configurationDisplayName("iopix")
             .description("Photos from iopix: Rediscover, your favorites or an album. Right-click it › Edit to choose.")
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
+            .contentMarginsDisabled()           // the photo fills the widget edge to edge
+            .containerBackgroundRemovable(false)
     }
 }
