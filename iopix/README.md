@@ -69,6 +69,12 @@ Needs a paid Apple Developer Program membership (the free Personal Team cannot u
    date and time, so every upload counts as newer.
 4. In TestFlight, add yourself (and family) as internal testers; they install from Apple's TestFlight app.
 
+## Sharing the Mac app
+
+`tools/release-mac.sh` (same key as TestFlight) signs iopix with your Developer ID, has Apple notarize it and
+writes `build/iopix-<version>.dmg`, which opens on any Mac without warnings. A build from Xcode with the free team
+only runs on your own Mac.
+
 ## Good to know
 
 - The original of each photo is sent, as it came from the camera: edits made in Apple Photos are not, and of a
