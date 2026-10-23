@@ -24,14 +24,16 @@ struct TVRoot: View {
         case .signIn:
             TVSignIn(changeServer: { step = .server }) { step = .library }
         case .library:
-            TVLibrary { step = .signIn }
+            TVLibrary(signedOut: { step = .signIn }, switchProfile: { step = .signIn })
         }
     }
 
     private func check() async {
         do {
             let a = try await IopixClient.shared.account()
-            step = a.signedIn ? .library : .signIn
+            // more than one person has used this TV: ask who is watching (no password for someone signed in before)
+            let ask = TVPrefs.shared.askWhoIsWatching && Profiles.names.count > 1
+            step = a.signedIn && !ask ? .library : .signIn
         } catch IopixError.needsSignIn {
             step = .signIn
         } catch {
@@ -83,6 +85,7 @@ struct TVSignIn: View {
     @State private var password = ""
     @State private var problem: String?
     @State private var busy = false
+    @FocusState private var focus: String?
 
     var body: some View {
         VStack(spacing: 40) {
@@ -93,15 +96,19 @@ struct TVSignIn: View {
                     Button {
                         chosen = a.name
                         password = ""
-                        if !a.needsPassword { signIn() }
+                        Task {
+                            if await resume(a.name) { done() } else if !a.needsPassword { signIn() }
+                        }
                     } label: {
                         VStack(spacing: 12) {
                             Image(systemName: "person.crop.circle.fill").font(.system(size: 90))
                             Text(a.name)
+                            if Profiles.names.contains(a.name) { Text("no password needed").font(.caption2).foregroundStyle(.secondary) }
                         }
                         .frame(width: 240, height: 220)
                     }
                     .buttonStyle(.card)
+                    .focused($focus, equals: a.name)
                 }
             }
             if let chosen, accounts.first(where: { $0.name == chosen })?.needsPassword == true {
@@ -119,10 +126,23 @@ struct TVSignIn: View {
     private func loadAccounts() async {
         do {
             accounts = try await IopixClient.shared.accounts()
+            // the people who have used this TV first, the last one first: they need no password
+            let known = Profiles.names
+            accounts.sort { (known.firstIndex(of: $0.name) ?? Int.max) < (known.firstIndex(of: $1.name) ?? Int.max) }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            focus = accounts.first?.name
             if accounts.isEmpty { problem = "This iopix has no accounts to sign in with." }
         } catch {
             problem = "iopix can't be reached: \(error.localizedDescription)"
         }
+    }
+
+    /// Someone who signed in on this TV before: their session is put back.
+    private func resume(_ name: String) async -> Bool {
+        guard Profiles.names.contains(name), Profiles.use(name) else { return false }
+        if let a = try? await IopixClient.shared.account(), a.signedIn, a.name?.lowercased() == name.lowercased() { return true }
+        Profiles.forget(name)  // the session ran out: a password is needed again
+        return false
     }
 
     private func signIn() {
@@ -132,6 +152,7 @@ struct TVSignIn: View {
         Task {
             do {
                 try await IopixClient.shared.signIn(name: chosen, password: password)
+                Profiles.save(chosen)
                 done()
             } catch {
                 problem = error.localizedDescription

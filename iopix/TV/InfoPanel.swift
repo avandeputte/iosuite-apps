@@ -59,6 +59,7 @@ private extension String {
 
 struct InfoPanel: View {
     let photo: Int
+    var favorite = false
     @State private var info: PhotoInfo?
 
     var body: some View {
@@ -67,6 +68,9 @@ struct InfoPanel: View {
                 if let info {
                     if let t = info.title { Text(t).font(.title3.bold()) }
                     if info.rating > 0 { Text(String(repeating: "★", count: min(info.rating, 5))).foregroundStyle(.yellow) }
+                    Label(favorite ? "In your favorites · hold select to remove" : "Hold select to add to your favorites",
+                          systemImage: favorite ? "heart.fill" : "heart")
+                        .font(.caption).foregroundStyle(favorite ? .pink : .secondary)
                     row("calendar", info.when)
                     row("mappin.and.ellipse", info.place)
                     row("person.2.fill", info.people.isEmpty ? nil : info.people.joined(separator: ", "))

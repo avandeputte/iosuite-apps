@@ -1,14 +1,18 @@
 import Foundation
 
 /// Where things live: the server address, the settings, the files waiting to be sent and the cookies.
-/// On iPhone these are shared with the share extension through an App Group; the Mac app keeps them to itself.
+/// On iPhone and Apple TV these are shared with the extensions (share sheet, Top Shelf) through an App Group; the
+/// Mac app keeps them to itself.
 enum AppConfig {
     static let appGroup = "group.net.iothing.iopix"
     static let defaultServer = "https://photo.iothing.net"
 
+    /// The App Group is there only when the app was signed with it; without it everything stays in the app.
+    static let hasGroup = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) != nil
+
     static var defaults: UserDefaults {
-        #if os(iOS)
-        return UserDefaults(suiteName: appGroup) ?? .standard
+        #if os(iOS) || os(tvOS)
+        return hasGroup ? (UserDefaults(suiteName: appGroup) ?? .standard) : .standard
         #else
         return .standard
         #endif
@@ -16,7 +20,7 @@ enum AppConfig {
 
     /// A folder for the upload queue and the list of photos already seen.
     static var dataFolder: URL {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
         if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             return ensure(group.appendingPathComponent("iopix", isDirectory: true))
         }
@@ -26,8 +30,8 @@ enum AppConfig {
     }
 
     static var cookies: HTTPCookieStorage {
-        #if os(iOS)
-        return HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: appGroup)
+        #if os(iOS) || os(tvOS)
+        return hasGroup ? HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: appGroup) : .shared
         #else
         return .shared
         #endif

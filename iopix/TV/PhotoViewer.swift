@@ -6,69 +6,89 @@ struct ViewerStart: Identifiable {
     let list: PhotoList
     let index: Int
     let playing: Bool
+    var ambient = false  // started by itself after the remote was left alone: any press ends it
 }
 
-/// One photo at a time, full screen. Left and right on the remote move through them, play/pause runs the
-/// slideshow, select plays a video, Menu goes back.
+/// One photo at a time, full screen. Left and right on the remote move through them, up and down (or a click)
+/// show the info panel, holding select adds to favorites, play/pause runs the slideshow, Menu goes back.
 struct PhotoViewer: View {
     let start: ViewerStart
     @Environment(\.dismiss) private var dismiss
-    @State private var index = 0
+    @EnvironmentObject private var store: LibraryStore
+    @ObservedObject private var prefs = TVPrefs.shared
+    @State private var order: [Int] = []  // positions in the list, in the order shown (shuffled in a shuffled slideshow)
+    @State private var pos = 0
     @State private var playing = false
     @State private var showInfo = true
     @State private var panel = false
     @State private var video: AVPlayer?
     @State private var slideshow: Task<Void, Never>?
     @State private var hideInfo: Task<Void, Never>?
+    @State private var zoom: CGFloat = 1
+    @State private var zoomAnchor: UnitPoint = .center
+    @State private var heart: Bool?  // the big heart shown for a moment after holding select
     @FocusState private var focused: Bool
 
     private var ids: [Int] { start.list.ids }
+    private var index: Int { order.isEmpty ? 0 : order[pos] }
     private var current: Int { ids[index] }
     private var isVideo: Bool { start.list.isVideo(index) }
 
     var body: some View {
         ZStack {
             Color.black
-            if video == nil {  // the photo itself, blurred, fills the bars beside it
+            if video == nil && !ids.isEmpty {
                 RemoteImage(path: "preview/\(current)").blur(radius: 60).opacity(0.55).scaleEffect(1.2).id("bg\(current)")
             }
             if let video {
                 VideoPlayer(player: video)
                     .onDisappear { video.pause() }
-            } else {
+            } else if !ids.isEmpty {
                 RemoteImage(path: "preview/\(current)", fit: true)
+                    .scaleEffect(zoom, anchor: zoomAnchor)
                     .id(current)
                     .transition(.opacity)
                 if isVideo {
                     Image(systemName: "play.circle.fill").font(.system(size: 140)).foregroundStyle(.white.opacity(0.85))
                 }
             }
+            if let heart {
+                Image(systemName: heart ? "heart.fill" : "heart.slash.fill")
+                    .font(.system(size: 220)).foregroundStyle(heart ? .pink : .white).shadow(radius: 20)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .ignoresSafeArea()
+        .overlay(alignment: .topTrailing) {
+            if video == nil, !ids.isEmpty, store.favoriteIDs.contains(current), !panel {
+                Image(systemName: "heart.fill").font(.title2).foregroundStyle(.pink).shadow(radius: 6).padding(50)
+            }
+        }
         .overlay(alignment: .trailing) {
-            if panel && video == nil {
-                InfoPanel(photo: current)
+            if panel && video == nil && !ids.isEmpty {
+                InfoPanel(photo: current, favorite: store.favoriteIDs.contains(current))
                     .ignoresSafeArea()
                     .transition(.move(edge: .trailing))
             }
         }
         .overlay(alignment: .bottom) {
-            if showInfo && video == nil && !panel {
-                    HStack {
-                        Text("\(index + 1) of \(ids.count)")
-                        Spacer()
-                        Text(playing ? "Slideshow · press ⏯ to pause" : "◀ ▶ to move · ▲ ▼ info · ⏯ slideshow\(isVideo ? " · select to play" : "")")
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 60).padding(.vertical, 24)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .padding(.bottom, 40)
+            if showInfo && video == nil && !panel && !start.ambient {
+                HStack {
+                    Text("\(pos + 1) of \(ids.count)")
+                    Spacer()
+                    Text(playing ? "Slideshow · ⏯ to pause" : "◀ ▶ move · ▲ ▼ info · hold select ♥ · ⏯ slideshow\(isVideo ? " · select plays" : "")")
+                }
+                .font(.callout)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 60).padding(.vertical, 24)
+                .background(.black.opacity(0.55), in: Capsule())
+                .padding(.bottom, 40)
             }
         }
         .focusable(video == nil)
         .focused($focused)
         .onMoveCommand { dir in
+            if start.ambient { dismiss(); return }
             guard video == nil else { return }
             switch dir {
             case .left: step(-1)
@@ -77,33 +97,45 @@ struct PhotoViewer: View {
             default: break
             }
         }
-        .onPlayPauseCommand { toggleSlideshow() }
+        .onPlayPauseCommand { start.ambient ? dismiss() : toggleSlideshow() }
         .onTapGesture {
-            if isVideo && video == nil { play() } else if video == nil { withAnimation(.easeInOut(duration: 0.3)) { panel.toggle() } }
+            if start.ambient { dismiss(); return }
+            if isVideo && video == nil { stopSlideshow(); play() } else if video == nil { withAnimation(.easeInOut(duration: 0.3)) { panel.toggle() } }
         }
+        .onLongPressGesture(minimumDuration: 0.6) { if !start.ambient { toggleFavorite() } }
         .onExitCommand {
             if let v = video { v.pause(); video = nil; focused = true }
             else if panel { withAnimation { panel = false } }
             else { dismiss() }
         }
         .onAppear {
-            index = min(max(start.index, 0), max(ids.count - 1, 0))
+            AmbientClock.viewerOpen += 1
+            order = Array(ids.indices)
+            pos = min(max(start.index, 0), max(ids.count - 1, 0))
             focused = true
             flashInfo()
-            if start.playing { toggleSlideshow() }
+            if start.playing { startSlideshow() }
         }
-        .onDisappear { slideshow?.cancel() }
+        .onDisappear {
+            AmbientClock.viewerOpen -= 1
+            slideshow?.cancel()
+            video?.pause()
+        }
     }
 
-    private func step(_ by: Int) {
-        guard !ids.isEmpty else { return }
-        withAnimation(.easeInOut(duration: 0.4)) { index = (index + by + ids.count) % ids.count }
+    // MARK: moving
+
+    private func step(_ by: Int, animated: Bool = true) {
+        guard !order.isEmpty else { return }
+        withAnimation(animated ? .easeInOut(duration: 0.8) : nil) { pos = (pos + by + order.count) % order.count }
+        zoom = 1
         prefetch()
-        flashInfo()
+        if !playing { flashInfo() }
     }
 
     private func prefetch() {
-        let next = ids[(index + 1) % ids.count]
+        guard !order.isEmpty else { return }
+        let next = ids[order[(pos + 1) % order.count]]
         Task { _ = await ImageCache.shared.image("preview/\(next)") }
     }
 
@@ -116,30 +148,54 @@ struct PhotoViewer: View {
         }
     }
 
-    private func toggleSlideshow() {
-        if playing {
-            playing = false
-            slideshow?.cancel()
-            flashInfo()
-            return
+    // MARK: slideshow
+
+    private func toggleSlideshow() { playing ? stopSlideshow() : startSlideshow() }
+
+    private func stopSlideshow() {
+        playing = false
+        slideshow?.cancel()
+        withAnimation(.easeOut(duration: 0.5)) { zoom = 1 }
+        flashInfo()
+    }
+
+    private func startSlideshow() {
+        guard !ids.isEmpty else { return }
+        if prefs.shuffle || start.ambient {
+            let here = index
+            order = ids.indices.filter { $0 != here }.shuffled()
+            order.insert(here, at: 0)
+            pos = 0
         }
         playing = true
         flashInfo()
         prefetch()
         slideshow = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                if start.list.isVideo(index) {
+                    if prefs.playVideos { await playToEnd() } else { step(1, animated: false); continue }
+                } else {
+                    panZoom()
+                    try? await Task.sleep(nanoseconds: UInt64(prefs.slideSeconds) * 1_000_000_000)
+                }
                 if Task.isCancelled { break }
-                // videos are passed over in a slideshow
-                var tries = 0
-                repeat { step(1); tries += 1 } while start.list.isVideo(index) && tries < ids.count
+                step(1)
             }
         }
     }
 
-    private func play() {
-        slideshow?.cancel()
-        playing = false
+    /// The slow pan and zoom of a slideshow (alternating corners).
+    private func panZoom() {
+        guard prefs.panAndZoom else { return }
+        let anchors: [UnitPoint] = [.topLeading, .bottomTrailing, .topTrailing, .bottomLeading, .center]
+        zoomAnchor = anchors[pos % anchors.count]
+        zoom = 1
+        withAnimation(.linear(duration: Double(prefs.slideSeconds) + 1)) { zoom = 1.12 }
+    }
+
+    // MARK: video
+
+    private func makePlayer() -> AVPlayer {
         let url = AppConfig.serverURL.appendingPathComponent("orig/\(current)")
         let cookies = AppConfig.cookies.cookies(for: url) ?? []
         var headers: [String: String] = [:]
@@ -147,8 +203,36 @@ struct PhotoViewer: View {
             headers = ["CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret]
         }
         let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies, "AVURLAssetHTTPHeaderFieldsKey": headers])
-        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        return AVPlayer(playerItem: AVPlayerItem(asset: asset))
+    }
+
+    private func play() {
+        let player = makePlayer()
         video = player
         player.play()
+    }
+
+    /// In a slideshow: the video plays to its end, then the slideshow goes on.
+    private func playToEnd() async {
+        let player = makePlayer()
+        video = player
+        player.play()
+        for await _ in NotificationCenter.default.notifications(named: AVPlayerItem.didPlayToEndTimeNotification, object: player.currentItem) {
+            break
+        }
+        video = nil
+    }
+
+    // MARK: favorites
+
+    private func toggleFavorite() {
+        let id = current
+        let on = !store.favoriteIDs.contains(id)
+        withAnimation(.spring(duration: 0.35)) { heart = on }
+        Task {
+            await store.setFavorite(id, on)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            withAnimation(.easeOut(duration: 0.4)) { heart = nil }
+        }
     }
 }

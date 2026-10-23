@@ -19,11 +19,14 @@ Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hos
     created by iopix (patterns and fixed folders need an iopix release that supports them),
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
 
-- **iopix for Apple TV**: a native viewer (the Apple TV has no web view): sign in by picking an account,
-  On This Day (grouped by year), Rediscover, Folders, Albums, People, Years and Search (people, folders, photos by
-  words, and "looks like" when content search is on), full-screen photos you move through with the remote, a slideshow on
-  ⏯, and videos. It only shows; nothing is changed from the TV. Same bundle id as the iPhone app, so both are one
-  app in App Store Connect and TestFlight.
+- **iopix for Apple TV**: a native viewer (the Apple TV has no web view). Tabs: For You (On this day, Then and
+  now, Events and trips, Rediscover), Folders, Albums, People, Places (a map, then places by country), Years,
+  Search and Settings. Full-screen photos: ◀ ▶ move, ▲ ▼ or a click show the info panel, holding select adds to
+  your favorites, ⏯ runs a slideshow (speed, shuffle, slow pan and zoom, videos: Settings). Ambient mode starts a
+  slideshow by itself when the remote is left alone. "Who's watching" switches between family accounts without
+  passwords once each has signed in. The Top Shelf shows On this day (or Rediscover) on the home screen; it needs
+  the App Group, so a build signed with it (an Apple TV registered to the team). Nothing in the library is changed
+  from the TV; favorites are the viewer's own. Same bundle id as the iPhone app.
 
 The apps only send files. iopix does everything else on the server: it puts each file in the library's dated
 folders, writes the database rows and sidecars, and skips anything that is already in the library (same
@@ -102,3 +105,4 @@ only runs on your own Mac.
 | `ShareExtension` | the share sheet extension |
 | `Mac` | the Mac app: window and menu bar |
 | `TV` | the Apple TV app |
+| `TopShelf` | the Apple TV home screen row |

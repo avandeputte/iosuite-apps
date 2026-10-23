@@ -33,6 +33,15 @@ struct Person: Identifiable, Hashable {
     let face: Int?
 }
 
+struct Place: Identifiable, Hashable {
+    let name: String
+    let region: String?
+    let country: String?
+    let count: Int
+    let cover: Int?
+    var id: String { [name, region ?? "", country ?? ""].joined(separator: "|") }
+}
+
 struct Album: Identifiable, Hashable {
     let id: Int
     let name: String
@@ -48,6 +57,8 @@ final class LibraryStore: ObservableObject {
     @Published var years: [(year: Int, count: Int)] = []
     @Published var albums: [Album] = []
     @Published var favorites = 0
+    @Published var favoriteIDs: Set<Int> = []
+    @Published var places: [Place] = []
     @Published var problem: String?
 
     func load() async {
@@ -73,10 +84,29 @@ final class LibraryStore: ObservableObject {
                 return Album(id: id, name: a["name"] as? String ?? "", count: (a["n"] as? NSNumber)?.intValue ?? 0,
                              cover: (a["cover"] as? NSNumber)?.intValue)
             }
-            favorites = (st["favorites"] as? [Any])?.count ?? 0
+            let fav = (st["favorites"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+            favoriteIDs = Set(fav)
+            favorites = fav.count
+            places = (meta["places"] as? [[Any]] ?? []).compactMap { p in
+                guard p.count >= 5, let name = p[0] as? String, let n = (p[3] as? NSNumber)?.intValue else { return nil }
+                return Place(name: name, region: p[1] as? String, country: p[2] as? String, count: n, cover: (p[4] as? NSNumber)?.intValue)
+            }
             problem = nil
         } catch {
             problem = error.localizedDescription
+        }
+    }
+
+    /// Your own favorites in iopix (not a change to the library's photos).
+    func setFavorite(_ id: Int, _ on: Bool) async {
+        if on { favoriteIDs.insert(id) } else { favoriteIDs.remove(id) }
+        favorites = favoriteIDs.count
+        var r = IopixClient.shared.request("api/favorites", method: "POST")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": [id], "on": on])
+        if (try? await IopixClient.shared.session.data(for: r)) == nil {  // put it back as it was
+            if on { favoriteIDs.remove(id) } else { favoriteIDs.insert(id) }
+            favorites = favoriteIDs.count
         }
     }
 
