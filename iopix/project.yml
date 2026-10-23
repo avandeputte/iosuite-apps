@@ -30,6 +30,8 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: iopix
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.photography
@@ -64,6 +66,8 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: iopix
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
@@ -92,6 +96,8 @@ targets:
     info:
       path: Mac/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: iopix
         LSUIElement: false
         LSApplicationCategoryType: public.app-category.photography
@@ -115,6 +121,8 @@ targets:
     info:
       path: TV/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: iopix
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
