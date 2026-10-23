@@ -68,7 +68,10 @@ final class UploadQueue: ObservableObject {
     // MARK: adding
 
     /// Copies (or moves) files into the queue folder, so they can be sent later even if the originals go away.
-    func add(files: [URL], move: Bool = false) {
+    /// Where a queued file is kept (for showing it before it is sent).
+    func fileURL(_ rel: String) -> URL { filesFolder.appendingPathComponent(rel) }
+
+    func add(files: [URL], move: Bool = false, review: Bool = false) {
         for url in files {
             let id = UUID()
             let dir = filesFolder.appendingPathComponent(id.uuidString, isDirectory: true)
@@ -78,7 +81,8 @@ final class UploadQueue: ObservableObject {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 if move { try FileManager.default.moveItem(at: url, to: dst) } else { try FileManager.default.copyItem(at: url, to: dst) }
-                items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file("\(id.uuidString)/\(url.lastPathComponent)")))
+                items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file("\(id.uuidString)/\(url.lastPathComponent)"),
+                                        state: review ? .review : .waiting))
             } catch {
                 items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file(""), state: .failed, message: "Could not read the file"))
             }
@@ -105,6 +109,7 @@ final class UploadQueue: ObservableObject {
 
     /// Ignored photos leave the list; they stay counted as seen, so they do not come back.
     func ignore(_ ids: Set<UUID>) {
+        for item in items where item.state == .review && ids.contains(item.id) { removeStoredFile(item) }
         items.removeAll { $0.state == .review && ids.contains($0.id) }
         save()
     }
@@ -156,6 +161,8 @@ final class UploadQueue: ObservableObject {
         blocked = nil
         if !canSend { await refreshAccount() }
         guard canSend else { return }
+        var sent = 0
+        defer { if sent > 0 { NotificationCenter.default.post(name: .iopixUploadsDone, object: nil, userInfo: ["count": sent]) } }
 
         while let idx = items.firstIndex(where: { $0.state == .waiting }) {
             let id = items[idx].id
@@ -169,7 +176,7 @@ final class UploadQueue: ObservableObject {
                 }
                 update(id) {
                     switch outcome {
-                    case .added: $0.state = .done
+                    case .added: $0.state = .done; sent += 1
                     case .alreadyThere: $0.state = .duplicate
                     case .skipped(let why): $0.state = .failed; $0.message = why
                     }
@@ -250,4 +257,9 @@ final class UploadQueue: ObservableObject {
     private func save() {
         if let data = try? JSONEncoder().encode(items) { try? data.write(to: listFile, options: .atomic) }
     }
+}
+
+extension Notification.Name {
+    /// A run of uploads finished; userInfo["count"] is how many photos iopix added.
+    static let iopixUploadsDone = Notification.Name("iopixUploadsDone")
 }

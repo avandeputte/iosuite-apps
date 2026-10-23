@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 @main
 struct IopixMenuApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var queue = UploadQueue.shared
     @StateObject private var watcher = PhotosWatcher.shared
 
@@ -28,10 +29,15 @@ struct IopixMenuApp: App {
                 .environmentObject(watcher)
                 .task { await queue.refreshAccount() }
         } label: {
-            Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus"
-                  : queue.needsSignIn ? "photo.badge.exclamationmark" : "photo.stack")
+            MenuBarIcon(queue: queue)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Import Photos", id: "card") {
+            CardImportView()
+        }
+        .defaultSize(width: 760, height: 560)
+        .commandsRemoved()
 
         Window("Sign in to iopix", id: "signin") {
             SignInView().environmentObject(queue)
@@ -48,6 +54,18 @@ struct IopixMenuApp: App {
             SettingsView().environmentObject(queue).environmentObject(watcher)
         }
         .windowResizability(.contentSize)
+    }
+}
+
+/// The menu bar icon; it is always there, so it hands the window opener to the Router.
+struct MenuBarIcon: View {
+    @ObservedObject var queue: UploadQueue
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus"
+              : queue.needsSignIn ? "photo.badge.exclamationmark" : "photo.stack")
+            .onAppear { Router.openWindow = openWindow }
     }
 }
 
@@ -238,6 +256,16 @@ struct SettingsView: View {
     @State private var saved = false
 
     var body: some View {
+        TabView {
+            general.tabItem { Label("General", systemImage: "gearshape") }
+            SourcesSettings().tabItem { Label("Sources", systemImage: "tray.and.arrow.down") }
+            DesktopSettings().tabItem { Label("Desktop", systemImage: "photo.on.rectangle") }
+            OfflineSettings().tabItem { Label("Offline", systemImage: "arrow.down.circle") }
+        }
+        .frame(width: 520)
+    }
+
+    private var general: some View {
         Form {
             Section {
                 TextField("Server address", text: $serverText)
@@ -289,7 +317,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
     }
 

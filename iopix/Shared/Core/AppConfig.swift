@@ -5,6 +5,8 @@ import Foundation
 /// Mac app keeps them to itself.
 enum AppConfig {
     static let appGroup = "group.net.iothing.iopix"
+    /// The Mac app and its extensions (Share menu, widget) share this one (macOS groups start with the team id).
+    static let macGroup = "69M2JRAT8P.net.iothing.iopix"
     static let defaultServer = "https://photo.iothing.net"
 
     /// The App Group is there only when the app was signed with it; without it everything stays in the app.

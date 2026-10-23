@@ -18,6 +18,15 @@ Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hos
     pattern of your own such as `Phone/{yyyy}-{mm}`, or one fixed folder such as `Upload`; missing folders are
     created by iopix (patterns and fixed folders need an iopix release that supports them),
   - keeps a queue on disk, so nothing is lost when the Mac sleeps, goes offline or restarts.
+  - **Send to iopix** in the Share menu (Finder, Photos, Preview, Safari) and Finder's right-click Services / Quick Actions,
+  - **watched folders** and **memory cards / cameras** (a drive with a DCIM folder): new photos are listed to review or import,
+  - **notifications** (new photos to review, uploads done, an optional daily On this day), a **Dock badge** and
+    progress bar,
+  - **desktop picture** and a **screen saver folder** (Pictures › iopix Screen Saver for macOS's photo screen saver)
+    from On this day, favorites, random photos or a person, a desktop **widget**,
+  - **Shortcuts** actions (Send to iopix, Show On this day, Search iopix, Review new photos) and iopix people,
+    folders, places and albums in **Spotlight**,
+  - **offline folders**: favorites, albums or people kept as originals in Pictures › iopix Offline.
 
 - **iopix for Apple TV**: a native viewer (the Apple TV has no web view). Tabs: For You (On this day, Then and
   now, Events and trips, Rediscover), Folders, Albums, People, Places (a map, then places by country), Years,
@@ -103,6 +112,7 @@ only runs on your own Mac.
 | `Shared/App` | upload queue, Photos library watcher, the web view (both apps) |
 | `iOS` | the iPhone app |
 | `ShareExtension` | the share sheet extension |
-| `Mac` | the Mac app: window and menu bar |
+| `Mac` | the Mac app: window, menu bar and extras |
+| `MacShare`, `MacWidget` | the Mac Share menu entry and widget |
 | `TV` | the Apple TV app |
 | `TopShelf` | the Apple TV home screen row |

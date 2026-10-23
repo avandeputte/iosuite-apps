@@ -18,6 +18,17 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>net.iothing.iopix.uploader</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>iopix</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
@@ -33,5 +44,27 @@
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>iopix sends the photos and videos added to your Photos library to your iopix library.</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Send to iopix</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>sendToIopix</string>
+			<key>NSPortName</key>
+			<string>iopix</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.movie</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

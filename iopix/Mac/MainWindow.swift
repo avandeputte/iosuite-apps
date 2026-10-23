@@ -69,8 +69,17 @@ struct MainWindow: View {
             .navigationTitle("iopix")
             .task { await queue.refreshAccount() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-                if AppConfig.serverURL != server { server = AppConfig.serverURL }  // changed in Settings
+                if AppConfig.serverURL.host != server.host { server = AppConfig.serverURL }  // changed in Settings
             }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixNavigate)) { _ in go() }
+            .onAppear { Router.openWindow = openWindow; go() }
+    }
+
+    /// A page of the web app asked for from elsewhere (a notification, Spotlight, Shortcuts, the widget).
+    private func go() {
+        guard let route = Router.pendingRoute else { return }
+        Router.pendingRoute = nil
+        server = URL(string: AppConfig.serverURL.absoluteString + "/" + route) ?? AppConfig.serverURL
     }
 
     private func reload() {

@@ -1,5 +1,6 @@
 import SwiftUI
 import Photos
+import QuickLookThumbnailing
 
 /// The new photos found in the library: tap to pick, then send the picked ones (or all) or ignore them.
 struct ReviewView: View {
@@ -78,6 +79,10 @@ struct AssetThumbnail: View {
     }
 
     private func load() async {
+        if case .file(let rel) = source {
+            image = await Self.fileThumbnail(UploadQueue.shared.fileURL(rel))
+            return
+        }
         guard case .asset(let id) = source,
               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return }
         video = asset.mediaType == .video
@@ -94,5 +99,18 @@ struct AssetThumbnail: View {
                 #endif
             }
         }
+    }
+}
+
+extension AssetThumbnail {
+    /// A preview of a photo or video file on disk (Quick Look makes it).
+    static func fileThumbnail(_ url: URL) async -> Image? {
+        let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 320, height: 320), scale: 2, representationTypes: .thumbnail)
+        guard let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: req) else { return nil }
+        #if os(iOS)
+        return Image(uiImage: rep.uiImage)
+        #else
+        return Image(nsImage: rep.nsImage)
+        #endif
     }
 }
