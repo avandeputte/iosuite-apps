@@ -12,8 +12,17 @@ import AppKit
 /// (one entry per device, so two devices never overwrite each other). Without iCloud Photos or an iCloud account
 /// this does nothing and each device keeps its own list, as before.
 @MainActor
-final class ReviewSync {
+final class ReviewSync: ObservableObject {
     static let shared = ReviewSync()
+
+    /// What is kept in iCloud, for showing in settings.
+    struct Summary: Equatable {
+        var here = 0        // decided on this device
+        var elsewhere = 0   // decided on the other devices
+        var devices = 0     // how many devices have decided something
+        var waiting = 0     // decided here, waiting for the photo to reach iCloud Photos
+    }
+    @Published private(set) var summary = Summary()
 
     private let kvs = NSUbiquitousKeyValueStore.default
     private static let prefix = "decided."
@@ -35,7 +44,7 @@ final class ReviewSync {
         pending = Set(AppConfig.defaults.stringArray(forKey: "reviewSync.pending") ?? [])
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification, object: kvs, queue: .main) { _ in
-            Task { @MainActor in await ReviewSync.shared.apply() }
+            Task { @MainActor in await ReviewSync.shared.apply(); ReviewSync.shared.refreshSummary() }
         })
         #if os(iOS)
         let active = UIApplication.didBecomeActiveNotification
@@ -46,6 +55,28 @@ final class ReviewSync {
             Task { @MainActor in ReviewSync.shared.kvs.synchronize(); await ReviewSync.shared.apply() }
         })
         kvs.synchronize()
+        refreshSummary()
+    }
+
+    func refreshSummary() {
+        var s = Summary(waiting: pending.count)
+        for (key, value) in kvs.dictionaryRepresentation where key.hasPrefix(Self.prefix) {
+            let n = (value as? [String: Any])?.count ?? 0
+            guard n > 0 else { continue }
+            s.devices += 1
+            if key == myKey { s.here = n } else { s.elsewhere += n }
+        }
+        summary = s
+    }
+
+    /// Forgets every shared decision, from all devices. Photos already sent or ignored stay that way on each
+    /// device; from now on only new decisions are shared.
+    func reset() {
+        for key in kvs.dictionaryRepresentation.keys where key.hasPrefix(Self.prefix) { kvs.removeObject(forKey: key) }
+        kvs.synchronize()
+        pending = []
+        savePending()
+        refreshSummary()
     }
 
     /// Looks for decisions made elsewhere now (and on every return to the app, and whenever iCloud brings some).
@@ -92,6 +123,7 @@ final class ReviewSync {
         kvs.set(mine, forKey: myKey)
         kvs.synchronize()
         savePending()
+        refreshSummary()
     }
 
     /// Every photo decided on any of the devices (this one included).

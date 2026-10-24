@@ -310,6 +310,8 @@ struct SettingsView: View {
                 }
             }
 
+            SharedDecisionsSection()
+
             HStack {
                 Spacer()
                 if saved { Text("Saved").foregroundStyle(.secondary) }
@@ -349,4 +351,39 @@ struct SettingsView: View {
             atLogin = service.status == .enabled
         }
     }
+}
+
+/// The send-or-ignore decisions shared with the other devices through iCloud: how many, and a way to forget them.
+struct SharedDecisionsSection: View {
+    @ObservedObject private var sync = ReviewSync.shared
+    @State private var confirm = false
+
+    var body: some View {
+        Section {
+            let s = sync.summary
+            LabeledContent("Decided on this Mac", value: count(s.here))
+            LabeledContent("Decided on your other devices", value: count(s.elsewhere))
+            if s.waiting > 0 {
+                LabeledContent("Waiting for iCloud Photos", value: count(s.waiting))
+            }
+            HStack {
+                Spacer()
+                Button("Reset…") { confirm = true }
+                    .disabled(s.here + s.elsewhere + s.waiting == 0)
+            }
+        } header: {
+            Text("Shared with your devices")
+        } footer: {
+            Text("When you send or ignore a new photo here, your iPhone and iPad take it off their list too, and the other way round. This is kept in your iCloud account (no photos, just which ones were decided).")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onAppear { sync.refreshSummary() }
+        .confirmationDialog("Forget the shared decisions?", isPresented: $confirm) {
+            Button("Reset", role: .destructive) { sync.reset() }
+        } message: {
+            Text("This clears them for all your devices. Photos already sent or ignored stay that way; only new decisions are shared from now on.")
+        }
+    }
+
+    private func count(_ n: Int) -> String { n == 1 ? "1 photo" : "\(n) photos" }
 }
