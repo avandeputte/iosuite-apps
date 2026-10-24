@@ -101,6 +101,9 @@ only runs on your own Mac.
 - Photos stored only in iCloud are downloaded first.
 - On iPhone, new photos are looked for while the app is open (iOS does not let an app watch the library in the
   background). The share sheet sends while it is open; it says so.
+- Sending or ignoring a photo in the review list on one device takes it off the review list on your other
+  devices too (iPhone, iPad and Mac signed in to the same iCloud, with iCloud Photos on). A photo just taken
+  joins in once it has reached iCloud Photos.
 - An ignored photo does not come back. Turning watching off and on again later lists what was added in between.
   *Also list the last 7 days* lists the recent photos again (iopix skips the ones it already has).
 - The apps only ever talk to the server address you gave them: a redirect to another site (a sign-in page in
