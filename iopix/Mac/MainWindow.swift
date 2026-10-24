@@ -16,16 +16,7 @@ struct MainWindow: View {
         IopixWebView(url: server) { Task { await queue.refreshAccount() } }
             .id(server)
             .frame(minWidth: 720, minHeight: 480)
-            .overlay {
-                if dropping {
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
-                        .background(Color.accentColor.opacity(0.08))
-                        .overlay(Text("Drop to send to iopix").font(.title2.weight(.semibold)))
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-            }
+            .overlay { if dropping { DropHint() } }
             .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
                 for p in providers {
                     _ = p.loadObject(ofClass: URL.self) { url, _ in
@@ -85,10 +76,6 @@ struct MainWindow: View {
     private func reload() {
         NotificationCenter.default.post(name: .iopixReload, object: nil)
     }
-}
-
-extension Notification.Name {
-    static let iopixReload = Notification.Name("iopixReload")
 }
 
 enum MacFiles {

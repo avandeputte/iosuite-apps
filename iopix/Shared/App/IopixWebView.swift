@@ -94,9 +94,17 @@ struct IopixWebView: PlatformViewRepresentable {
         context.coordinator.web = web
         context.coordinator.status?.web = web
         context.coordinator.watchNetwork()
-        #if os(macOS)
-        context.coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name("iopixReload"), object: nil, queue: .main) { [weak web] _ in
-            web?.reload()
+        let st = context.coordinator.status
+        context.coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name.iopixReload, object: nil, queue: .main) { [weak web, weak st] _ in
+            guard let web else { return }
+            if let st { st.retry() }  // clears a failure first, and loads the server when the page never came
+            else if web.url == nil { web.load(URLRequest(url: AppConfig.serverURL)) } else { web.reload() }
+        }
+        #if os(iOS)
+        // the page's own drop handling is turned off, so a photo dragged onto the app (iPad, side by side) reaches
+        // the app's drop target and goes to the queue instead of being swallowed or uploaded by the page itself
+        for sub in web.scrollView.subviews {
+            for interaction in sub.interactions where interaction is UIDropInteraction { sub.removeInteraction(interaction) }
         }
         #endif
         web.load(URLRequest(url: url))
@@ -113,7 +121,10 @@ struct IopixWebView: PlatformViewRepresentable {
 
         init(_ changed: @escaping () -> Void, status: WebStatus?) { self.changed = changed; self.status = status }
 
-        deinit { monitor?.cancel() }
+        deinit {
+            monitor?.cancel()
+            if let reloadObserver { NotificationCenter.default.removeObserver(reloadObserver) }
+        }
 
         /// A page that failed to load is tried again when the network is back; a page that loaded over one network
         /// (home Wi-Fi) is loaded again when the device moves to another (cellular, another Wi-Fi), because the
@@ -199,10 +210,11 @@ struct IopixWebView: PlatformViewRepresentable {
             return nil
         }
 
+        var reloadObserver: NSObjectProtocol?
+
         #if os(iOS)
         @objc func reload(_ sender: UIRefreshControl) { web?.reload() }
         #else
-        var reloadObserver: NSObjectProtocol?
 
         /// The page's own "choose files" buttons (uploads inside the web app).
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,

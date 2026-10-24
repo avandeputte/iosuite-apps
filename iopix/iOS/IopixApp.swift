@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct IopixApp: App {
     @StateObject private var queue = UploadQueue.shared
     @StateObject private var watcher = PhotosWatcher.shared
+    @StateObject private var launch = LaunchState()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -13,13 +14,18 @@ struct IopixApp: App {
             RootView()
                 .environmentObject(queue)
                 .environmentObject(watcher)
+                .environmentObject(launch)
         }
-        .commands {  // iPad with a keyboard (and the Mac's menu when run there)
+        .commands {  // iPad with a keyboard; off until a server address has been entered
             CommandGroup(after: .newItem) {
-                Button("Send Photos…") { NotificationCenter.default.post(name: .iopixCommand, object: "send") }
+                Button("Send Photos…") { NotificationCenter.default.post(name: .iopixSendPhotos, object: nil) }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
-                Button("Reload") { NotificationCenter.default.post(name: .iopixCommand, object: "reload") }
+                    .disabled(!launch.hasServer)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Reload") { NotificationCenter.default.post(name: .iopixReload, object: nil) }
                     .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!launch.hasServer)
             }
         }
         .onChange(of: phase) { _, now in
@@ -31,8 +37,14 @@ struct IopixApp: App {
     }
 }
 
+/// Whether the app has a server to talk to yet (the first launch asks for one).
+final class LaunchState: ObservableObject {
+    @Published var hasServer = AppConfig.hasServer
+}
+
 struct RootView: View {
     @EnvironmentObject private var queue: UploadQueue
+    @EnvironmentObject private var launch: LaunchState
     @State private var showUploads = false
     @State private var server = AppConfig.serverURL
 
@@ -46,6 +58,7 @@ struct RootView: View {
                 AppConfig.serverURL = url
                 server = url
                 needsServer = false
+                launch.hasServer = true
                 Task { await queue.refreshAccount() }
             }
         } else {
@@ -97,27 +110,13 @@ struct RootView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in if web.failed != nil { web.retry() } }
-            .onReceive(NotificationCenter.default.publisher(for: .iopixCommand)) { note in
-                switch note.object as? String {
-                case "send": showUploads = true
-                case "reload": web.retry()
-                default: break
-                }
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
             // photos dragged in from Photos or Files (iPad side by side) go to the queue
             .dropDestination(for: PickedFile.self) { files, _ in
                 queue.add(files: files.map(\.url), move: true)
                 return true
             } isTargeted: { dropping = $0 }
-            .overlay {
-                if dropping {
-                    RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
-                        .background(Color.accentColor.opacity(0.08))
-                        .overlay(Text("Drop to send to iopix").font(.title2.weight(.semibold)))
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-            }
+            .overlay { if dropping { DropHint() } }
             .sheet(isPresented: $showUploads, onDismiss: { server = AppConfig.serverURL }) {
                 UploadsView()
             }
@@ -129,8 +128,9 @@ struct PickedFile: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .movie) { try PickedFile(copying: $0.file) }
+        // the photo first: a Live Photo offers both a still and a short movie, and the still is the picture
         FileRepresentation(importedContentType: .image) { try PickedFile(copying: $0.file) }
+        FileRepresentation(importedContentType: .movie) { try PickedFile(copying: $0.file) }
     }
 
     init(copying file: URL) throws {
@@ -344,5 +344,4 @@ struct ServerSetupView: View {
 
 extension Notification.Name {
     static let iopixBecameActive = Notification.Name("iopixBecameActive")
-    static let iopixCommand = Notification.Name("iopixCommand")  // object: "send" | "reload"
 }

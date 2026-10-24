@@ -80,7 +80,12 @@ final class UploadQueue: ObservableObject {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                if move { try FileManager.default.moveItem(at: url, to: dst) } else { try FileManager.default.copyItem(at: url, to: dst) }
+                if move {
+                    try FileManager.default.moveItem(at: url, to: dst)
+                    Self.removeIfEmptyTemp(url.deletingLastPathComponent())
+                } else {
+                    try FileManager.default.copyItem(at: url, to: dst)
+                }
                 items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file("\(id.uuidString)/\(url.lastPathComponent)"),
                                         state: review ? .review : .waiting))
             } catch {
@@ -231,6 +236,14 @@ final class UploadQueue: ObservableObject {
     }
 
     // MARK: bookkeeping
+
+    /// The per-file folders the pickers and the share sheet make in the temporary directory, once emptied.
+    private static func removeIfEmptyTemp(_ dir: URL) {
+        let tmp = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        guard dir.standardizedFileURL.path.hasPrefix(tmp), dir.standardizedFileURL.path != tmp,
+              (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true else { return }
+        try? FileManager.default.removeItem(at: dir)
+    }
 
     private func update(_ id: UUID, save shouldSave: Bool = true, _ change: (inout UploadItem) -> Void) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
