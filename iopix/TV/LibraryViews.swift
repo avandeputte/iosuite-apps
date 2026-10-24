@@ -234,21 +234,14 @@ struct SettingsTV: View {
     var body: some View {
         Form {
             Section("Slideshows") {
-                Picker("Each photo", selection: $prefs.slideSeconds) {
-                    ForEach([3, 5, 6, 8, 10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
-                }
+                CycleRow(title: "Each photo", values: [3, 5, 6, 8, 10, 15, 30], value: $prefs.slideSeconds) { "\($0) seconds" }
                 Toggle("Shuffle", isOn: $prefs.shuffle)
                 Toggle("Slow pan and zoom", isOn: $prefs.panAndZoom)
                 Toggle("Play videos in slideshows", isOn: $prefs.playVideos)
             }
             Section {
-                Picker("Start after", selection: $prefs.ambientMinutes) {
-                    Text("Never").tag(0)
-                    ForEach([2, 5, 10, 15, 30], id: \.self) { Text("\($0) minutes idle").tag($0) }
-                }
-                Picker("Show", selection: $prefs.ambientSource) {
-                    ForEach(TVPrefs.AmbientSource.allCases) { Text($0.label).tag($0) }
-                }
+                CycleRow(title: "Start after", values: [0, 2, 5, 10, 15, 30], value: $prefs.ambientMinutes) { $0 == 0 ? "Never" : "\($0) minutes idle" }
+                CycleRow(title: "Show", values: TVPrefs.AmbientSource.allCases, value: $prefs.ambientSource) { $0.label }
                 Button("Start ambient mode now", action: startAmbient)
             } header: {
                 Text("Ambient mode")
@@ -274,6 +267,28 @@ struct SettingsTV: View {
         .frame(maxWidth: 1200)
         .navigationTitle("Settings")
         .task { account = try? await IopixClient.shared.account() }
+    }
+}
+
+/// A setting with a few choices: each click moves to the next one (like the On/Off rows). tvOS's own pickers push a
+/// page onto the tab's navigation, which inside these top tabs left the Settings page blank.
+struct CycleRow<V: Equatable>: View {
+    let title: String
+    let values: [V]
+    @Binding var value: V
+    let label: (V) -> String
+
+    var body: some View {
+        Button {
+            let i = values.firstIndex(of: value) ?? -1
+            value = values[(i + 1) % values.count]
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(label(value)).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
