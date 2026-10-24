@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Network
 
 /// The web view's cookies are the sign-in: iopix's session and, from outside, Cloudflare Access's. They are
 /// copied to the store the uploads (and the iPhone share extension) use, whenever they change.
@@ -43,11 +44,27 @@ typealias PlatformViewRepresentable = NSViewRepresentable
 #endif
 
 /// iopix's own web app, signed in with the same cookies as a browser.
+/// How the page is doing, for the native shell: a failed load shows a message and a Retry button, and the page
+/// is loaded again by itself when the network comes back or changes (home Wi-Fi to cellular, for example).
+@MainActor
+final class WebStatus: ObservableObject {
+    @Published var failed: String?   // why the last load failed, in plain words; nil while the page is fine
+    @Published var loading = false
+    fileprivate weak var web: WKWebView?
+
+    func retry() {
+        failed = nil
+        guard let web else { return }
+        if web.url == nil || web.url?.absoluteString == "about:blank" { web.load(URLRequest(url: AppConfig.serverURL)) } else { web.reload() }
+    }
+}
+
 struct IopixWebView: PlatformViewRepresentable {
     let url: URL
+    var status: WebStatus? = nil
     var onCookiesChanged: () -> Void = {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCookiesChanged) }
+    func makeCoordinator() -> Coordinator { Coordinator(onCookiesChanged, status: status) }
 
     #if os(iOS)
     func makeUIView(context: Context) -> WKWebView { make(context) }
@@ -75,6 +92,8 @@ struct IopixWebView: PlatformViewRepresentable {
         #endif
         cfg.websiteDataStore.httpCookieStore.add(context.coordinator)
         context.coordinator.web = web
+        context.coordinator.status?.web = web
+        context.coordinator.watchNetwork()
         #if os(macOS)
         context.coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name("iopixReload"), object: nil, queue: .main) { [weak web] _ in
             web?.reload()
@@ -86,10 +105,64 @@ struct IopixWebView: PlatformViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKHTTPCookieStoreObserver {
         let changed: () -> Void
+        let status: WebStatus?
         weak var web: WKWebView?
         private var pending: Task<Void, Never>?
+        private var monitor: NWPathMonitor?
+        private var lastPath: (interfaces: [NWInterface.InterfaceType], gateways: [String])?
 
-        init(_ changed: @escaping () -> Void) { self.changed = changed }
+        init(_ changed: @escaping () -> Void, status: WebStatus?) { self.changed = changed; self.status = status }
+
+        deinit { monitor?.cancel() }
+
+        /// A page that failed to load is tried again when the network is back; a page that loaded over one network
+        /// (home Wi-Fi) is loaded again when the device moves to another (cellular, another Wi-Fi), because the
+        /// connections it was using are gone and the server may now be reached by another route (Cloudflare).
+        func watchNetwork() {
+            let m = NWPathMonitor()
+            m.pathUpdateHandler = { [weak self] path in
+                Task { @MainActor in self?.pathChanged(path) }
+            }
+            m.start(queue: DispatchQueue(label: "iopix.network"))
+            monitor = m
+        }
+
+        @MainActor private func pathChanged(_ path: NWPath) {
+            let now = (interfaces: path.availableInterfaces.map(\.type), gateways: path.gateways.map { "\($0)" })
+            defer { lastPath = now }
+            guard path.status == .satisfied, let web else { return }
+            let moved = lastPath.map { $0.interfaces != now.interfaces || $0.gateways != now.gateways } ?? false
+            if status?.failed != nil || moved {
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)  // let the new network settle
+                    guard self.status?.failed != nil || moved else { return }
+                    self.status?.failed = nil
+                    web.reload()
+                }
+            }
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            status?.loading = true
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
+
+        private func failed(_ error: Error) {
+            status?.loading = false
+            let e = error as NSError
+            if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }  // a new load replaced this one
+            let why: String
+            switch (e.domain, e.code) {
+            case (NSURLErrorDomain, NSURLErrorNotConnectedToInternet): why = "You're offline."
+            case (NSURLErrorDomain, NSURLErrorTimedOut): why = "iopix took too long to answer."
+            case (NSURLErrorDomain, NSURLErrorCannotFindHost), (NSURLErrorDomain, NSURLErrorDNSLookupFailed): why = "The server's address can't be found on this network."
+            case (NSURLErrorDomain, NSURLErrorCannotConnectToHost), (NSURLErrorDomain, NSURLErrorNetworkConnectionLost): why = "iopix can't be reached from this network."
+            default: why = e.localizedDescription
+            }
+            status?.failed = why
+        }
 
         func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
             pending?.cancel()
@@ -102,6 +175,8 @@ struct IopixWebView: PlatformViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            status?.loading = false
+            status?.failed = nil
             #if os(iOS)
             webView.scrollView.refreshControl?.endRefreshing()
             #endif

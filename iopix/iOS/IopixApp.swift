@@ -16,6 +16,7 @@ struct IopixApp: App {
         }
         .onChange(of: phase) { _, now in
             guard now == .active else { return }
+            NotificationCenter.default.post(name: .iopixBecameActive, object: nil)
             watcher.checkNow()
             Task { await queue.refreshAccount() }
         }
@@ -28,6 +29,7 @@ struct RootView: View {
     @State private var server = AppConfig.serverURL
 
     @State private var needsServer = !AppConfig.hasServer
+    @StateObject private var web = WebStatus()
 
     var body: some View {
         if needsServer {
@@ -43,9 +45,24 @@ struct RootView: View {
     }
 
     private var library: some View {
-        IopixWebView(url: server) { Task { await queue.refreshAccount() } }
+        IopixWebView(url: server, status: web) { Task { await queue.refreshAccount() } }
             .id(server)
             .background(Color(.systemBackground))
+            .overlay {
+                if let why = web.failed {
+                    VStack(spacing: 16) {
+                        Image("Mark").resizable().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 16))
+                        Text("Can't reach iopix").font(.title3.bold())
+                        Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Text("It tries again by itself when the connection changes.").font(.footnote).foregroundStyle(.secondary)
+                        Button("Try again") { web.retry() }.buttonStyle(.borderedProminent)
+                        Button("Change server") { showUploads = true }.font(.footnote)
+                    }
+                    .padding(32)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemBackground))
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 // hidden while the page asks for a sign-in: its sign-in sheet sits right where the button goes
                 // (still shown when iopix can't be reached, so the server address can be changed)
@@ -70,6 +87,7 @@ struct RootView: View {
                 .padding(.bottom, 72)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in if web.failed != nil { web.retry() } }
             .sheet(isPresented: $showUploads, onDismiss: { server = AppConfig.serverURL }) {
                 UploadsView()
             }
@@ -292,4 +310,8 @@ struct ServerSetupView: View {
             if problem == nil { done(url) }
         }
     }
+}
+
+extension Notification.Name {
+    static let iopixBecameActive = Notification.Name("iopixBecameActive")
 }
