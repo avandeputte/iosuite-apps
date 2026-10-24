@@ -20,7 +20,7 @@ struct PhotoInfo {
         var i = PhotoInfo()
         i.title = str("title") ?? str("caption")  // never the AI-written description: only what a person wrote
         if let taken = str("taken") {
-            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             if let date = f.date(from: taken) {
                 i.when = date.formatted(date: .complete, time: .shortened)
             } else { i.when = taken }

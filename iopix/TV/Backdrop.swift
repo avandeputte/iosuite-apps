@@ -9,10 +9,12 @@ final class Backdrop: ObservableObject {
     private var pinned: Int?
     private var timer: Task<Void, Never>?
 
+    deinit { timer?.cancel() }
+
     func start() {
         guard timer == nil else { return }
-        timer = Task {
-            while !Task.isCancelled {
+        timer = Task { [weak self] in
+            while !Task.isCancelled, let self {
                 if pool.isEmpty, let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "40")]) {
                     pool = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
                 }
@@ -26,6 +28,11 @@ final class Backdrop: ObservableObject {
     func pin(_ id: Int?) {
         pinned = id
         if let id { show(id) }
+    }
+
+    /// A page going away unpins only its own photo (the next page may already have pinned its own).
+    func unpin(_ id: Int?) {
+        if pinned == id { pinned = nil }
     }
 
     private func show(_ id: Int) {
@@ -71,6 +78,6 @@ private struct BackdropPin: ViewModifier {
         content
             .onAppear { if let photo { backdrop.pin(photo) } }
             .onChange(of: photo) { _, p in if let p { backdrop.pin(p) } }
-            .onDisappear { backdrop.pin(nil) }
+            .onDisappear { backdrop.unpin(photo) }
     }
 }

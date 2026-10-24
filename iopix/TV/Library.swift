@@ -10,11 +10,18 @@ struct PhotoList: Equatable {
     func isVideo(_ i: Int) -> Bool { videos.contains(i) }
 
     static func load(_ query: [URLQueryItem]) async throws -> PhotoList {
-        let j = try await IopixClient.shared.json("api/photos", query: query)
-        let ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
-        let vids = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
-        let times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
-        return PhotoList(ids: ids, videos: vids, times: times)
+        PhotoList(json: try await IopixClient.shared.json("api/photos", query: query))
+    }
+
+    /// From any answer that lists photos the way api/photos does (api/random too).
+    init(json j: [String: Any]) {
+        ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+        videos = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
+        times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+    }
+
+    init(ids: [Int] = [], videos: Set<Int> = [], times: [Double] = []) {
+        self.ids = ids; self.videos = videos; self.times = times
     }
 }
 
@@ -104,7 +111,10 @@ final class LibraryStore: ObservableObject {
         var r = IopixClient.shared.request("api/favorites", method: "POST")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": [id], "on": on])
-        if (try? await IopixClient.shared.session.data(for: r)) == nil {  // put it back as it was
+        do {
+            let (data, resp) = try await IopixClient.shared.session.data(for: r)
+            _ = try IopixClient.shared.check(data, resp)  // a refused request (signed out, viewer only) counts as a failure too
+        } catch {  // put it back as it was
             if on { favoriteIDs.remove(id) } else { favoriteIDs.insert(id) }
             favorites = favoriteIDs.count
         }
@@ -114,8 +124,19 @@ final class LibraryStore: ObservableObject {
     func children(of parent: Int?) -> [Folder] {
         let ids = Set(folders.map(\.id))
         var list = parent == nil ? folders.filter { $0.parent == nil || !ids.contains($0.parent!) } : folders.filter { $0.parent == parent }
-        if parent == nil, list.count == 1, let only = list.first { list = folders.filter { $0.parent == only.id } }
+        // one root folder holding everything: its subfolders are shown at the top instead (only when it has some)
+        if parent == nil, list.count == 1, let only = list.first, folders.contains(where: { $0.parent == only.id }) {
+            list = folders.filter { $0.parent == only.id }
+        }
         return list.filter { $0.count > 0 }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// The single root folder that the top level stands in for, when there is one (its own photos are shown too).
+    var loneRoot: Folder? {
+        let ids = Set(folders.map(\.id))
+        let tops = folders.filter { $0.parent == nil || !ids.contains($0.parent!) }
+        guard tops.count == 1, let only = tops.first, folders.contains(where: { $0.parent == only.id }) else { return nil }
+        return only
     }
 }
 
@@ -124,7 +145,7 @@ final class ImageCache {
     static let shared = ImageCache()
     private let cache = NSCache<NSString, UIImage>()
 
-    init() { cache.totalCostLimit = 300 << 20 }
+    init() { cache.totalCostLimit = 160 << 20 }  // decoded pictures, counted by their real size in memory
 
     func cached(_ path: String) -> UIImage? { cache.object(forKey: path as NSString) }
 
@@ -133,7 +154,8 @@ final class ImageCache {
         guard let (data, resp) = try? await IopixClient.shared.session.data(for: IopixClient.shared.request(path)),
               (resp as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: data) else { return nil }
         let decoded = img.preparingForDisplay() ?? img
-        cache.setObject(decoded, forKey: path as NSString, cost: data.count * 4)
+        let px = decoded.size.width * decoded.size.height * decoded.scale * decoded.scale
+        cache.setObject(decoded, forKey: path as NSString, cost: Int(px) * 4)
         return decoded
     }
 }

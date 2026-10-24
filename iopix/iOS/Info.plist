@@ -26,6 +26,8 @@
 	<string>public.app-category.photography</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 		<key>NSAllowsLocalNetworking</key>
@@ -35,6 +37,8 @@
 	<string>iopix can take a photo for your iopix library.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>iopix connects to your photo server on your home network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>iopix can record a video for your iopix library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>iopix sends the photos and videos you choose, and new ones if you turn that on, to your iopix library.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

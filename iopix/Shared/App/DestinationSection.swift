@@ -18,6 +18,7 @@ struct DestinationSection: View {
             case .layout:
                 Picker("Layout", selection: $dest.layout) {
                     if layouts.isEmpty { Text("2026/202610").tag(dest.layout) }
+                    else if !layouts.contains(where: { $0.key == dest.layout }) { Text(dest.layout).tag(dest.layout) }  // a layout this server no longer offers
                     ForEach(layouts) { Text($0.example).tag($0.key) }
                 }
             case .pattern:

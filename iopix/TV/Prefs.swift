@@ -42,14 +42,16 @@ final class TVPrefs: ObservableObject {
 enum Profiles {
     private static let listKey = "tv.profiles"
 
-    static var names: [String] { AppConfig.defaults.stringArray(forKey: listKey) ?? [] }
+    /// Kept per server: a name that signed in on another server is not offered as password-free here.
+    private static var hostKey: String { listKey + "." + (AppConfig.serverURL.host?.lowercased() ?? "") }
+    static var names: [String] { AppConfig.defaults.stringArray(forKey: hostKey) ?? [] }
 
     /// Keeps the current sign-in cookies under `name`.
     static func save(_ name: String) {
         let host = AppConfig.serverURL.host?.lowercased() ?? ""
         let cookies = (AppConfig.cookies.cookies ?? []).filter { CookieMatch.matches($0, host) }
         let plain: [[String: Any]] = cookies.map { c in
-            var p: [String: Any] = ["name": c.name, "value": c.value, "domain": c.domain, "path": c.path]
+            var p: [String: Any] = ["name": c.name, "value": c.value, "domain": c.domain, "path": c.path, "secure": c.isSecure]
             if let e = c.expiresDate { p["expires"] = e.timeIntervalSince1970 }
             return p
         }
@@ -57,7 +59,7 @@ enum Profiles {
         Keychain.set(text, for: "profile.\(host).\(name)")
         var list = names.filter { $0 != name }
         list.insert(name, at: 0)
-        AppConfig.defaults.set(list, forKey: listKey)
+        AppConfig.defaults.set(list, forKey: hostKey)
     }
 
     /// Puts `name`'s session back in place. False when it has none (any more).
@@ -69,18 +71,19 @@ enum Profiles {
         for p in plain {
             var props: [HTTPCookiePropertyKey: Any] = [.name: p["name"] ?? "", .value: p["value"] ?? "", .domain: p["domain"] ?? host, .path: p["path"] ?? "/"]
             if let e = p["expires"] as? Double { props[.expires] = Date(timeIntervalSince1970: e) }
+            if p["secure"] as? Bool == true { props[.secure] = "TRUE" }
             if let c = HTTPCookie(properties: props) { AppConfig.cookies.setCookie(c) }
         }
         var list = names.filter { $0 != name }
         list.insert(name, at: 0)
-        AppConfig.defaults.set(list, forKey: listKey)
+        AppConfig.defaults.set(list, forKey: hostKey)
         return true
     }
 
     static func forget(_ name: String) {
         let host = AppConfig.serverURL.host?.lowercased() ?? ""
         Keychain.set(nil, for: "profile.\(host).\(name)")
-        AppConfig.defaults.set(names.filter { $0 != name }, forKey: listKey)
+        AppConfig.defaults.set(names.filter { $0 != name }, forKey: hostKey)
     }
 }
 
@@ -99,16 +102,23 @@ final class AmbientClock: ObservableObject {
     private var timer: Task<Void, Never>?
     static var viewerOpen = 0  // a photo or slideshow is already on screen
 
+    private var observer: NSObjectProtocol?
+
+    deinit {
+        timer?.cancel()
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
     func start() {
-        NotificationCenter.default.addObserver(forName: UIFocusSystem.didUpdateNotification, object: nil, queue: .main) { [weak self] _ in
+        observer = NotificationCenter.default.addObserver(forName: UIFocusSystem.didUpdateNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.touch() }
         }
-        timer = Task {
-            while !Task.isCancelled {
+        timer = Task { [weak self] in
+            while !Task.isCancelled, let self {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 let minutes = TVPrefs.shared.ambientMinutes
-                if minutes > 0, !active, Self.viewerOpen == 0, Date().timeIntervalSince(last) > Double(minutes * 60) {
-                    active = true
+                if minutes > 0, !self.active, Self.viewerOpen == 0, Date().timeIntervalSince(self.last) > Double(minutes * 60) {
+                    self.active = true
                 }
             }
         }

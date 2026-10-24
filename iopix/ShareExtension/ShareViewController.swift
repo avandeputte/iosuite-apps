@@ -41,13 +41,11 @@ final class ShareModel: ObservableObject {
     func start() { work = Task { await run() } }
 
     private func run() async {
+        Self.sweep()  // folders a share left behind when the sheet was swiped away
         let providers = (context?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
-        var files: [URL] = []
-        for p in providers {
-            if let f = await Self.load(p) { files.append(f) }
-        }
-        defer { for f in files { try? FileManager.default.removeItem(at: f.deletingLastPathComponent()) } }
-        guard !files.isEmpty else { phase = .failed("Only photos and videos can be sent to iopix."); return }
+            .filter { p in [UTType.movie, UTType.image].contains { p.hasItemConformingToTypeIdentifier($0.identifier) } }
+        guard !providers.isEmpty else { phase = .failed("Only photos and videos can be sent to iopix."); return }
+        guard AppConfig.hasServer else { phase = .failed("Open the iopix app and connect it to your server first."); return }
 
         do {
             let account = try await IopixClient.shared.account()
@@ -64,13 +62,20 @@ final class ShareModel: ObservableObject {
             return
         }
 
+        // one at a time: a photo is fetched (from iCloud when needed), sent, and its copy removed before the next
         var added = 0, already = 0, notAdded: [String] = []
-        for (i, file) in files.enumerated() {
+        let total = providers.count
+        for (i, p) in providers.enumerated() {
             if Task.isCancelled { return }
-            phase = .sending(index: i, total: files.count, progress: 0)
+            phase = .sending(index: i, total: total, progress: 0)
+            guard let file = await Self.load(p) else {
+                notAdded.append("\(p.suggestedName ?? "One item"): couldn't be read (not downloaded from iCloud?)")
+                continue
+            }
+            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
             do {
-                let outcome = try await IopixClient.shared.upload(file: file, name: file.lastPathComponent) { p in
-                    Task { @MainActor in self.phase = .sending(index: i, total: files.count, progress: p) }
+                let outcome = try await IopixClient.shared.upload(file: file, name: file.lastPathComponent) { pr in
+                    Task { @MainActor in self.phase = .sending(index: i, total: total, progress: pr) }
                 }
                 switch outcome {
                 case .added: added += 1
@@ -95,6 +100,18 @@ final class ShareModel: ObservableObject {
 
     private static func count(_ n: Int) -> String { n == 1 ? "1 item" : "\(n) items" }
 
+    /// Leftovers of earlier shares (the sheet swiped away mid-send).
+    private static func sweep() {
+        let tmp = FileManager.default.temporaryDirectory
+        for d in (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? [] where d.hasPrefix("share-") {
+            let url = tmp.appendingPathComponent(d)
+            // only old ones: another share may be running right now
+            if let made = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate, Date().timeIntervalSince(made) > 3600 {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
     /// The shared photo or video as a file of its own.
     private static func load(_ p: NSItemProvider) async -> URL? {
         guard let type = [UTType.movie, UTType.image].first(where: { p.hasItemConformingToTypeIdentifier($0.identifier) }) else { return nil }
@@ -118,9 +135,17 @@ final class ShareModel: ObservableObject {
         }
     }
 
-    func close() { context?.completeRequest(returningItems: nil) }
+    private var closed = false
+
+    func close() {
+        guard !closed else { return }  // the timer and the Done button both call this
+        closed = true
+        context?.completeRequest(returningItems: nil)
+    }
 
     func cancel() {
+        guard !closed else { return }
+        closed = true
         work?.cancel()
         context?.cancelRequest(withError: CocoaError(.userCancelled))
     }

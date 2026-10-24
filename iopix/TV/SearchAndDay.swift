@@ -51,12 +51,14 @@ struct OnThisDayView: View {
         var by: [Int: [Int]] = [:]
         for i in list.ids.indices {
             let t = i < list.times.count ? list.times[i] : 0
-            by[Calendar.current.component(.year, from: Date(timeIntervalSince1970: t)), default: []].append(i)
+            let year = t > 0 ? Calendar.current.component(.year, from: Date(timeIntervalSince1970: t)) : 0  // 0: date unknown
+            by[year, default: []].append(i)
         }
         return by.keys.sorted(by: >).map { ($0, by[$0]!) }
     }
 
     private func caption(_ year: Int) -> String {
+        guard year > 0 else { return "Date unknown" }
         let ago = Calendar.current.component(.year, from: Date()) - year
         return ago <= 0 ? "This year" : ago == 1 ? "\(year) · a year ago" : "\(year) · \(ago) years ago"
     }

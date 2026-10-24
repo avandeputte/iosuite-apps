@@ -11,6 +11,10 @@ struct UploadItem: Codable, Identifiable, Equatable {
     enum State: String, Codable {
         case review    // found in the Photos library, waiting for a send-or-ignore decision
         case waiting, sending, done, duplicate, failed
+
+        init(from decoder: Decoder) throws {  // a state this version does not know: treat as waiting
+            self = State(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .waiting
+        }
     }
 
     var id = UUID()
@@ -60,8 +64,18 @@ final class UploadQueue: ObservableObject {
 
     init() {
         try? FileManager.default.createDirectory(at: filesFolder, withIntermediateDirectories: true)
-        if let data = try? Data(contentsOf: listFile), let saved = try? JSONDecoder().decode([UploadItem].self, from: data) {
-            items = saved.map { var i = $0; if i.state == .sending { i.state = .waiting }; i.progress = 0; return i }
+        if let data = try? Data(contentsOf: listFile) {
+            // item by item, so one entry a newer or older version wrote differently does not lose the whole list
+            if let saved = try? JSONDecoder().decode([Lossy<UploadItem>].self, from: data) {
+                items = saved.compactMap(\.value).map { var i = $0; if i.state == .sending { i.state = .waiting }; i.progress = 0; return i }
+            } else {
+                try? FileManager.default.moveItem(at: listFile, to: listFile.appendingPathExtension("bad"))
+            }
+        }
+        // copies left in the queue folder by a crash between copy and save
+        let keep = Set(items.compactMap { if case .file(let rel) = $0.source, !rel.isEmpty { return String(rel.split(separator: "/")[0]) } else { return nil } })
+        for dir in (try? FileManager.default.contentsOfDirectory(atPath: filesFolder.path)) ?? [] where !keep.contains(dir) {
+            try? FileManager.default.removeItem(at: filesFolder.appendingPathComponent(dir))
         }
     }
 
@@ -89,6 +103,7 @@ final class UploadQueue: ObservableObject {
                 items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file("\(id.uuidString)/\(url.lastPathComponent)"),
                                         state: review ? .review : .waiting))
             } catch {
+                try? FileManager.default.removeItem(at: dir)
                 items.append(UploadItem(id: id, name: url.lastPathComponent, source: .file(""), state: .failed, message: "Could not read the file"))
             }
         }
@@ -159,13 +174,21 @@ final class UploadQueue: ObservableObject {
 
     private func run() async {
         #if os(iOS)
-        let bg = UIApplication.shared.beginBackgroundTask(withName: "iopix uploads")
-        defer { UIApplication.shared.endBackgroundTask(bg) }
+        // iOS allows a short while in the background; when that runs out the upload in flight is stopped and the
+        // item stays waiting, so it starts again the next time the app is open (nothing is lost, just time)
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "iopix uploads") { [weak self] in
+            Task { @MainActor in self?.backgroundTimeRanOut() }
+        }
+        defer { endBackgroundTask() }
         #endif
         defer { running = false }
         blocked = nil
         if !canSend { await refreshAccount() }
-        guard canSend else { return }
+        guard canSend else {
+            // started offline (a Mac at login before Wi-Fi is up): look again in a minute
+            if offline, items.contains(where: { $0.state == .waiting }) { scheduleRetry(after: 60) }
+            return
+        }
         var sent = 0
         defer { if sent > 0 { NotificationCenter.default.post(name: .iopixUploadsDone, object: nil, userInfo: ["count": sent]) } }
 
@@ -176,9 +199,12 @@ final class UploadQueue: ObservableObject {
             do {
                 let (file, cleanup) = try await prepare(item)
                 defer { cleanup() }
-                let outcome = try await IopixClient.shared.upload(file: file, name: item.name) { p in
+                let task = Task { try await IopixClient.shared.upload(file: file, name: item.name) { p in
                     Task { @MainActor in self.update(id, save: false) { $0.progress = p } }
-                }
+                } }
+                upload = task
+                defer { upload = nil }
+                let outcome = try await task.value
                 update(id) {
                     switch outcome {
                     case .added: $0.state = .done; sent += 1
@@ -201,6 +227,12 @@ final class UploadQueue: ObservableObject {
                 update(id) { $0.attempts += 1; $0.state = .failed; $0.message = e.localizedDescription }
             } catch let e as PhotoLibrary.Gone {
                 update(id) { $0.state = .failed; $0.message = e.localizedDescription }
+            } catch is CancellationError {
+                update(id) { $0.state = .waiting; $0.message = "Continues when iopix is open" }
+                return
+            } catch let e where !(e is URLError) && (e as NSError).domain != NSURLErrorDomain && (e as NSError).domain != NSPOSIXErrorDomain {
+                // the file itself (unreadable copy, a photo iCloud will not give, no space): this item, not the connection
+                update(id) { $0.state = .failed; $0.message = Self.plain(e) }
             } catch {
                 // no connection, or the server is restarting: try again later, give up after a few rounds
                 let tries = (items.first { $0.id == id }?.attempts ?? 0) + 1
@@ -225,6 +257,36 @@ final class UploadQueue: ObservableObject {
             let url = try await PhotoLibrary.export(localID)
             return (url, { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) })
         }
+    }
+
+    /// The upload in flight, so a background time-out can stop it.
+    private var upload: Task<UploadOutcome, Error>?
+
+    #if os(iOS)
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
+
+    private func backgroundTimeRanOut() {
+        upload?.cancel()
+        endBackgroundTask()
+    }
+
+    private func endBackgroundTask() {
+        guard bgTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(bgTask)
+        bgTask = .invalid
+    }
+    #endif
+
+    private static func plain(_ e: Error) -> String {
+        let ns = e as NSError
+        if ns.domain == "PHPhotosErrorDomain" {
+            switch ns.code {
+            case 3164: return "Not enough free space to get this photo from iCloud"
+            case 3165: return "This photo is in iCloud and needs a connection to get"
+            default: break
+            }
+        }
+        return e.localizedDescription
     }
 
     private func scheduleRetry(after seconds: Double) {
@@ -259,7 +321,7 @@ final class UploadQueue: ObservableObject {
 
     /// Keeps the last 200 finished items for the list; older ones are dropped.
     private func trimHistory() {
-        let done = items.filter { $0.state == .done || $0.state == .duplicate }
+        let done = items.filter { $0.state == .done || $0.state == .duplicate || $0.state == .failed }
         if done.count > 200 {
             let drop = Set(done.prefix(done.count - 200).map(\.id))
             items.removeAll { drop.contains($0.id) }
@@ -275,4 +337,10 @@ final class UploadQueue: ObservableObject {
 extension Notification.Name {
     /// A run of uploads finished; userInfo["count"] is how many photos iopix added.
     static let iopixUploadsDone = Notification.Name("iopixUploadsDone")
+}
+
+/// Decodes to nil instead of failing the whole list.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) { value = try? T(from: decoder) }
 }

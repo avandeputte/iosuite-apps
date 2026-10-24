@@ -33,18 +33,26 @@ enum IopixError: LocalizedError, Equatable {
 /// Talks to iopix the way its web app does: the sign-in cookies (iopix's own session and, from outside,
 /// Cloudflare Access's), then the import endpoints, which put each file in the library's dated folders
 /// and skip anything already there. The server does every write; the apps only send files.
-final class IopixClient: NSObject {
+final class IopixClient: NSObject, URLSessionTaskDelegate {
     static let shared = IopixClient()
 
-    let session: URLSession
+    private(set) var session: URLSession!
 
     override init() {
+        super.init()
         let cfg = URLSessionConfiguration.default
         cfg.httpCookieStorage = AppConfig.cookies
         cfg.httpCookieAcceptPolicy = .always
         cfg.timeoutIntervalForRequest = 120
         cfg.timeoutIntervalForResource = 6 * 3600  // a long video over a slow connection
-        session = URLSession(configuration: cfg)
+        session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }
+
+    /// A redirect to another host (Cloudflare's sign-in page, a misconfigured proxy) is not followed, so the sign-in
+    /// cookies and the service token never reach anyone but the server; `check` then reports a needed sign-in.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(request.url?.host?.lowercased() == server.host?.lowercased() ? request : nil)
     }
 
     var server: URL { AppConfig.serverURL }
@@ -70,6 +78,8 @@ final class IopixClient: NSObject {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let detail = json?["detail"] as? String
         switch http.statusCode {
+        case 300..<400:  // a redirect that was not followed: another host wants a sign-in first
+            throw IopixError.needsSignIn
         case 200..<300:
             if let json { return json }
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
@@ -154,7 +164,7 @@ final class IopixClient: NSObject {
 
     func forgetCookies() {
         let host = server.host?.lowercased() ?? ""
-        for c in AppConfig.cookies.cookies ?? [] where host.hasSuffix(c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))) {
+        for c in AppConfig.cookies.cookies ?? [] where Self.cookie(c, matches: host) {
             AppConfig.cookies.deleteCookie(c)
         }
     }
@@ -172,8 +182,20 @@ final class IopixClient: NSObject {
         return (list, patterns)
     }
 
-    /// Learnt from the server once per launch (nil: not asked yet).
-    private(set) var patternSupport: Bool?
+    /// Whether this server takes folder patterns, learnt once per server address (nil: not asked yet).
+    private(set) var patternSupport: Bool? {
+        get { patternServer == server ? patternKnown : nil }
+        set { patternServer = server; patternKnown = newValue }
+    }
+    private var patternServer: URL?
+    private var patternKnown: Bool?
+
+    /// A cookie for this server: its domain is the host or a parent of it (never a mere suffix such as "example.net"
+    /// matching "notexample.net").
+    static func cookie(_ c: HTTPCookie, matches host: String) -> Bool {
+        let d = c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return host == d || host.hasSuffix("." + d)
+    }
 
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
     func upload(file: URL, name: String, to destination: Destination = .current, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
@@ -237,17 +259,29 @@ private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
 enum Multipart {
     static func write(file: URL, name: String, boundary: String) throws -> URL {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("upload-\(UUID().uuidString)")
+        // the body is a copy of the file: make sure the disk has room for it first (a full disk is a plain error,
+        // not a crash)
+        if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           let free = try? FileManager.default.temporaryDirectory.resourceValues(forKeys: [.volumeAvailableCapacityKey]).volumeAvailableCapacity,
+           size + 50_000_000 > free {
+            throw IopixError.notAllowed("Not enough free space on this device to send \(name).")
+        }
         FileManager.default.createFile(atPath: out.path, contents: nil)
         let sink = try FileHandle(forWritingTo: out)
         defer { try? sink.close() }
-        let safe = name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
-        sink.write(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(safe)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
-        let source = try FileHandle(forReadingFrom: file)
-        defer { try? source.close() }
-        while let chunk = try source.read(upToCount: 4 << 20), !chunk.isEmpty {
-            sink.write(chunk)
+        do {
+            let safe = name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
+            try sink.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(safe)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
+            let source = try FileHandle(forReadingFrom: file)
+            defer { try? source.close() }
+            while let chunk = try source.read(upToCount: 4 << 20), !chunk.isEmpty {
+                try sink.write(contentsOf: chunk)
+            }
+            try sink.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+        } catch {
+            try? FileManager.default.removeItem(at: out)
+            throw IopixError.notAllowed("Could not prepare \(name) for sending: \(error.localizedDescription)")
         }
-        sink.write(Data("\r\n--\(boundary)--\r\n".utf8))
         return out
     }
 }

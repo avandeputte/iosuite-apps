@@ -12,6 +12,7 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     private static func content() async -> TVTopShelfContent? {
         let client = IopixClient.shared
+        guard AppConfig.hasServer else { return nil }  // nothing to show until the app has been connected to a server
         guard let account = try? await client.account(), account.signedIn else { return nil }
         let c = Calendar.current.dateComponents([.month, .day], from: Date())
         var title = "On this day"
@@ -23,9 +24,15 @@ final class ContentProvider: TVTopShelfContentProvider {
             ids = ((try? await client.json("api/random", query: [URLQueryItem(name: "n", value: "16")]))?["id"] as? [Any] ?? [])
                 .compactMap { ($0 as? NSNumber)?.intValue }
         }
-        let folder = AppConfig.dataFolder.appendingPathComponent("TopShelf", isDirectory: true)
-        try? FileManager.default.removeItem(at: folder)
+        // each run gets its own folder; the previous run's pictures stay until this one is handed over
+        let all = AppConfig.dataFolder.appendingPathComponent("TopShelf", isDirectory: true)
+        let folder = all.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            for old in (try? FileManager.default.contentsOfDirectory(atPath: all.path)) ?? [] where old != folder.lastPathComponent {
+                try? FileManager.default.removeItem(at: all.appendingPathComponent(old))
+            }
+        }
         var items: [TVTopShelfSectionedItem] = []
         for id in ids.shuffled().prefix(16) {
             guard let (data, resp) = try? await client.session.data(for: client.request("preview/\(id)")),

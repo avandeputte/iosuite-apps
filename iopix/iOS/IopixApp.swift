@@ -117,7 +117,9 @@ struct RootView: View {
                 return true
             } isTargeted: { dropping = $0 }
             .overlay { if dropping { DropHint() } }
-            .sheet(isPresented: $showUploads, onDismiss: { server = AppConfig.serverURL }) {
+            .sheet(isPresented: $showUploads, onDismiss: {
+                if server != AppConfig.serverURL { web.failed = nil; server = AppConfig.serverURL }  // the address was changed in the sheet
+            }) {
                 UploadsView()
             }
     }
@@ -222,6 +224,7 @@ struct UploadsView: View {
                                 await IopixClient.shared.signOut()
                                 await CookieSync.clearWebView()
                                 await queue.refreshAccount()
+                                NotificationCenter.default.post(name: .iopixReload, object: nil)  // the page shows the sign-in again
                             }
                         }
                     }
@@ -239,6 +242,7 @@ struct UploadsView: View {
             }
             .onChange(of: picked) { _, items in load(items) }
             .task { await queue.refreshAccount() }
+            .onDisappear(perform: saveOnDismiss)
         }
     }
 
@@ -276,6 +280,9 @@ struct UploadsView: View {
         }
         serverText = url.absoluteString
     }
+
+    /// The sheet can be swiped away too: an edited address is kept then as well.
+    private func saveOnDismiss() { saveServer() }
 }
 
 struct ItemRow: View {
@@ -335,9 +342,15 @@ struct ServerSetupView: View {
         checking = true
         problem = nil
         Task {
+            var found = url
             problem = await IopixClient.shared.probe(url)
+            // "https" was a guess: a home server may only speak plain http (or the other way round)
+            if problem != nil, !text.contains("://"), var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                c.scheme = url.scheme == "https" ? "http" : "https"
+                if let other = c.url, await IopixClient.shared.probe(other) == nil { problem = nil; found = other }
+            }
             checking = false
-            if problem == nil { done(url) }
+            if problem == nil { done(found) }
         }
     }
 }

@@ -30,8 +30,8 @@ struct Destination: Codable, Equatable {
     var runFields: [String: Any] {
         switch kind {
         case .layout: return ["layout": layout]
-        case .pattern: return ["pattern": Self.clean(pattern)]
-        case .folder: return ["pattern": Self.clean(folder)]
+        case .pattern: return ["pattern": Self.clean(pattern).isEmpty ? "{yyyy}/{yyyy}{mm}" : Self.clean(pattern)]
+        case .folder: return ["pattern": Self.clean(folder).isEmpty ? "Upload" : Self.clean(folder)]
         }
     }
 

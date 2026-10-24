@@ -41,8 +41,10 @@ targets:
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSPhotoLibraryUsageDescription: iopix sends the photos and videos you choose, and new ones if you turn that on, to your iopix library.
         NSCameraUsageDescription: iopix can take a photo for your iopix library.
+        NSMicrophoneUsageDescription: iopix can record a video for your iopix library.
         NSLocalNetworkUsageDescription: iopix connects to your photo server on your home network.
-        NSAppTransportSecurity:
+        NSAppTransportSecurity:  # a self-hosted server may be plain http on the home network
+          NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoadsInWebContent: true
     settings:
@@ -71,6 +73,7 @@ targets:
         CFBundleDisplayName: iopix
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services

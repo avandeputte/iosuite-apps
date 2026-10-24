@@ -146,7 +146,7 @@ struct ForYouView: View {
 
     private func shuffle() async {
         guard let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "40")]) else { return }
-        random = PhotoList(ids: (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+        random = PhotoList(json: j)
     }
 }
 
@@ -235,13 +235,14 @@ struct PlacesView: View {
     /// Photos with a position, gathered into half-degree squares.
     private func loadSpots() async {
         guard spots.isEmpty, let j = try? await IopixClient.shared.json("api/map") else { return }
-        let ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
-        let lats = (j["lat"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
-        let lons = (j["lon"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+        // the three lists line up by position; an entry with a missing value is skipped as a whole
+        let ids = j["id"] as? [Any] ?? [], lats = j["lat"] as? [Any] ?? [], lons = j["lon"] as? [Any] ?? []
         var cells: [String: (lat: Double, lon: Double, n: Int, cover: Int)] = [:]
         for i in 0..<min(ids.count, lats.count, lons.count) {
-            let key = "\(Int((lats[i] * 2).rounded())),\(Int((lons[i] * 2).rounded()))"
-            if var c = cells[key] { c.n += 1; cells[key] = c } else { cells[key] = (lats[i], lons[i], 1, ids[i]) }
+            guard let id = (ids[i] as? NSNumber)?.intValue, let lat = (lats[i] as? NSNumber)?.doubleValue, let lon = (lons[i] as? NSNumber)?.doubleValue else { continue }
+            let cy = (lat * 2).rounded() / 2, cx = (lon * 2).rounded() / 2  // the half-degree square's centre
+            let key = "\(cy),\(cx)"
+            if var c = cells[key] { c.n += 1; cells[key] = c } else { cells[key] = (cy, cx, 1, id) }
         }
         spots = cells.values.map { Spot(lat: $0.lat, lon: $0.lon, count: $0.n, cover: $0.cover) }.sorted { $0.count > $1.count }
     }

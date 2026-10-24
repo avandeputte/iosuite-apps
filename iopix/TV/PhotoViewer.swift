@@ -171,9 +171,19 @@ struct PhotoViewer: View {
         flashInfo()
         prefetch()
         slideshow = Task {
+            var skipped = 0
             while !Task.isCancelled {
+                if start.list.isVideo(index) && !prefs.playVideos {
+                    // passed over; a list of nothing but videos ends the slideshow instead of spinning
+                    skipped += 1
+                    if skipped >= order.count { stopSlideshow(); return }
+                    await Task.yield()
+                    step(1, animated: false)
+                    continue
+                }
+                skipped = 0
                 if start.list.isVideo(index) {
-                    if prefs.playVideos { await playToEnd() } else { step(1, animated: false); continue }
+                    await playToEnd()
                 } else {
                     panZoom()
                     try? await Task.sleep(nanoseconds: UInt64(prefs.slideSeconds) * 1_000_000_000)
@@ -197,12 +207,8 @@ struct PhotoViewer: View {
 
     private func makePlayer() -> AVPlayer {
         let url = AppConfig.serverURL.appendingPathComponent("orig/\(current)")
-        let cookies = AppConfig.cookies.cookies(for: url) ?? []
-        var headers: [String: String] = [:]
-        if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
-            headers = ["CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret]
-        }
-        let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies, "AVURLAssetHTTPHeaderFieldsKey": headers])
+        let cookies = AppConfig.cookies.cookies(for: url) ?? []  // the sign-in; the TV reaches iopix at home, without Cloudflare
+        let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies])
         return AVPlayer(playerItem: AVPlayerItem(asset: asset))
     }
 
@@ -212,20 +218,34 @@ struct PhotoViewer: View {
         player.play()
     }
 
-    /// In a slideshow: the video plays to its end, then the slideshow goes on.
+    /// In a slideshow: the video plays to its end (or fails, or is dismissed, or takes far too long), then the
+    /// slideshow goes on.
     private func playToEnd() async {
         let player = makePlayer()
         video = player
         player.play()
-        for await _ in NotificationCenter.default.notifications(named: AVPlayerItem.didPlayToEndTimeNotification, object: player.currentItem) {
-            break
+        let item = player.currentItem
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in NotificationCenter.default.notifications(named: AVPlayerItem.didPlayToEndTimeNotification, object: item) { break } }
+            group.addTask { for await _ in NotificationCenter.default.notifications(named: AVPlayerItem.failedToPlayToEndTimeNotification, object: item) { break } }
+            group.addTask { @MainActor in
+                // dismissed with Menu, a loading failure, or a 10-minute ceiling
+                for _ in 0..<1200 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if self.video !== player || item?.status == .failed || Task.isCancelled { break }
+                }
+            }
+            await group.next()
+            group.cancelAll()
         }
-        video = nil
+        player.pause()
+        if video === player { video = nil }
     }
 
     // MARK: favorites
 
     private func toggleFavorite() {
+        guard !ids.isEmpty else { return }
         let id = current
         let on = !store.favoriteIDs.contains(id)
         withAnimation(.spring(duration: 0.35)) { heart = on }

@@ -7,6 +7,10 @@ import Network
 enum CookieSync {
     @MainActor
     static func pull(from store: WKHTTPCookieStore) async {
+        #if os(iOS)
+        // without an App Group the uploads use the store the web view already shares: copying would only loop
+        guard AppConfig.hasGroup else { return }
+        #endif
         let host = AppConfig.serverURL.host?.lowercased() ?? ""
         let web = await store.allCookies().filter { matches($0, host) }
         let names = Set(web.map { "\($0.domain)|\($0.name)" })
@@ -85,6 +89,11 @@ struct IopixWebView: PlatformViewRepresentable {
         web.uiDelegate = context.coordinator
         web.allowsBackForwardNavigationGestures = true
         #if os(iOS)
+        web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        #else
+        web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+        #endif
+        #if os(iOS)
         let refresh = UIRefreshControl()
         refresh.addTarget(context.coordinator, action: #selector(Coordinator.reload(_:)), for: .valueChanged)
         web.scrollView.refreshControl = refresh
@@ -117,7 +126,8 @@ struct IopixWebView: PlatformViewRepresentable {
         weak var web: WKWebView?
         private var pending: Task<Void, Never>?
         private var monitor: NWPathMonitor?
-        private var lastPath: (interfaces: [NWInterface.InterfaceType], gateways: [String])?
+        private var lastPath: (interfaces: Set<NWInterface.InterfaceType>, gateways: Set<String>)?
+        private var pendingReload: Task<Void, Never>?
 
         init(_ changed: @escaping () -> Void, status: WebStatus?) { self.changed = changed; self.status = status }
 
@@ -139,17 +149,23 @@ struct IopixWebView: PlatformViewRepresentable {
         }
 
         @MainActor private func pathChanged(_ path: NWPath) {
-            let now = (interfaces: path.availableInterfaces.map(\.type), gateways: path.gateways.map { "\($0)" })
+            // the route matters (which gateway, Wi-Fi or cellular in use), not every interface that comes and goes
+            let kinds: [NWInterface.InterfaceType] = [.wifi, .cellular, .wiredEthernet, .other]
+            let used = kinds.filter { path.usesInterfaceType($0) }
+            let now = (interfaces: Set(used), gateways: Set(path.gateways.map { "\($0)" }))
             defer { lastPath = now }
             guard path.status == .satisfied, let web else { return }
-            let moved = lastPath.map { $0.interfaces != now.interfaces || $0.gateways != now.gateways } ?? false
-            if status?.failed != nil || moved {
-                Task {
-                    try? await Task.sleep(nanoseconds: 1_200_000_000)  // let the new network settle
-                    guard self.status?.failed != nil || moved else { return }
-                    self.status?.failed = nil
-                    web.reload()
-                }
+            let moved = lastPath.map { $0 != now } ?? false
+            guard status?.failed != nil || moved else { return }
+            pendingReload?.cancel()
+            pendingReload = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)  // let the new network settle
+                guard !Task.isCancelled else { return }
+                #if os(iOS)
+                guard UIApplication.shared.applicationState == .active else { return }  // once the app is in front, it retries
+                #endif
+                self.status?.failed = nil
+                web.reload()
             }
         }
 
@@ -164,6 +180,10 @@ struct IopixWebView: PlatformViewRepresentable {
             status?.loading = false
             let e = error as NSError
             if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }  // a new load replaced this one
+            if e.domain == "WebKitErrorDomain" && e.code == 102 { return }  // "frame load interrupted": a download or a link handed to another app, not a failure
+            // a link to some other site that failed is not iopix failing; only iopix's own address counts
+            if let failing = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL, let host = failing.host?.lowercased(),
+               host != AppConfig.serverURL.host?.lowercased(), web?.url != nil { return }
             let why: String
             switch (e.domain, e.code) {
             case (NSURLErrorDomain, NSURLErrorNotConnectedToInternet): why = "You're offline."

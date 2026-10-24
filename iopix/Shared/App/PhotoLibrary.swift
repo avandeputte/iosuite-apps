@@ -52,6 +52,7 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
     private var known: Set<String> = []
     private var registered = false
     private var pending: Task<Void, Never>?
+    private var fetched: PHFetchResult<PHAsset>?  // the library as last seen, so a change is read as a difference
     private let knownFile = AppConfig.dataFolder.appendingPathComponent("seen-photos.json")
 
     override init() {
@@ -102,8 +103,13 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
     }
 
     private func start() {
-        if known.isEmpty, let data = try? Data(contentsOf: knownFile), let ids = try? JSONDecoder().decode([String].self, from: data) {
-            known = Set(ids)
+        if known.isEmpty, FileManager.default.fileExists(atPath: knownFile.path) {
+            if let data = try? Data(contentsOf: knownFile), let ids = try? JSONDecoder().decode([String].self, from: data) {
+                known = Set(ids)
+            } else if authorized {  // an unreadable list would make every photo look new: start over from today
+                known = Set(allAssets().map(\.localIdentifier))
+                saveKnown()
+            }
         }
         if !registered && authorized {
             PHPhotoLibrary.shared().register(self)
@@ -113,7 +119,14 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
     }
 
     nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
-        Task { @MainActor in self.schedule(after: 3) }  // an import arrives as many changes in a row
+        Task { @MainActor in
+            // only a change that adds something is worth a look (a favourite toggled is not)
+            if let f = self.fetched, let d = changeInstance.changeDetails(for: f) {
+                self.fetched = d.fetchResultAfterChanges
+                guard d.hasIncrementalChanges == false || !d.insertedObjects.isEmpty else { return }
+            }
+            self.schedule(after: 3)  // an import arrives as many changes in a row
+        }
     }
 
     private func schedule(after seconds: Double) {
@@ -126,19 +139,26 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
 
     func checkNow() {
         guard enabled, authorized else { return }
-        let fresh = allAssets().filter { !known.contains($0.localIdentifier) }
+        let all = allAssets()
+        let fresh = all.filter { !known.contains($0.localIdentifier) }
         lastCheck = Date()
-        guard !fresh.isEmpty else { return }
+        // photos deleted from the library leave the seen list, so it does not grow forever
+        let present = Set(all.map(\.localIdentifier))
+        let pruned = known.count - known.filter { present.contains($0) }.count
+        if pruned > 0 { known = known.filter { present.contains($0) } }
+        guard !fresh.isEmpty || pruned > 0 else { return }
         for a in fresh { known.insert(a.localIdentifier) }
         saveKnown()
-        UploadQueue.shared.add(assets: fresh.map { (id: $0.localIdentifier, name: PhotoLibrary.name(of: $0)) })
+        if !fresh.isEmpty { UploadQueue.shared.add(assets: fresh.map { (id: $0.localIdentifier, name: PhotoLibrary.name(of: $0)) }) }
     }
 
+    /// Every photo and video (ids only; the library is not walked for anything else).
     private func allAssets() -> [PHAsset] {
         let opts = PHFetchOptions()
         opts.predicate = NSPredicate(format: "mediaType == %d OR mediaType == %d", PHAssetMediaType.image.rawValue, PHAssetMediaType.video.rawValue)
         opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         let result = PHAsset.fetchAssets(with: opts)
+        fetched = result
         var out: [PHAsset] = []
         out.reserveCapacity(result.count)
         result.enumerateObjects { a, _, _ in out.append(a) }

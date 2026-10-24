@@ -47,9 +47,9 @@ struct TVLibrary: View {
                 break
             }
             if list.ids.count < 5, let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "60")]) {
-                list = PhotoList(ids: (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+                list = PhotoList(json: j)
             }
-            guard !list.ids.isEmpty else { clock.active = false; return }
+            guard !list.ids.isEmpty, AmbientClock.viewerOpen == 0, ambient == nil else { clock.active = false; return }  // a photo is already up
             ambient = ViewerStart(list: list, index: 0, playing: true, ambient: true)
         }
     }
@@ -105,6 +105,8 @@ struct FolderView: View {
             }
             if let parent {
                 PhotoGrid(query: [URLQueryItem(name: "album", value: String(parent))], showsTitle: !subs.isEmpty)
+            } else if let root = store.loneRoot, root.count > 0 {  // photos filed in the root folder itself
+                PhotoGrid(query: [URLQueryItem(name: "album", value: String(root.id))], showsTitle: true)
             }
         }
         .navigationTitle(title)
@@ -218,7 +220,7 @@ struct RediscoverView: View {
 
     private func shuffle() async {
         guard let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "60")]) else { return }
-        list = PhotoList(ids: (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+        list = PhotoList(json: j)
     }
 }
 

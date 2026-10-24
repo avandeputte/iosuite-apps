@@ -25,6 +25,7 @@ struct TVRoot: View {
             TVSignIn(changeServer: { step = .server }) { step = .library }
         case .library:
             TVLibrary(signedOut: { step = .signIn }, switchProfile: { step = .signIn })
+                .preferredColorScheme(.dark)  // the pages sit on a dark photo whatever the TV's appearance setting
         }
     }
 
@@ -128,7 +129,11 @@ struct TVSignIn: View {
             accounts = try await IopixClient.shared.accounts()
             // the people who have used this TV first, the last one first: they need no password
             let known = Profiles.names
-            accounts.sort { (known.firstIndex(of: $0.name) ?? Int.max) < (known.firstIndex(of: $1.name) ?? Int.max) }
+            let order = accounts.enumerated().map { ($0.offset, $0.element) }
+            accounts = order.sorted { a, b in  // known ones first, the rest in the server's order (a stable sort)
+                let ka = known.firstIndex(of: a.1.name) ?? Int.max, kb = known.firstIndex(of: b.1.name) ?? Int.max
+                return ka != kb ? ka < kb : a.0 < b.0
+            }.map(\.1)
             try? await Task.sleep(nanoseconds: 100_000_000)
             focus = accounts.first?.name
             if accounts.isEmpty { problem = "This iopix has no accounts to sign in with." }
