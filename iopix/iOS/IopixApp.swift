@@ -14,6 +14,14 @@ struct IopixApp: App {
                 .environmentObject(queue)
                 .environmentObject(watcher)
         }
+        .commands {  // iPad with a keyboard (and the Mac's menu when run there)
+            CommandGroup(after: .newItem) {
+                Button("Send Photos…") { NotificationCenter.default.post(name: .iopixCommand, object: "send") }
+                    .keyboardShortcut("u", modifiers: [.command, .shift])
+                Button("Reload") { NotificationCenter.default.post(name: .iopixCommand, object: "reload") }
+                    .keyboardShortcut("r", modifiers: .command)
+            }
+        }
         .onChange(of: phase) { _, now in
             guard now == .active else { return }
             NotificationCenter.default.post(name: .iopixBecameActive, object: nil)
@@ -29,6 +37,7 @@ struct RootView: View {
     @State private var server = AppConfig.serverURL
 
     @State private var needsServer = !AppConfig.hasServer
+    @State private var dropping = false
     @StateObject private var web = WebStatus()
 
     var body: some View {
@@ -88,6 +97,27 @@ struct RootView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in if web.failed != nil { web.retry() } }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixCommand)) { note in
+                switch note.object as? String {
+                case "send": showUploads = true
+                case "reload": web.retry()
+                default: break
+                }
+            }
+            // photos dragged in from Photos or Files (iPad side by side) go to the queue
+            .dropDestination(for: PickedFile.self) { files, _ in
+                queue.add(files: files.map(\.url), move: true)
+                return true
+            } isTargeted: { dropping = $0 }
+            .overlay {
+                if dropping {
+                    RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                        .background(Color.accentColor.opacity(0.08))
+                        .overlay(Text("Drop to send to iopix").font(.title2.weight(.semibold)))
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
             .sheet(isPresented: $showUploads, onDismiss: { server = AppConfig.serverURL }) {
                 UploadsView()
             }
@@ -314,4 +344,5 @@ struct ServerSetupView: View {
 
 extension Notification.Name {
     static let iopixBecameActive = Notification.Name("iopixBecameActive")
+    static let iopixCommand = Notification.Name("iopixCommand")  // object: "send" | "reload"
 }
