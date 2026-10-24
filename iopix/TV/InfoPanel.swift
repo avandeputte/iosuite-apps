@@ -18,7 +18,7 @@ struct PhotoInfo {
         func str(_ k: String) -> String? { (d[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         func num(_ k: String) -> Double? { (d[k] as? NSNumber)?.doubleValue }
         var i = PhotoInfo()
-        i.title = str("title") ?? str("caption") ?? str("caption_ai")
+        i.title = str("title") ?? str("caption")  // never the AI-written description: only what a person wrote
         if let taken = str("taken") {
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             if let date = f.date(from: taken) {
