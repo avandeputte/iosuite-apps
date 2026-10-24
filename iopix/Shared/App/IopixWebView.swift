@@ -84,7 +84,15 @@ struct IopixWebView: PlatformViewRepresentable {
         #if os(iOS)
         cfg.allowsInlineMediaPlayback = true
         #endif
+        #if os(macOS)
+        // right-clicking a photo: the page says which one, and the native menu gets Add to / Remove from Favorites
+        cfg.userContentController.addUserScript(WKUserScript(source: PhotoMenu.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        cfg.userContentController.add(PhotoMenu.Relay(context.coordinator), name: PhotoMenu.handler)
+        let web = PhotoMenuWebView(frame: .zero, configuration: cfg)
+        web.photoMenu = context.coordinator.photoMenu
+        #else
         let web = WKWebView(frame: .zero, configuration: cfg)
+        #endif
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
         web.allowsBackForwardNavigationGestures = true
@@ -130,6 +138,10 @@ struct IopixWebView: PlatformViewRepresentable {
         private var pendingReload: Task<Void, Never>?
 
         init(_ changed: @escaping () -> Void, status: WebStatus?) { self.changed = changed; self.status = status }
+
+        #if os(macOS)
+        let photoMenu = PhotoMenu()
+        #endif
 
         deinit {
             monitor?.cancel()
@@ -281,6 +293,121 @@ extension IopixWebView.Coordinator: WKDownloadDelegate {
 
     func downloadDidFinish(_ download: WKDownload) {
         if let url = download.progress.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+}
+#endif
+
+#if os(macOS)
+/// Favorites from the right-click menu. The page reports which photo the pointer is on (from its picture's
+/// address: thumb/, preview/ or orig/ followed by the photo's number) just before WebKit opens its menu, and
+/// the menu gets Add to Favorites or Remove from Favorites for it. The server does the change, as the page would.
+@MainActor
+final class PhotoMenu: NSObject {
+    static let handler = "iopixPhotoMenu"
+    static let script = """
+    document.addEventListener('contextmenu', function (e) {
+      // the picture itself, or the grid tile or viewer frame it sits in (never a whole page that has pictures)
+      var t = e.target, box = t.closest ? t.closest('.tile, .lb-frame') : null;
+      var img = t.tagName === 'IMG' ? t : (box ? box.querySelector('img') : null);
+      var src = img ? (img.currentSrc || img.src || '') : '';
+      var m = src.match(/\\/(?:thumb|preview|orig)\\/(\\d+)/);
+      try { window.webkit.messageHandlers.\(handler).postMessage(m ? Number(m[1]) : 0); } catch (_) {}
+    }, true);
+    """
+
+    private var photo: Int?
+    private var at = Date.distantPast
+    private var favorites: Set<Int> = []
+    private var known = false  // favorites read from the server at least once
+
+    /// The page's message: the photo under the pointer (0: none).
+    func pointed(at id: Int) {
+        photo = id > 0 ? id : nil
+        at = Date()
+        Task { await refresh() }  // for the next menu: a change made in the page meanwhile is picked up
+    }
+
+    func refresh() async {
+        guard let st = try? await IopixClient.shared.json("api/state") else { return }
+        favorites = Set((st["favorites"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+        known = true
+    }
+
+    /// Adds the item to WebKit's menu when the right-click was on a photo.
+    func extend(_ menu: NSMenu) {
+        let item: NSMenuItem
+        if let id = photo, Date().timeIntervalSince(at) < 2 {
+            let on = !favorites.contains(id)
+            item = NSMenuItem(title: on ? "Add to Favorites" : "Remove from Favorites", action: #selector(toggle(_:)), keyEquivalent: "")
+            item.image = NSImage(systemSymbolName: on ? "heart" : "heart.slash", accessibilityDescription: nil)
+            item.representedObject = [id, on ? 1 : 0]
+        } else if menu.items.contains(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenImageInNewWindow" }) {
+            // a picture, but the page's note has not come yet: which one is settled when the item is picked
+            item = NSMenuItem(title: "Favorite / Unfavorite", action: #selector(toggle(_:)), keyEquivalent: "")
+            item.image = NSImage(systemSymbolName: "heart", accessibilityDescription: nil)
+        } else {
+            return
+        }
+        item.target = self
+        if !known { Task { await refresh() } }
+        menu.insertItem(item, at: 0)
+        menu.insertItem(.separator(), at: 1)
+    }
+
+    @objc private func toggle(_ sender: NSMenuItem) {
+        let id: Int, on: Bool
+        if let v = sender.representedObject as? [Int], v.count == 2 {
+            id = v[0]; on = v[1] == 1
+        } else if let p = photo, Date().timeIntervalSince(at) < 30 {
+            id = p; on = !favorites.contains(p)
+        } else {
+            return
+        }
+        photo = nil
+        Task {
+            var r = IopixClient.shared.request("api/favorites", method: "POST")
+            r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            r.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": [id], "on": on])
+            do {
+                let (data, resp) = try await IopixClient.shared.session.data(for: r)
+                _ = try IopixClient.shared.check(data, resp)
+                if on { favorites.insert(id) } else { favorites.remove(id) }
+                web?.evaluateJavaScript(Self.toast(on ? "Added to favorites." : "Removed from favorites."), completionHandler: nil)
+            } catch {
+                NSSound.beep()
+                web?.evaluateJavaScript(Self.toast("Could not save the favorite."), completionHandler: nil)
+            }
+        }
+    }
+
+    weak var web: WKWebView?
+
+    /// A short note at the bottom of the page, like the page's own.
+    private static func toast(_ text: String) -> String {
+        """
+        (function () { var d = document.createElement('div'); d.textContent = \(String(reflecting: text));
+          d.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:rgba(30,30,30,.92);color:#fff;padding:10px 18px;border-radius:20px;font:14px -apple-system,system-ui;z-index:99999;transition:opacity .4s';
+          document.body.appendChild(d); setTimeout(function () { d.style.opacity = '0'; setTimeout(function () { d.remove(); }, 450); }, 1800); })();
+        """
+    }
+
+    /// Kept apart from the coordinator: the page's message handler would otherwise keep it alive for good.
+    final class Relay: NSObject, WKScriptMessageHandler {
+        weak var coordinator: IopixWebView.Coordinator?
+        init(_ c: IopixWebView.Coordinator) { coordinator = c }
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            let id = (message.body as? NSNumber)?.intValue ?? 0
+            MainActor.assumeIsolated { coordinator?.photoMenu.pointed(at: id) }
+        }
+    }
+}
+
+final class PhotoMenuWebView: WKWebView {
+    weak var photoMenu: PhotoMenu? { didSet { photoMenu?.web = self } }
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        MainActor.assumeIsolated { photoMenu?.extend(menu) }
     }
 }
 #endif
