@@ -103,6 +103,11 @@ only runs on your own Mac.
   background). The share sheet sends while it is open; it says so.
 - An ignored photo does not come back. Turning watching off and on again later lists what was added in between.
   *Also list the last 7 days* lists the recent photos again (iopix skips the ones it already has).
+- The apps only ever talk to the server address you gave them: a redirect to another site (a sign-in page in
+  front of the server, for example) is not followed, and the app asks you to sign in instead.
+- If an upload is cut short (iPhone put away, the Mac went to sleep) the photo stays in the queue and is sent
+  the next time the app is open. A photo the server refuses is marked failed and kept in the list.
+- A server on the home network may be plain `http://`; the apps try that when `https://` does not answer.
 
 ## Layout
 
