@@ -152,6 +152,7 @@ struct ShareView: View {
             }
             .padding()
             .navigationTitle("iopix")
+            .toolbar { ToolbarItem(placement: .principal) { Brand.name(onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

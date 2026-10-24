@@ -51,7 +51,7 @@ struct TVServerSetup: View {
     var body: some View {
         VStack(spacing: 40) {
             Image("Mark").resizable().frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 40))
-            Text("Connect to your iopix").font(.title2.bold())
+            Brand.text("Connect to your ").font(.title2.bold())
             Text("Enter the address of your iopix server, as you use it at home.").foregroundStyle(.secondary)
             TextField("photos.example.com", text: $text)
                 .keyboardType(.URL)
@@ -89,7 +89,7 @@ struct TVSignIn: View {
 
     var body: some View {
         VStack(spacing: 40) {
-            Text("Who's watching?").font(.title2.bold())
+            VStack(spacing: 10) { Brand.name().font(.system(size: 76, weight: .bold)); Text("Who's watching?").font(.title2.bold()) }
             if accounts.isEmpty && problem == nil { ProgressView() }
             HStack(spacing: 40) {
                 ForEach(accounts, id: \.name) { a in

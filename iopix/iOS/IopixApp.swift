@@ -184,6 +184,7 @@ struct UploadsView: View {
                 }
             }
             .navigationTitle("Send to iopix")
+            .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { saveServer(); dismiss() } }
@@ -255,7 +256,7 @@ struct ServerSetupView: View {
         VStack(spacing: 20) {
             Spacer()
             Image("Mark").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
-            Text("Connect to your iopix").font(.title2.bold())
+            Brand.text("Connect to your ", onLight: true).font(.title2.bold())
             Text("Enter the address you use for iopix in the browser.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
             TextField("photos.example.com", text: $text)
