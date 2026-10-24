@@ -111,9 +111,16 @@ enum PhotoSource {
         guard let (data, resp) = try? await client.session.data(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
         var name = "\(id).jpg"
-        if original, let cd = http.value(forHTTPHeaderField: "Content-Disposition"),
-           let r = cd.range(of: "filename=\"") {
-            name = String(cd[r.upperBound...].prefix { $0 != "\"" })
+        if original, let cd = http.value(forHTTPHeaderField: "Content-Disposition") {
+            // filename*=UTF-8''… (any name) first, then filename="…"; only the last path part is used
+            if let r = cd.range(of: "filename*=UTF-8''") {
+                name = String(cd[r.upperBound...].prefix { $0 != ";" }).removingPercentEncoding ?? name
+            } else if let r = cd.range(of: "filename=\"") {
+                name = String(cd[r.upperBound...].prefix { $0 != "\"" })
+            }
+            name = (name as NSString).lastPathComponent
+            if name.isEmpty || name == "." || name == ".." { name = "\(id).jpg" }
+            name = "\(id)-\(name)"  // two photos may share a file name
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent(name)
@@ -183,10 +190,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func start() {
         let center = UNUserNotificationCenter.current()
-        center.delegate = self
+        center.delegate = self  // also set at launch, before this runs (AppDelegate), for a click that starts the app
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         lastReview = UploadQueue.shared.reviewing.count
-        UploadQueue.shared.$items.sink { [weak self] _ in self?.reviewChanged() }.store(in: &bag)
+        // $items fires before the change lands; a hop to the next run-loop turn sees the new list
+        UploadQueue.shared.$items.receive(on: RunLoop.main).sink { [weak self] _ in self?.reviewChanged() }.store(in: &bag)
         NotificationCenter.default.publisher(for: .iopixUploadsDone).sink { note in
             guard MacPrefs.shared.notifyUploads, let n = note.userInfo?["count"] as? Int, n > 0 else { return }
             Self.post("uploads", title: "Sent to iopix", body: n == 1 ? "1 photo was added to iopix." : "\(n) photos were added to iopix.", open: "main")
@@ -217,7 +225,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// Once a day, after 9 in the morning, when something was taken on this date in earlier years.
     private func onThisDay() async {
         guard MacPrefs.shared.notifyOnThisDay else { return }
-        let today = Date().formatted(.iso8601.year().month().day())
+        let c0 = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let today = String(format: "%04d-%02d-%02d", c0.year ?? 0, c0.month ?? 0, c0.day ?? 0)  // the local date, not UTC's
         guard UserDefaults.standard.string(forKey: "mac.otdNotified") != today,
               Calendar.current.component(.hour, from: Date()) >= 9 else { return }
         let c = Calendar.current.dateComponents([.month, .day], from: Date())

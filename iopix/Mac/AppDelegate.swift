@@ -2,9 +2,14 @@ import SwiftUI
 import AppKit
 import AppIntents
 import CoreSpotlight
+import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let services = ServiceProvider()
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = Notifier.shared  // before launch ends: a clicked banner can start the app
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = services
@@ -64,18 +69,22 @@ struct SendToIopix: AppIntent {
     @Parameter(title: "Photos and videos")
     var files: [IntentFile]
 
-    @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shortcut-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        var urls: [URL] = []
-        for (i, f) in files.enumerated() {
-            let name = f.filename.isEmpty ? "photo-\(i).jpg" : f.filename
-            let dst = dir.appendingPathComponent(name)
-            try f.data.write(to: dst)
-            urls.append(dst)
-        }
-        UploadQueue.shared.add(files: urls, move: true)
+        let files = self.files
+        // files on disk are copied by name (a 3 GB video is never read into memory); only in-memory items are written out
+        let urls: [URL] = try await Task.detached(priority: .userInitiated) {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shortcut-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var urls: [URL] = []
+            for (i, f) in files.enumerated() {
+                let name = f.filename.isEmpty ? "photo-\(i).jpg" : f.filename
+                let dst = dir.appendingPathComponent(name)
+                if let src = f.fileURL { try FileManager.default.copyItem(at: src, to: dst) } else { try f.data.write(to: dst) }
+                urls.append(dst)
+            }
+            return urls
+        }.value
+        await UploadQueue.shared.add(files: urls, move: true)
         return .result(dialog: urls.count == 1 ? "Sending 1 item to iopix." : "Sending \(urls.count) items to iopix.")
     }
 }

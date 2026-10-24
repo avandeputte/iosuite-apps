@@ -31,9 +31,12 @@ final class DesktopExtras: ObservableObject {
                 let account = try? await IopixClient.shared.account()
                 log.notice("extras round \(round, privacy: .public): signed in \(account?.signedIn == true, privacy: .public)")
                 if account?.signedIn == true {
-                    if round % max(MacPrefs.shared.wallpaperHours * 6, 1) == 0 { await changeWallpaper() }
-                    if round % 3 == 0 { await refreshWidget() }       // every 30 minutes (a newly picked album shows soon)
-                    if round % 36 == 0 { await refreshScreenSaver(); await syncOffline(); await indexSpotlight() }  // every 6 hours
+                    // each job remembers when it last ran, so a relaunch does not redo everything at once
+                    if due("wallpaper", hours: Double(MacPrefs.shared.wallpaperHours)) { await changeWallpaper(); ran("wallpaper") }
+                    if due("widget", hours: 0.5) { await refreshWidget(); ran("widget") }
+                    if due("screensaver", hours: 6) { await refreshScreenSaver(); ran("screensaver") }
+                    if due("offline", hours: 6) { await syncOffline(); ran("offline") }
+                    if due("spotlight", hours: 24) { await indexSpotlight(); ran("spotlight") }
                 }
                 guard account?.signedIn == true else {  // not signed in yet (or iopix out of reach): try again soon
                     try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
@@ -45,16 +48,26 @@ final class DesktopExtras: ObservableObject {
         }
     }
 
+    private func due(_ job: String, hours: Double) -> Bool {
+        let last = UserDefaults.standard.double(forKey: "mac.ran.\(job)")
+        return Date().timeIntervalSince1970 - last >= hours * 3600 - 60
+    }
+
+    private func ran(_ job: String) { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "mac.ran.\(job)") }
+
     // MARK: desktop picture
 
+    /// The new picture is fetched first and the old one removed only once the desktop shows the new one.
     func changeWallpaper() async {
         let p = MacPrefs.shared
         guard p.wallpaper != .off, let id = await PhotoSource.ids(p.wallpaper, person: p.wallpaperPerson, max: 20).first else { return }
-        try? FileManager.default.removeItem(at: wallpaperFolder)
         guard let file = await PhotoSource.download(id, to: wallpaperFolder) else { return }
         for screen in NSScreen.screens {
             try? NSWorkspace.shared.setDesktopImageURL(file, for: screen, options: [
                 .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true])
+        }
+        for old in (try? FileManager.default.contentsOfDirectory(at: wallpaperFolder, includingPropertiesForKeys: nil)) ?? [] where old.lastPathComponent != file.lastPathComponent {
+            try? FileManager.default.removeItem(at: old)
         }
     }
 
@@ -67,13 +80,18 @@ final class DesktopExtras: ObservableObject {
         let ids = await PhotoSource.ids(p.screenSaver, person: p.screenSaverPerson, max: 100)
         guard !ids.isEmpty else { return }
         let folder = Self.screenSaverFolder
+        // only files this app put there are ever removed (listed in a hidden manifest); a photo of the user's own stays
+        let manifestURL = folder.appendingPathComponent(".iopix-screensaver.json")
+        var mine = Set((try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifestURL))) ?? [])
         let keep = Set(ids.map { "\($0).jpg" })
-        for old in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where !keep.contains(old) && old.hasSuffix(".jpg") {
+        for old in mine where !keep.contains(old) {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
+            mine.remove(old)
         }
         for id in ids where !FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(id).jpg").path) {
-            _ = await PhotoSource.download(id, to: folder)
+            if let f = await PhotoSource.download(id, to: folder) { mine.insert(f.lastPathComponent) }
         }
+        if let data = try? JSONEncoder().encode(Array(mine)) { try? data.write(to: manifestURL, options: .atomic) }
     }
 
     // MARK: widget
@@ -90,16 +108,15 @@ final class DesktopExtras: ObservableObject {
                 guard let id = (a["id"] as? NSNumber)?.intValue, let name = a["name"] as? String else { return nil }
                 return ["id": id, "name": name]
             }
-            if let data = try? JSONSerialization.data(withJSONObject: albums) { try? data.write(to: folder.appendingPathComponent("albums.json")) }
+            if let data = try? JSONSerialization.data(withJSONObject: albums) { try? data.write(to: folder.appendingPathComponent("albums.json"), options: .atomic) }
         }
-        var keys: Set<String> = ["random"]
         let infos: [WidgetInfo] = await withCheckedContinuation { c in
             WidgetCenter.shared.getCurrentConfigurations { c.resume(returning: (try? $0.get()) ?? []) }
         }
-        do {
-            for info in infos {
-                keys.insert(info.widgetConfigurationIntent(of: SelectPhotos.self)?.source?.id ?? "random")
-            }
+        guard !infos.isEmpty else { log.notice("widget: none placed"); return }  // nothing to prepare for
+        var keys: Set<String> = []
+        for info in infos {
+            keys.insert(info.widgetConfigurationIntent(of: SelectPhotos.self)?.source?.id ?? "random")
         }
         for key in keys { await prepareWidget(key, in: folder) }
         log.notice("widget: prepared \(keys.sorted().joined(separator: ","), privacy: .public)")
@@ -138,13 +155,15 @@ final class DesktopExtras: ObservableObject {
             entries.append(["id": id, "file": file.lastPathComponent, "year": year])
         }
         guard !entries.isEmpty, let json = try? JSONSerialization.data(withJSONObject: entries) else { return }
-        try? json.write(to: tmp.appendingPathComponent("photos.json"))
-        // the previous set stays one round longer, for a widget still drawing from it
+        try? json.write(to: tmp.appendingPathComponent("photos.json"), options: .atomic)
+        // swapped in one step, so a widget asking in between never finds the folder missing
         let dst = folder.appendingPathComponent(key, isDirectory: true)
-        let prev = folder.appendingPathComponent(key + "-prev", isDirectory: true)
-        try? FileManager.default.removeItem(at: prev)
-        try? FileManager.default.moveItem(at: dst, to: prev)
-        try? FileManager.default.moveItem(at: tmp, to: dst)
+        if FileManager.default.fileExists(atPath: dst.path) {
+            _ = try? FileManager.default.replaceItemAt(dst, withItemAt: tmp, backupItemName: nil, options: [])
+        } else {
+            try? FileManager.default.moveItem(at: tmp, to: dst)
+        }
+        try? FileManager.default.removeItem(at: tmp)
     }
 
     /// A smaller JPEG (widgets are a few hundred points wide).

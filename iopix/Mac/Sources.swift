@@ -17,6 +17,7 @@ final class FolderWatcher: ObservableObject {
     static let shared = FolderWatcher()
     @Published private(set) var folders: [String] = UserDefaults.standard.stringArray(forKey: "mac.watchFolders") ?? []
     private var seen: Set<String> = []
+    private var sizes: [String: Int] = [:]  // files seen once but not yet settled: their size at the last scan
     private let seenFile = AppConfig.dataFolder.appendingPathComponent("seen-files.json")
     private var timer: Task<Void, Never>?
 
@@ -24,7 +25,7 @@ final class FolderWatcher: ObservableObject {
         if let data = try? Data(contentsOf: seenFile), let list = try? JSONDecoder().decode([String].self, from: data) { seen = Set(list) }
         timer = Task {
             while !Task.isCancelled {
-                scan()
+                await scan()
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
             }
         }
@@ -33,36 +34,55 @@ final class FolderWatcher: ObservableObject {
     func add(_ url: URL) {
         let path = url.standardizedFileURL.path
         guard !folders.contains(path) else { return }
-        for f in files(in: path) { seen.insert(f.path) }
         folders.append(path)
-        save()
+        Task {
+            for f in await Self.files(in: path) { seen.insert(f.url.path) }
+            save()
+        }
     }
 
     func remove(_ path: String) {
         folders.removeAll { $0 == path }
+        seen = seen.filter { !$0.hasPrefix(path + "/") }
         save()
     }
 
-    private func scan() {
+    /// The folders are read off the main thread (a sleeping NAS must not freeze the menu bar); a file counts as new
+    /// once its size has stopped changing between two scans, so a copy still under way is left alone.
+    private func scan() async {
+        let folders = self.folders
+        let found = await Task.detached(priority: .utility) { () -> [(url: URL, size: Int)] in
+            var out: [(URL, Int)] = []
+            for folder in folders { out += await Self.files(in: folder) }
+            return out
+        }.value
         var fresh: [URL] = []
-        for folder in folders {
-            for f in files(in: folder) where !seen.contains(f.path) {
-                // still being copied in? wait for the next round
-                if let m = try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, Date().timeIntervalSince(m) < 5 { continue }
-                seen.insert(f.path)
-                fresh.append(f)
+        var nextSizes: [String: Int] = [:]
+        for f in found where !seen.contains(f.url.path) {
+            if let last = sizes[f.url.path], last == f.size {
+                seen.insert(f.url.path)
+                fresh.append(f.url)
+            } else {
+                nextSizes[f.url.path] = f.size
             }
         }
-        guard !fresh.isEmpty else { return }
-        UploadQueue.shared.add(files: fresh, review: true)
+        sizes = nextSizes
+        // files that went away (deleted or renamed) leave the seen list, so it does not grow forever
+        let present = Set(found.map(\.url.path))
+        let before = seen.count
+        seen = seen.filter { present.contains($0) }
+        guard !fresh.isEmpty || seen.count != before else { return }
+        if !fresh.isEmpty { UploadQueue.shared.add(files: fresh, review: true) }
         save()
     }
 
-    private func files(in folder: String) -> [URL] {
-        let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: [.contentModificationDateKey],
+    nonisolated private static func files(in folder: String) async -> [(url: URL, size: Int)] {
+        let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: [.fileSizeKey],
                                                     options: [.skipsHiddenFiles, .skipsPackageDescendants])
-        var out: [URL] = []
-        while let f = walker?.nextObject() as? URL, out.count < 50_000 { if isMedia(f) { out.append(f) } }
+        var out: [(URL, Int)] = []
+        while let f = walker?.nextObject() as? URL, out.count < 50_000 {
+            if isMedia(f) { out.append((f, (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }
+        }
         return out
     }
 
@@ -91,24 +111,32 @@ final class CardWatcher: ObservableObject {
     func start() {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { note in
             guard let url = note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
-            Task { @MainActor in self.look(at: url) }
+            Task { @MainActor in await self.look(at: url) }
+        }
+        // a card that was already in when iopix started
+        for url in FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeIsRemovableKey], options: [.skipHiddenVolumes]) ?? [] {
+            Task { @MainActor in await self.look(at: url) }
         }
     }
 
-    func look(at volume: URL) {
-        let dcim = volume.appendingPathComponent("DCIM")
-        guard FileManager.default.fileExists(atPath: dcim.path) else { return }
-        let walker = FileManager.default.enumerator(at: dcim, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
-        var files: [URL] = []
-        while let f = walker?.nextObject() as? URL { if isMedia(f) { files.append(f) } }
+    /// Only local, removable drives with a DCIM folder; the card is read off the main thread.
+    func look(at volume: URL) async {
+        let v = try? volume.resourceValues(forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey, .volumeIsEjectableKey, .volumeNameKey])
+        guard v?.volumeIsLocal == true, (v?.volumeIsRemovable == true || v?.volumeIsEjectable == true) else { return }
+        let files = await Task.detached(priority: .utility) { () -> [URL] in
+            let dcim = volume.appendingPathComponent("DCIM")
+            guard FileManager.default.fileExists(atPath: dcim.path) else { return [] }
+            let walker = FileManager.default.enumerator(at: dcim, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
+            var files: [URL] = []
+            while let f = walker?.nextObject() as? URL, files.count < 50_000 { if isMedia(f) { files.append(f) } }
+            return files.sorted { $0.path < $1.path }
+        }.value
         guard !files.isEmpty else { return }
-        files.sort { $0.path < $1.path }
-        let name = (try? volume.resourceValues(forKeys: [.volumeNameKey]).volumeName) ?? volume.lastPathComponent
+        let name = v?.volumeName ?? volume.lastPathComponent
         let new = Set(files.filter { !imported.contains(key(name, $0)) })
         offer = CardOffer(name: name, files: files, new: new)
-        Notifier.post("card", title: "Photos on \(name)",
-                      body: new.isEmpty ? "\(files.count) photos and videos, all imported before." : "\(new.count) new photos and videos. Click to import them to iopix.",
-                      open: "card")
+        guard !new.isEmpty else { return }  // nothing new: the Import window is there from the menu if wanted
+        Notifier.post("card", title: "Photos on \(name)", body: "\(new.count) new photos and videos. Click to import them to iopix.", open: "card")
         Router.open("card")
     }
 
@@ -217,10 +245,11 @@ enum Inbox {
             .appendingPathComponent("Inbox", isDirectory: true)
     }
 
+    /// Folders the Share extension has finished writing (it names them "<id>.tmp" while copying).
     @MainActor
     static func collect() {
         guard let folder, let items = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
-        for dir in items {
+        for dir in items where dir.pathExtension != "tmp" {
             let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
             if !files.isEmpty { UploadQueue.shared.add(files: files, move: true) }
             try? FileManager.default.removeItem(at: dir)

@@ -338,12 +338,15 @@ struct SettingsView: View {
     }
 
     private func setLogin(_ on: Bool) {
+        let service = SMAppService.mainApp
+        guard on != (service.status == .enabled) else { return }  // the toggle was only put back after a failure
         do {
-            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            loginNote = nil
+            if on { try service.register() } else { try service.unregister() }
+            loginNote = service.status == .requiresApproval ? "Allow iopix under System Settings › General › Login Items." : nil
+            if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         } catch {
             loginNote = "macOS did not allow it: \(error.localizedDescription)"
-            atLogin = SMAppService.mainApp.status == .enabled
+            atLogin = service.status == .enabled
         }
     }
 }

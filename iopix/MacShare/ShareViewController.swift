@@ -15,6 +15,7 @@ final class ShareViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
+        model.extensionContext = extensionContext
         Task { @MainActor in
             let n = await model.hand(providers)
             try? await Task.sleep(nanoseconds: n > 0 ? 900_000_000 : 1_800_000_000)
@@ -27,12 +28,29 @@ final class ShareViewController: NSViewController {
 final class ShareModel: ObservableObject {
     @Published var text = "Handing to iopix…"
 
+    weak var extensionContext: NSExtensionContext?
+
+    /// A name not yet used in the folder (two IMG_0001.JPG from different folders both arrive).
+    private func free(_ name: String, in folder: URL) -> URL {
+        var url = folder.appendingPathComponent(name)
+        var n = 2
+        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+            n += 1
+        }
+        return url
+    }
+
     func hand(_ providers: [NSItemProvider]) async -> Int {
-        guard let inbox = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "69M2JRAT8P.net.iothing.iopix")?
-            .appendingPathComponent("Inbox", isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true) else {
+        guard let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "69M2JRAT8P.net.iothing.iopix")?
+            .appendingPathComponent("Inbox", isDirectory: true) else {
             text = "iopix can't be reached from here. Open the iopix app and try again."
             return 0
         }
+        // written as "<id>.tmp" and renamed when complete, so the app never picks up a half-copied batch
+        let id = UUID().uuidString
+        let inbox = folder.appendingPathComponent(id + ".tmp", isDirectory: true)
         try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
         var n = 0
         for p in providers {
@@ -43,7 +61,10 @@ final class ShareModel: ObservableObject {
             text = "Only photos and videos can be sent to iopix."
             return 0
         }
-        NSWorkspace.shared.open(URL(string: "iopix://inbox")!)
+        try? FileManager.default.moveItem(at: inbox, to: folder.appendingPathComponent(id, isDirectory: true))
+        if let url = URL(string: "iopix://inbox") {
+            extensionContext?.open(url) { ok in if !ok { NSWorkspace.shared.open(url) } }
+        }
         text = n == 1 ? "1 item handed to iopix." : "\(n) items handed to iopix."
         return n
     }
@@ -55,14 +76,14 @@ final class ShareModel: ObservableObject {
                 _ = p.loadObject(ofClass: NSURL.self) { obj, _ in c.resume(returning: obj as? URL) }
             }
             guard let url, let t = UTType(filenameExtension: url.pathExtension), t.conforms(to: .image) || t.conforms(to: .movie) else { return false }
-            return (try? FileManager.default.copyItem(at: url, to: folder.appendingPathComponent(url.lastPathComponent))) != nil
+            return (try? FileManager.default.copyItem(at: url, to: free(url.lastPathComponent, in: folder))) != nil
         }
         return await withCheckedContinuation { c in
             p.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, _ in
                 guard let url else { c.resume(returning: false); return }
                 var name = url.lastPathComponent
                 if let s = p.suggestedName, !s.isEmpty, !s.contains("."), !url.pathExtension.isEmpty { name = "\(s).\(url.pathExtension)" }
-                c.resume(returning: (try? FileManager.default.copyItem(at: url, to: folder.appendingPathComponent(name))) != nil)
+                c.resume(returning: (try? FileManager.default.copyItem(at: url, to: self.free(name, in: folder))) != nil)
             }
         }
     }

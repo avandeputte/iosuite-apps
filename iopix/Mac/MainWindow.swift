@@ -60,7 +60,7 @@ struct MainWindow: View {
             .navigationTitle("iopix")
             .task { await queue.refreshAccount() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-                if AppConfig.serverURL.host != server.host { server = AppConfig.serverURL }  // changed in Settings
+                if AppConfig.serverURL != server.baseServer { server = AppConfig.serverURL }  // changed in Settings (host, port or scheme)
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixNavigate)) { _ in go() }
             .onAppear { Router.openWindow = openWindow; go() }
@@ -89,5 +89,15 @@ enum MacFiles {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK else { return [] }
         return panel.urls.flatMap(MenuView.expand)
+    }
+}
+
+private extension URL {
+    /// The server part of a page address, without the web app's #/… page.
+    var baseServer: URL {
+        var c = URLComponents(url: self, resolvingAgainstBaseURL: false)
+        c?.fragment = nil
+        c?.path = ""
+        return c?.url ?? self
     }
 }
