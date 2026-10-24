@@ -119,9 +119,11 @@ final class UploadQueue: ObservableObject {
         }
         save()
         kick()
+        if review { Task { await ReviewSync.shared.apply() } }  // already picked or ignored on another device?
     }
 
     func send(_ ids: Set<UUID>) {
+        ReviewSync.shared.decided(localIDs: reviewAssets(ids))
         for i in items.indices where items[i].state == .review && ids.contains(items[i].id) { items[i].state = .waiting }
         save()
         kick()
@@ -129,9 +131,26 @@ final class UploadQueue: ObservableObject {
 
     /// Ignored photos leave the list; they stay counted as seen, so they do not come back.
     func ignore(_ ids: Set<UUID>) {
+        ReviewSync.shared.decided(localIDs: reviewAssets(ids))
         for item in items where item.state == .review && ids.contains(item.id) { removeStoredFile(item) }
         items.removeAll { $0.state == .review && ids.contains($0.id) }
         save()
+    }
+
+    /// The Photos library ids of the photos waiting for a send-or-ignore decision.
+    var reviewAssetIDs: [String] {
+        items.compactMap { if $0.state == .review, case .asset(let a) = $0.source { return a } else { return nil } }
+    }
+
+    /// Photos picked or ignored on another device: they leave the review list here without being sent.
+    func dropReview(localIDs: Set<String>) {
+        let before = items.count
+        items.removeAll { if $0.state == .review, case .asset(let a) = $0.source { return localIDs.contains(a) } else { return false } }
+        if items.count != before { save() }
+    }
+
+    private func reviewAssets(_ ids: Set<UUID>) -> [String] {
+        items.compactMap { if $0.state == .review, ids.contains($0.id), case .asset(let a) = $0.source { return a } else { return nil } }
     }
 
     func retryFailed() {

@@ -59,6 +59,7 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
         enabled = AppConfig.defaults.bool(forKey: "watchPhotos")
         super.init()
         if enabled { start() }
+        ReviewSync.shared.start()  // photos already picked or ignored on another device leave the list
     }
 
     var authorized: Bool {

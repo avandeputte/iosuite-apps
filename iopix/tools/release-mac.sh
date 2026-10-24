@@ -14,8 +14,10 @@ ARCHIVE=build/iopix-mac-$BUILD.xcarchive OUT=build/mac-$BUILD DMG=build/iopix-$V
 xcodegen generate -q
 xcodebuild -project iopix.xcodeproj -scheme iopixUploader -configuration Release -archivePath "$ARCHIVE" \
   CURRENT_PROJECT_VERSION=$BUILD "${AUTH[@]}" archive
+# the export uses Xcode's signed-in account: it makes the Developer ID profile iCloud needs, which the API key
+# is not allowed to do ("Cloud signing permission error")
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist tools/ExportOptions-DeveloperID.plist \
-  -exportPath "$OUT" "${AUTH[@]}"
+  -exportPath "$OUT" -allowProvisioningUpdates
 rm -f "$DMG"
 mkdir -p "$OUT/dmg" && cp -R "$OUT/iopix.app" "$OUT/dmg/" && ln -sf /Applications "$OUT/dmg/Applications"
 hdiutil create -volname iopix -srcfolder "$OUT/dmg" -ov -format UDZO "$DMG"
