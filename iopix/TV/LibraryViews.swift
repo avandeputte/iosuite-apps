@@ -67,6 +67,7 @@ struct CoverCard: View {
     var subtitle: String?
     let image: String?
     var round = false
+    var badge: String? = nil  // a symbol in the corner (Favorites' heart, a tag)
 
     var body: some View {
         VStack(spacing: 14) {
@@ -74,6 +75,12 @@ struct CoverCard: View {
                 if let image { RemoteImage(path: image) } else { Color.white.opacity(0.08) }
             }
             .frame(width: round ? 220 : 340, height: round ? 220 : 230)
+            // as Text, not Image: the focus effect lifts the card's first picture, which must stay the photo
+            .overlay(alignment: image == nil ? .center : .topTrailing) {
+                if let badge {
+                    Text(Image(systemName: badge)).font(image == nil ? .system(size: 70) : .title3).padding(14).shadow(radius: 4)
+                }
+            }
             .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 12)))
             Text(title).lineLimit(1).frame(width: round ? 260 : 340)
             if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
@@ -120,11 +127,11 @@ struct AlbumsView: View {
 
     var body: some View {
         ScrollView {
+            if store.favorites > 0 || !store.albums.isEmpty {
             LazyVGrid(columns: gridColumns, spacing: 60) {
                 if store.favorites > 0 {
                     NavigationLink(value: Album(id: -1, name: "Favorites", count: store.favorites, cover: nil)) {
-                        CoverCard(title: "Favorites", subtitle: "\(store.favorites)", image: nil)
-                            .overlay(Image(systemName: "heart.fill").font(.system(size: 70)).offset(y: -40))
+                        CoverCard(title: "Favorites", subtitle: "\(store.favorites)", image: nil, badge: "heart.fill")
                     }
                     .buttonStyle(.borderless)
                 }
@@ -136,8 +143,14 @@ struct AlbumsView: View {
                 }
             }
             .padding(60)
-            if store.albums.isEmpty && store.favorites == 0 {
+            }
+            if store.albums.isEmpty && store.favorites == 0 && store.tags.isEmpty {
                 Text("No albums yet. Albums you make in iopix show up here.").foregroundStyle(.secondary)
+            }
+            let top = store.tags(under: nil)
+            if !top.isEmpty {
+                Text("Tags").font(.title3.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 60)
+                TagCards(tags: top)
             }
         }
         .navigationTitle("Albums")
@@ -147,6 +160,40 @@ struct AlbumsView: View {
             }
             .navigationTitle(a.name)
         }
+        .navigationDestination(for: TagItem.self) { TagView(tag: $0) }
+    }
+}
+
+/// Tags as album cards, each with its cover photo and how many photos it has (sub-tags included).
+struct TagCards: View {
+    let tags: [TagItem]
+
+    var body: some View {
+        LazyVGrid(columns: gridColumns, spacing: 60) {
+            ForEach(tags) { t in
+                NavigationLink(value: t) {
+                    CoverCard(title: t.name, subtitle: "\(t.count)", image: t.cover.map { "thumb/\($0)" }, badge: "tag.fill")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(60)
+    }
+}
+
+/// One tag: its sub-tags first (when it has some), then every photo with the tag or one of its sub-tags.
+struct TagView: View {
+    @EnvironmentObject private var store: LibraryStore
+    let tag: TagItem
+
+    var body: some View {
+        let subs = store.tags(under: tag.id)
+        ScrollView {
+            if !subs.isEmpty { TagCards(tags: subs) }
+            PhotoGrid(query: [URLQueryItem(name: "tag", value: String(tag.id))], showsTitle: !subs.isEmpty)
+        }
+        .navigationTitle(tag.name)
+        .backdrop(tag.cover)
     }
 }
 

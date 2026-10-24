@@ -49,6 +49,16 @@ struct Place: Identifiable, Hashable {
     var id: String { [name, region ?? "", country ?? ""].joined(separator: "|") }
 }
 
+/// A tag of the library that is not a person (Activity, Food, Where/Paris...), shown like an album. Its count
+/// includes the photos of its sub-tags, as the server's tag search does.
+struct TagItem: Identifiable, Hashable {
+    let id: Int
+    let parent: Int?
+    let name: String
+    let count: Int
+    let cover: Int?
+}
+
 struct Album: Identifiable, Hashable {
     let id: Int
     let name: String
@@ -66,7 +76,15 @@ final class LibraryStore: ObservableObject {
     @Published var favorites = 0
     @Published var favoriteIDs: Set<Int> = []
     @Published var places: [Place] = []
+    @Published var tags: [TagItem] = []
     @Published var problem: String?
+
+    /// The tags shown under a tag (nil: the top ones), most photos first.
+    func tags(under parent: Int?) -> [TagItem] {
+        let ids = Set(tags.map(\.id))
+        return tags.filter { parent == nil ? ($0.parent == nil || !ids.contains($0.parent!)) : $0.parent == parent }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
 
     func load() async {
         do {
@@ -81,6 +99,7 @@ final class LibraryStore: ObservableObject {
                       let n = (t["n"] as? NSNumber)?.intValue, n > 0 else { return nil }
                 return Person(id: id, name: t["name"] as? String ?? "", count: n, face: (t["face"] as? NSNumber)?.intValue)
             }.sorted { $0.count > $1.count }
+            tags = Self.tags(from: meta["tags"] as? [[String: Any]] ?? [])
             years = (meta["years"] as? [[Any]] ?? []).compactMap { y in
                 guard y.count == 2, let year = (y[0] as? NSNumber)?.intValue, let n = (y[1] as? NSNumber)?.intValue else { return nil }
                 return (year, n)
@@ -102,6 +121,37 @@ final class LibraryStore: ObservableObject {
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    /// Tags that are not people and hold photos. A tag that only groups people (People, People/Van de Putte) is
+    /// left out: those are on the People page. digiKam's own internal tags (names starting with _) too.
+    private static func tags(from raw: [[String: Any]]) -> [TagItem] {
+        struct Raw { let id: Int, pid: Int?, name: String, person: Bool, n: Int, all: Int, cover: Int? }
+        let list = raw.compactMap { t -> Raw? in
+            guard let id = (t["id"] as? NSNumber)?.intValue else { return nil }
+            return Raw(id: id, pid: (t["pid"] as? NSNumber)?.intValue, name: (t["name"] as? String ?? "").trimmingCharacters(in: .whitespaces),
+                       person: (t["person"] as? NSNumber)?.boolValue ?? false, n: (t["n"] as? NSNumber)?.intValue ?? 0,
+                       all: (t["nAll"] as? NSNumber)?.intValue ?? 0, cover: (t["cover"] as? NSNumber)?.intValue)
+        }
+        var kids: [Int: [Raw]] = [:]
+        for t in list { if let p = t.pid { kids[p, default: []].append(t) } }
+        // photos tagged with something other than a person, here or below
+        var memo: [Int: Bool] = [:]
+        func ownPhotos(_ t: Raw) -> Bool {
+            if let m = memo[t.id] { return m }
+            memo[t.id] = false  // a loop in the tree ends here
+            let r = !t.person && (t.n > 0 || (kids[t.id] ?? []).contains(where: ownPhotos))
+            memo[t.id] = r
+            return r
+        }
+        let hidden = Set(list.filter { $0.name.hasPrefix("_") }.map(\.id))
+        func underHidden(_ t: Raw) -> Bool {
+            var p = t.pid, steps = 0
+            while let q = p, steps < 50 { if hidden.contains(q) { return true }; p = list.first { $0.id == q }?.pid; steps += 1 }
+            return false
+        }
+        return list.filter { !$0.person && $0.all > 0 && !hidden.contains($0.id) && ownPhotos($0) && !underHidden($0) }
+            .map { TagItem(id: $0.id, parent: $0.pid, name: $0.name, count: $0.all, cover: $0.cover) }
     }
 
     /// Your own favorites in iopix (not a change to the library's photos).
