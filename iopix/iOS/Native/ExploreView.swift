@@ -221,7 +221,7 @@ struct ExploreView: View {
             }
             if !model.random.ids.isEmpty {
                 section(Hue.indigo, "sparkles", "Rediscover", action: ("Shuffle", { Task { await model.shuffle() } }))
-                rows(model.random, limit: 36)
+                rediscover
             }
             if !model.pairs.isEmpty {
                 section(Hue.amber, "person.fill", "Then and now", action: ("Others", { Task { await model.loadPairs() } }))
@@ -387,6 +387,40 @@ struct ExploreView: View {
     }
 
     // MARK: rows of photos
+
+    /// Rediscover, bigger than the other sections: one photo large (with four more beside it on a wide screen),
+    /// then the rest in rows taller than On this day's. The banner's photo, when it came from here, is left out.
+    @ViewBuilder private var rediscover: some View {
+        let list = model.random
+        let skip = hero.flatMap { $0.list.ids == list.ids ? $0.index : nil }
+        let all = (0..<min(list.ids.count, 37)).filter { $0 != skip }
+        // the big spot is wider than tall: a landscape photo fills it without losing half of itself
+        if let first = all.first(where: { list.ratio($0) >= 1.2 }) ?? all.first {
+            let others = all.filter { $0 != first }
+            let side = Array(others.prefix(wide ? 4 : 0))
+            let rest = Array(others.dropFirst(side.count))
+            VStack(spacing: 4) {
+                MosaicLayout(spacing: 4) {
+                    tile(list, first, path: "preview/\(list.ids[first])")
+                    ForEach(side, id: \.self) { tile(list, $0) }
+                }
+                .frame(height: rowHeight * (wide ? 2.6 : 2.2))
+                JustifiedLayout(height: rowHeight * 1.3, spacing: 4, ratios: rest.map { list.ratio($0) }) {
+                    ForEach(rest, id: \.self) { tile(list, $0) }
+                }
+            }
+        }
+    }
+
+    private func tile(_ list: PhotoList, _ i: Int, path: String? = nil) -> some View {
+        Button { viewer = PagerStart(list: list, index: i) } label: {
+            RemoteImage(path: path ?? "thumb/\(list.ids[i])")
+                .overlay { TileBadges(list: list, index: i, favorite: store.favoriteIDs.contains(list.ids[i])) }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(i < list.times.count && list.times[i] > 0 ? PhotoPager.day(list.times[i]) : "Photo")
+    }
 
     private func rows(_ list: PhotoList, limit: Int) -> some View {
         let count = min(list.ids.count, limit)
@@ -648,6 +682,30 @@ struct JustifiedLayout: Layout {
                 x += w + spacing
             }
             y += row.h + spacing
+        }
+    }
+}
+
+/// One large view on the left (all of it when it is alone), and up to four more in a square of two by two beside it.
+struct MosaicLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        CGSize(width: proposal.width ?? 350, height: proposal.height ?? 300)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let first = subviews.first else { return }
+        let others = subviews.dropFirst()
+        let bigW = others.isEmpty ? bounds.width : (bounds.width - spacing) * 0.6
+        first.place(at: bounds.origin, proposal: ProposedViewSize(width: bigW, height: bounds.height))
+        guard !others.isEmpty else { return }
+        let colW = max(0, (bounds.width - bigW - spacing * 2) / 2)
+        let rowH = max(0, (bounds.height - spacing) / 2)
+        for (k, v) in others.enumerated() {
+            let x = bounds.minX + bigW + spacing + CGFloat(k % 2) * (colW + spacing)
+            let y = bounds.minY + CGFloat(k / 2) * (rowH + spacing)
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: colW, height: rowH))
         }
     }
 }
