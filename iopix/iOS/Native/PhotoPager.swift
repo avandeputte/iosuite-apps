@@ -31,12 +31,8 @@ struct PhotoPager: View {
             Color.black.ignoresSafeArea()
             TabView(selection: $index) {
                 ForEach(Array(ids.enumerated()), id: \.offset) { i, id in
-                    Group {
-                        if start.list.isVideo(i) {
-                            VideoPage(id: id, active: i == index)
-                        } else {
-                            ZoomablePhoto(id: id) { withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() } }
-                        }
+                    MediaPage(id: id, knownVideo: start.list.isVideo(i), active: i == index) {
+                        withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
                     }
                     .tag(i)
                 }
@@ -238,11 +234,36 @@ struct ZoomablePhoto: UIViewRepresentable {
     }
 }
 
+/// One page of the viewer: a photo, or a video. Some lists (Rediscover) don't say which are videos, so the page asks.
+struct MediaPage: View {
+    let id: Int
+    let knownVideo: Bool
+    let active: Bool
+    var tapped: () -> Void
+    @State private var video: Bool?
+
+    var body: some View {
+        Group {
+            if knownVideo || video == true {
+                VideoPage(id: id, active: active)
+            } else {
+                ZoomablePhoto(id: id, tapped: tapped)
+            }
+        }
+        .task(id: id) {
+            guard !knownVideo, video == nil, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
+            video = d["playable"] != nil || ((d["duration"] as? NSNumber)?.doubleValue ?? 0) > 0
+        }
+    }
+}
+
 /// A video: its picture with a play button, then the player once tapped. It stops when swiped away.
 struct VideoPage: View {
     let id: Int
     let active: Bool
     @State private var player: AVPlayer?
+    @State private var preparing: Task<Void, Never>?
+    @State private var problem: String?
 
     var body: some View {
         ZStack {
@@ -250,20 +271,46 @@ struct VideoPage: View {
                 VideoPlayer(player: player)
             } else {
                 RemoteImage(path: "preview/\(id)", fit: true)
-                Button {
-                    let url = AppConfig.serverURL.appendingPathComponent("orig/\(id)")
-                    let cookies = AppConfig.cookies.cookies(for: url) ?? []
-                    let p = AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies])))
-                    player = p
-                    p.play()
-                } label: {
-                    Image(systemName: "play.circle.fill").font(.system(size: 72)).foregroundStyle(.white.opacity(0.9))
+                if preparing != nil {
+                    VStack(spacing: 10) {
+                        ProgressView().tint(.white)
+                        Text("Getting the video ready…").font(.footnote).foregroundStyle(.white)
+                    }
+                    .padding(16).background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    Button(action: play) {
+                        Image(systemName: "play.circle.fill").font(.system(size: 72)).foregroundStyle(.white.opacity(0.9))
+                    }
+                    .accessibilityLabel("Play video")
                 }
-                .accessibilityLabel("Play video")
+                if let problem {
+                    Text(problem).font(.footnote).foregroundStyle(.white).multilineTextAlignment(.center)
+                        .padding(12).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 120)
+                }
             }
         }
-        .onChange(of: active) { _, on in if !on { player?.pause() } }
-        .onDisappear { player?.pause(); player = nil }
+        .onChange(of: active) { _, on in if !on { player?.pause(); preparing?.cancel(); preparing = nil } }
+        .onDisappear { player?.pause(); player = nil; preparing?.cancel(); preparing = nil }
+    }
+}
+
+extension VideoPage {
+    /// The original when it plays here, otherwise the copy the server makes (it may take a moment the first time).
+    private func play() {
+        problem = nil
+        preparing = Task {
+            defer { preparing = nil }
+            do {
+                let url = try await VideoSource.url(for: id)
+                let p = VideoSource.player(url)
+                player = p
+                p.play()
+            } catch is CancellationError {
+            } catch {
+                problem = error.localizedDescription
+            }
+        }
     }
 }
 

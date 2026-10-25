@@ -47,6 +47,21 @@ final class ExploreModel: ObservableObject {
     }
 
     func load() async {
+        // iopix 1.78 and later bring most of the page in one request; older servers answer each part on its own
+        if let j = try? await IopixClient.shared.json("api/explore", query: [URLQueryItem(name: "md", value: Self.monthDay),
+                                                                            URLQueryItem(name: "n", value: "36"),
+                                                                            URLQueryItem(name: "pairs", value: "3")]) {
+            if let d = j["onThisDay"] as? [String: Any] { today = PhotoList(json: d) } else { today = PhotoList() }
+            if let d = j["random"] as? [String: Any] { random = PhotoList(json: d) }
+            if let d = j["thenAndNow"] as? [String: Any] { pairs = Self.pairs(d) }
+            if let list = j["events"] as? [[String: Any]] { trips = Self.trips(["events": list]) }
+            else if let d = j["events"] as? [String: Any] { trips = Self.trips(d) }
+            async let c: Void = loadConcepts()
+            async let a = try? IopixClient.shared.account()
+            _ = await c
+            account = await a
+            return
+        }
         async let t: Void = loadToday()
         async let r: Void = shuffle()
         async let p: Void = loadPairs()
@@ -67,11 +82,15 @@ final class ExploreModel: ObservableObject {
 
     func loadPairs() async {
         guard let j = try? await IopixClient.shared.json("api/thenandnow", query: [URLQueryItem(name: "n", value: "3")]) else { return }
+        pairs = Self.pairs(j)
+    }
+
+    static func pairs(_ j: [String: Any]) -> [ThenNowPair] {
         func face(_ d: Any?) -> ThenNowPair.Face? {
             guard let d = d as? [String: Any], let p = (d["photo"] as? NSNumber)?.intValue else { return nil }
             return .init(photo: p, ts: (d["ts"] as? NSNumber)?.doubleValue ?? 0, rect: (d["rect"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
         }
-        pairs = (j["pairs"] as? [[String: Any]] ?? []).compactMap { p in
+        return (j["pairs"] as? [[String: Any]] ?? []).compactMap { p in
             guard let tag = (p["tag"] as? NSNumber)?.intValue, let a = face(p["then"]), let b = face(p["now"]) else { return nil }
             return ThenNowPair(tag: tag, name: p["name"] as? String ?? "", then: a, now: b, years: (p["years"] as? NSNumber)?.doubleValue ?? 0)
         }
@@ -79,7 +98,11 @@ final class ExploreModel: ObservableObject {
 
     func loadTrips() async {
         guard let j = try? await IopixClient.shared.json("api/events") else { return }
-        trips = (j["events"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String == "trip" }.prefix(8).compactMap { e in
+        trips = Self.trips(j)
+    }
+
+    static func trips(_ j: [String: Any]) -> [Trip] {
+        (j["events"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String == "trip" }.prefix(8).compactMap { e in
             guard let from = e["from"] as? String, let to = e["to"] as? String else { return nil }
             return Trip(title: e["title"] as? String ?? from, when: e["when"] as? String ?? from, from: from, to: to,
                         count: (e["n"] as? NSNumber)?.intValue ?? 0, days: (e["days"] as? NSNumber)?.intValue ?? 1,

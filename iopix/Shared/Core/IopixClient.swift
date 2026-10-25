@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Who this device is signed in as on iopix.
 struct Account: Equatable {
@@ -47,6 +48,10 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         cfg.httpCookieAcceptPolicy = .always
         cfg.timeoutIntervalForRequest = 120
         cfg.timeoutIntervalForResource = 6 * 3600  // a long video over a slow connection
+        // the server tags its lists (ETag) and thumbnails: an unchanged list comes back as a short "not modified"
+        cfg.urlCache = URLCache(memoryCapacity: 24 << 20, diskCapacity: 300 << 20,
+                                directory: AppConfig.dataFolder.appendingPathComponent("HTTPCache", isDirectory: true))
+        cfg.requestCachePolicy = .useProtocolCachePolicy
         session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }
 
@@ -178,6 +183,8 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         for c in AppConfig.cookies.cookies ?? [] where Self.cookie(c, matches: host) {
             AppConfig.cookies.deleteCookie(c)
         }
+        // saved answers belong to whoever was signed in (favorites, albums): another account starts afresh
+        session.configuration.urlCache?.removeAllCachedResponses()
     }
 
     /// The folder layouts the server offers, and whether it takes folder patterns of your own.
@@ -209,11 +216,54 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     }
 
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
+    /// Whether this server takes a whole upload in one request and can say which files it already has
+    /// (iopix 1.78 and later), learnt once per server address.
+    private var modernServer: URL?
+    private var modernKnown: Bool?
+
+    private func modernImport() async -> Bool {
+        if modernServer == server, let known = modernKnown { return known }
+        var r = request("api/import/check", method: "POST")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = Data(#"{"files":[]}"#.utf8)
+        guard let (_, resp) = try? await session.data(for: r), let code = (resp as? HTTPURLResponse)?.statusCode else { return false }
+        // 404 or 405: an older server. Anything else (200, or a sign-in wanted) means the route is there.
+        let known = code != 404 && code != 405
+        if code != 401 { modernServer = server; modernKnown = known }
+        return known
+    }
+
+    /// The file's size and SHA-256, read in pieces (a long video is never held in memory).
+    static func fingerprint(_ file: URL) throws -> (size: Int, sha256: String) {
+        let h = try FileHandle(forReadingFrom: file)
+        defer { try? h.close() }
+        var hasher = SHA256()
+        var size = 0
+        while let chunk = try h.read(upToCount: 4 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+            size += chunk.count
+        }
+        return (size, hasher.finalize().map { String(format: "%02x", $0) }.joined())
+    }
+
+    /// Which of these files the library already has (by size and SHA-256). Empty on an older server.
+    func alreadyThere(_ files: [(size: Int, sha256: String)]) async -> Set<String> {
+        guard !files.isEmpty, await modernImport() else { return [] }
+        var r = request("api/import/check", method: "POST")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["files": files.map { ["size": $0.size, "sha256": $0.sha256] }])
+        guard let (data, resp) = try? await session.data(for: r), let j = try? check(data, resp) else { return [] }
+        return Set((j["present"] as? [[String: Any]] ?? []).compactMap { $0["sha256"] as? String })
+    }
+
     func upload(file: URL, name: String, to destination: Destination = .current, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
         if destination.needsPatterns {
             if patternSupport != true { _ = try await layouts() }
             // an older server would ignore the pattern and use its own layout: better not to send than to misfile
             guard patternSupport == true else { throw IopixError.needsServerUpdate }
+        }
+        if await modernImport() {
+            return try await uploadInOne(file: file, name: name, to: destination, progress: progress)
         }
         let boundary = "iopix-\(UUID().uuidString)"
         let body = try Multipart.write(file: file, name: name, boundary: boundary)
@@ -250,6 +300,33 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         return .skipped("iopix did not add it.")
     }
 
+    /// iopix 1.78 and later: asks first whether the library already has the file (nothing is sent then), else sends
+    /// it with the import choices in one request.
+    private func uploadInOne(file: URL, name: String, to destination: Destination, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
+        if let print = try? Self.fingerprint(file), await alreadyThere([print]).contains(print.sha256) {
+            progress(1)
+            return .alreadyThere
+        }
+        var fields = ["duplicates": "skip"]
+        for (k, v) in destination.runFields { fields[k] = "\(v)" }
+        let boundary = "iopix-\(UUID().uuidString)"
+        let body = try Multipart.write(file: file, name: name, boundary: boundary, fields: fields)
+        defer { try? FileManager.default.removeItem(at: body) }
+        var r = request("api/import", method: "POST")
+        r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let (data, resp) = try await session.upload(for: r, fromFile: body, delegate: ProgressDelegate(progress))
+        if (resp as? HTTPURLResponse)?.statusCode == 409 {
+            throw URLError(.resourceUnavailable)  // digiKam has the library open: nothing was kept, try again later
+        }
+        let result = try check(data, resp)
+        if let added = result["added"] as? [Any], !added.isEmpty { return .added }
+        if let s = (result["skipped"] as? [[String: Any]])?.first {
+            if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
+            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+        }
+        return .skipped("iopix did not add it.")
+    }
+
     private func discard(_ token: String) async {
         _ = try? await session.data(for: request("api/import/\(token)/discard", method: "POST"))
     }
@@ -268,7 +345,7 @@ private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
 
 /// A multipart body written to a file, so a large video is streamed from disk and never held in memory.
 enum Multipart {
-    static func write(file: URL, name: String, boundary: String) throws -> URL {
+    static func write(file: URL, name: String, boundary: String, fields: [String: String] = [:]) throws -> URL {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("upload-\(UUID().uuidString)")
         // the body is a copy of the file: make sure the disk has room for it first (a full disk is a plain error,
         // not a crash)
@@ -281,6 +358,9 @@ enum Multipart {
         let sink = try FileHandle(forWritingTo: out)
         defer { try? sink.close() }
         do {
+            for (k, v) in fields.sorted(by: { $0.key < $1.key }) {
+                try sink.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n".utf8))
+            }
             let safe = name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
             try sink.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(safe)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
             let source = try FileHandle(forReadingFrom: file)

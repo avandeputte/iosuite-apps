@@ -205,23 +205,24 @@ struct PhotoViewer: View {
 
     // MARK: video
 
-    private func makePlayer() -> AVPlayer {
-        let url = AppConfig.serverURL.appendingPathComponent("orig/\(current)")
-        let cookies = AppConfig.cookies.cookies(for: url) ?? []  // the sign-in; the TV reaches iopix at home, without Cloudflare
-        let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies])
-        return AVPlayer(playerItem: AVPlayerItem(asset: asset))
+    /// The original, or the copy the server makes of a video Apple TV can't play as it is (nil: none to play).
+    private func makePlayer() async -> AVPlayer? {
+        guard let url = try? await VideoSource.url(for: current) else { return nil }
+        return VideoSource.player(url)
     }
 
     private func play() {
-        let player = makePlayer()
-        video = player
-        player.play()
+        Task {
+            guard let player = await makePlayer() else { return }
+            video = player
+            player.play()
+        }
     }
 
     /// In a slideshow: the video plays to its end (or fails, or is dismissed, or takes far too long), then the
     /// slideshow goes on.
     private func playToEnd() async {
-        let player = makePlayer()
+        guard let player = await makePlayer() else { return }
         video = player
         player.play()
         let item = player.currentItem
