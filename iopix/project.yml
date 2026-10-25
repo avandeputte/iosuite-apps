@@ -51,7 +51,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1,2,6"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO  # one app on iPhone, iPad and Mac (one App Store record)
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: iopixShare
@@ -86,6 +89,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix.share
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         TARGETED_DEVICE_FAMILY: "1,2"
   iopixUploader:
     type: application
