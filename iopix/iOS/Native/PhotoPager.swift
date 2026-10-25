@@ -528,8 +528,13 @@ private enum MacToolbar {
 
     static func hide(_ on: Bool) {
         depth = max(0, depth + (on ? 1 : -1))
-        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-            scene.titlebar?.toolbar?.isVisible = depth == 0
+        let show = depth == 0
+        // SwiftUI puts the screens' toolbar items in the window's AppKit toolbar, out of UIKit's reach
+        MacMenuBar.shared.bar?.showToolbars(show)
+        // and may put it back as the screen underneath updates: once more after it settles
+        Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            if (depth == 0) == show { MacMenuBar.shared.bar?.showToolbars(show) }
         }
     }
 }

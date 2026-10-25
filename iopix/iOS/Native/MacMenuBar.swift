@@ -24,6 +24,8 @@ import Combine
     func setLoginItem(_ on: Bool) -> String
     /// Finder's right-click › Services › Send to iopix Native: `send` gets the file and folder paths.
     func offerServices(_ send: @escaping ([String]) -> Void)
+    /// Shows or hides the windows' toolbars (hidden while the photo viewer is open).
+    func showToolbars(_ on: Bool)
 }
 
 @MainActor

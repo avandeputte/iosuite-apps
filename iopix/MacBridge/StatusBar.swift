@@ -27,6 +27,8 @@ import ServiceManagement
     func setLoginItem(_ on: Bool) -> String
     /// Finder's right-click › Services › Send to iopix Native: `send` gets the file and folder paths.
     func offerServices(_ send: @escaping ([String]) -> Void)
+    /// Shows or hides the windows' toolbars (hidden while the photo viewer is open).
+    func showToolbars(_ on: Bool)
 }
 
 @objc(IopixStatusBar) public final class IopixStatusBar: NSObject, IopixStatusBarProtocol, NSMenuDelegate {
@@ -139,6 +141,10 @@ import ServiceManagement
     // MARK: Finder Services
 
     private var send: ([String]) -> Void = { _ in }
+
+    public func showToolbars(_ on: Bool) {
+        for w in NSApp.windows where w.toolbar != nil { w.toolbar?.isVisible = on }
+    }
 
     public func offerServices(_ send: @escaping ([String]) -> Void) {
         self.send = send
