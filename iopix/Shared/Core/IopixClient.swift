@@ -74,6 +74,12 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         }
         var r = URLRequest(url: url)
         r.httpMethod = method
+        if method != "GET" {
+            lastWrite = Date()
+        } else if Date().timeIntervalSince(lastWrite) < 20 {
+            // right after a change, the server's "not modified" answers can lag it: read afresh for a little while
+            r.cachePolicy = .reloadIgnoringLocalCacheData
+        }
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
             r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
@@ -216,6 +222,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     }
 
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
+    /// When this app last changed something on the server (any request that was not a plain read).
+    private var lastWrite = Date.distantPast
+
     /// Whether this server takes a whole upload in one request and can say which files it already has
     /// (iopix 1.78 and later), learnt once per server address.
     private var modernServer: URL?

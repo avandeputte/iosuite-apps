@@ -17,6 +17,7 @@ struct IopixApp: App {
     @StateObject private var watcher = PhotosWatcher.shared
     @StateObject private var launch = LaunchState()
     @Environment(\.scenePhase) private var phase
+    @AppStorage("iopix.pref.theme") private var theme = "system"
 
     init() {
         UploadQueue.shared.startBackground()
@@ -25,6 +26,7 @@ struct IopixApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)  // the Display setting
                 .environmentObject(queue)
                 .environmentObject(watcher)
                 .environmentObject(launch)

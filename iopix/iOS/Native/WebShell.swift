@@ -74,6 +74,10 @@ enum Screen: Hashable {
     case tags(parent: Int?)
     case events
     case map
+    case trash, importPhotos, duplicates, nearDuplicates, bursts, detected, quality
+    case history(photo: Int?)
+    case faces(String)
+    case settings, maintenance, consistency
     case web(String)
 }
 
@@ -109,6 +113,9 @@ final class Router: ObservableObject {
         case "people":
             peoplePath = []
             tab = .people
+        case "faces":
+            peoplePath = [.faces(query.value("tab") ?? "suggested")]
+            tab = .people
         case "places":
             placesShowsMap = false
             placesPath = []
@@ -128,6 +135,24 @@ final class Router: ObservableObject {
             tab = .more
         case "events":
             morePath = [.events]
+            tab = .more
+        case "trash", "import", "duplicates", "neardups", "bursts", "detected", "quality", "history",
+             "settings", "maintenance", "analysis", "consistency":
+            let screen: Screen
+            switch view {
+            case "trash": screen = .trash
+            case "import": screen = .importPhotos
+            case "duplicates": screen = .duplicates
+            case "neardups": screen = .nearDuplicates
+            case "bursts": screen = .bursts
+            case "detected": screen = .detected
+            case "quality": screen = .quality
+            case "history": screen = .history(photo: query.value("photo").flatMap(Int.init))
+            case "settings": screen = .settings
+            case "consistency": screen = .consistency
+            default: screen = .maintenance
+            }
+            morePath = [screen]
             tab = .more
         default:
             morePath = [.web(route)]

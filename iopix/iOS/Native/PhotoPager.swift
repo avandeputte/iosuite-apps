@@ -17,6 +17,11 @@ struct PhotoPager: View {
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var router: Router
     @State private var index = 0
+    @State private var ids: [Int]
+    @State private var editing = false
+    @State private var faces = false
+    @State private var reloadKey = 0
+    @ObservedObject private var rights = EditRights.shared
     @State private var chrome = true
     @State private var info = false
     @State private var sharing: URL?
@@ -26,21 +31,34 @@ struct PhotoPager: View {
     init(start: PagerStart) {
         self.start = start
         _index = State(initialValue: min(max(start.index, 0), max(start.list.ids.count - 1, 0)))
+        _ids = State(initialValue: start.list.ids)
     }
 
-    private var ids: [Int] { start.list.ids }
     private var current: Int { ids.isEmpty ? 0 : ids[min(index, ids.count - 1)] }
+
+    /// Whether page `i` is a video, by the list it came from (a removed photo shifts the positions after it).
+    private func isVideo(_ i: Int) -> Bool {
+        guard i < ids.count, let original = start.list.ids.firstIndex(of: ids[i]) else { return false }
+        return start.list.isVideo(original)
+    }
+
+    private func takenAt(_ i: Int) -> Double? {
+        guard i < ids.count, let original = start.list.ids.firstIndex(of: ids[i]), original < start.list.times.count,
+              start.list.times[original] > 0 else { return nil }
+        return start.list.times[original]
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             // pages are made as they come into view, so a list of the whole library swipes as well as a short one
             PageView(count: ids.count, index: $index) { i in
-                AnyView(MediaPage(id: ids[i], knownVideo: start.list.isVideo(i), active: true) {
+                AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true) {
                     withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
                 }
                 .ignoresSafeArea())
             }
+            .id(reloadKey)
             .ignoresSafeArea()
         }
         .overlay(alignment: .top) { if chrome { topBar } }
@@ -50,6 +68,26 @@ struct PhotoPager: View {
             PhotoInfoSheet(photo: current)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $editing) {
+            PhotoEditSheet(photo: current) { outcome in
+                switch outcome {
+                case .changed: reloadKey += 1
+                case .pictureChanged:
+                    ImageCache.shared.forget("thumb/\(current)"); ImageCache.shared.forget("preview/\(current)")
+                    reloadKey += 1
+                case .removed:
+                    let gone = current
+                    if ids.count <= 1 { dismiss() } else { ids.removeAll { $0 == gone }; index = min(index, ids.count - 1); reloadKey += 1 }
+                    NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil, userInfo: ["removed": [gone]])
+                case .added:
+                    NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $faces) {
+            EditFacesView(photo: current) { reloadKey += 1 }
+        }
+        .task { await rights.refresh() }
         .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { if $0 == nil { removeShared() } })) { f in
             ShareSheet(items: [f.url])
         }
@@ -64,13 +102,17 @@ struct PhotoPager: View {
                 .accessibilityLabel("Close")
             Spacer()
             VStack(spacing: 2) {
-                if index < start.list.times.count, start.list.times[index] > 0 {
-                    Text(Self.day(start.list.times[index])).font(.subheadline.weight(.semibold))
+                if let t = takenAt(index) {
+                    Text(Self.day(t)).font(.subheadline.weight(.semibold))
                 }
                 if ids.count > 1 { Text("\(index + 1) of \(ids.count)").font(.caption).foregroundStyle(.white.opacity(0.7)) }
             }
             Spacer()
             Menu {
+                if rights.canWrite {
+                    Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+                    Button { faces = true } label: { Label("Faces", systemImage: "person.crop.rectangle") }
+                }
                 Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.headline).frame(width: 44, height: 44)
@@ -413,4 +455,9 @@ struct PageView: UIViewControllerRepresentable {
             if completed, let i = (pvc.viewControllers?.first as? Page)?.index { parent.index = i }
         }
     }
+}
+
+extension Notification.Name {
+    /// Photos were trashed, restored or added from the viewer or an editing sheet; lists reload. userInfo["removed"]: ids gone.
+    static let iopixPhotosChanged = Notification.Name("iopixPhotosChanged")
 }

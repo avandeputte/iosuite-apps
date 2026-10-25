@@ -7,6 +7,7 @@ struct PhotoList: Equatable {
     var videos: Set<Int> = []  // positions in ids
     var times: [Double] = []   // when each was taken (seconds since 1970), when known
     var ratios: [Double] = []  // width / height of each, when known (for rows of photos at their own shape)
+    var ranked = false         // a search by meaning: the server's order is best match first
 
     func ratio(_ i: Int) -> Double { i < ratios.count ? ratios[i] : 1.5 }
 
@@ -21,6 +22,7 @@ struct PhotoList: Equatable {
         ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
         videos = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
         times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        ranked = j["ranked"] as? Bool ?? false
         let w = (j["w"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         let h = (j["h"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         ratios = zip(w, h).map { w, h in h > 0 && w > 0 ? min(2.2, max(0.5, w / h)) : 1.5 }
@@ -323,6 +325,9 @@ final class ImageCache {
     init() { cache.totalCostLimit = 160 << 20 }  // decoded pictures, counted by their real size in memory
 
     func cached(_ path: String) -> UIImage? { cache.object(forKey: path as NSString) }
+
+    /// After a photo was rotated or cropped: its old pictures are no longer right.
+    func forget(_ path: String) { cache.removeObject(forKey: path as NSString) }
 
     func image(_ path: String) async -> UIImage? {
         if let hit = cached(path) { return hit }

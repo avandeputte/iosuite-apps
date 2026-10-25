@@ -17,7 +17,7 @@ struct AppTabs: View {
             .tabItem { Label(AppTab.photos.title, systemImage: AppTab.photos.symbol) }
             .tag(AppTab.photos)
             NavigationStack(path: $router.peoplePath) {
-                PeopleScreen()
+                FacesPeopleScreen()
                     .navigationDestination(for: Screen.self) { ScreenView(destination: $0, showUploads: showUploads) }
             }
             .tabItem { Label(AppTab.people.title, systemImage: AppTab.people.symbol) }
@@ -44,10 +44,22 @@ struct ScreenView: View {
     var body: some View {
         switch destination {
         case .photos(let q, let title): PhotoGridScreen(query: q, title: title)
-        case .folders(let parent): FoldersScreen(parent: parent)
-        case .albums: AlbumsScreen()
-        case .tags(let parent): TagsScreen(parent: parent)
+        case .folders(let parent): ManageFoldersScreen(parent: parent)
+        case .albums: ManageAlbumsScreen()
+        case .tags(let parent): ManageTagsScreen(parent: parent)
         case .events: EventsScreen()
+        case .trash: ManageTrashScreen()
+        case .importPhotos: ManageImportScreen()
+        case .duplicates: ManageDuplicatesScreen()
+        case .nearDuplicates: ManageNearDuplicatesScreen()
+        case .bursts: ManageBurstsScreen()
+        case .detected: ManageDetectedScreen()
+        case .quality: ManageQualityScreen()
+        case .history(let photo): ManageHistoryScreen(photo: photo)
+        case .faces(let tab): FacesReviewScreen(tab: tab)
+        case .settings: AdminSettingsScreen()
+        case .maintenance: AdminMaintenanceScreen()
+        case .consistency: AdminConsistencyScreen()
         case .map:
             PhotoMap { bbox in Router.shared.morePath.append(.photos(PhotoQuery([("bbox", bbox)]), title: "This area")) }
                 .navigationTitle("Map").navigationBarTitleDisplayMode(.inline).ignoresSafeArea(edges: .bottom)
@@ -87,9 +99,9 @@ struct MoreView: View {
     }
 
     private var iopix: [Item] {
-        var list = [Item(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, destination: .web("#/settings"))]
+        var list = [Item(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, destination: .settings)]
         if queue.account?.isAdmin == true {
-            list.append(Item(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .web("#/maintenance")))
+            list.append(Item(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .maintenance))
         }
         return list
     }
@@ -98,6 +110,7 @@ struct MoreView: View {
         NavigationStack(path: $router.morePath) {
             List {
                 Section { ForEach(library) { row($0) } }
+                ManageMoreSection()
                 Section("iopix") { ForEach(iopix) { row($0) } }
                 Section {
                     Button(action: showUploads) {

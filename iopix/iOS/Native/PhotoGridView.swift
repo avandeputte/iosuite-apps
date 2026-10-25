@@ -3,7 +3,7 @@ import SwiftUI
 /// One line of the grid: a day's heading, or a row of photos at their own shapes.
 private struct GridRow: Identifiable {
     enum Kind { case day(String, Int, year: Int), photos([Int], CGFloat) }
-    let id: Int
+    let id: String  // from the photos in it, so a new list replaces every row instead of reusing stale ones
     let kind: Kind
 }
 
@@ -15,8 +15,8 @@ struct PhotoGridScreen: View {
     var isRoot = false
     var showUploads: () -> Void = {}
 
-    @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var router: Router
+    @EnvironmentObject fileprivate var store: LibraryStore
+    @EnvironmentObject fileprivate var router: Router
     @EnvironmentObject private var queue: UploadQueue
     @Environment(\.horizontalSizeClass) private var width
     @AppStorage("grid.size") private var size = "m"
@@ -24,16 +24,20 @@ struct PhotoGridScreen: View {
     @State private var problem: String?
     @State private var sort: String?
     @State private var search = ""
-    @State private var searchSent = ""
-    @State private var kind = "all"  // all, photo, video (Photos tab only)
-    @State private var selecting = false
+    @State fileprivate var filters: PhotoQuery
+    @State fileprivate var showFilters = false
+    @State fileprivate var download = false
+    @State fileprivate var selecting = false
     @State private var selected: Set<Int> = []
-    @State private var viewer: PagerStart?
-    @State private var newAlbum = false
-    @State private var albumName = ""
-    @State private var note: String?
-    @State private var sharing: [URL] = []
-    @State private var preparing = false
+    @State fileprivate var viewer: PagerStart?
+
+    init(query: PhotoQuery, title: String? = nil, isRoot: Bool = false, showUploads: @escaping () -> Void = {}) {
+        self.query = query
+        self.title = title
+        self.isRoot = isRoot
+        self.showUploads = showUploads
+        _filters = State(initialValue: query)
+    }
 
     private var wide: Bool { width == .regular }
     private var rowHeight: CGFloat {
@@ -44,17 +48,10 @@ struct PhotoGridScreen: View {
         }
     }
 
-    private var currentSort: String { sort ?? query.value("sort") ?? "new" }
+    private var currentSort: String { sort ?? filters.value("sort") ?? (list?.ranked == true ? "rel" : "new") }
 
-    /// What is asked of the server: the screen's filters, the order, and on the Photos tab the search and kind.
-    private var effective: PhotoQuery {
-        var q = query.setting("sort", currentSort)
-        if isRoot {
-            q = q.setting("q", searchSent.isEmpty ? nil : searchSent)
-            q = q.setting("type", kind == "all" ? nil : kind)
-        }
-        return q
-    }
+    /// What is asked of the server: the filters chosen here (on top of the ones the screen opened with), in order.
+    fileprivate var effective: PhotoQuery { filters.setting("sort", currentSort) }
 
     var body: some View {
         GeometryReader { geo in
@@ -66,21 +63,45 @@ struct PhotoGridScreen: View {
                 .toolbar { toolbar(proxy) }
             }
         }
-        .navigationTitle(title ?? query.title(store))
+        .navigationTitle(title ?? filters.title(store))
         .navigationBarTitleDisplayMode(isRoot ? .large : .inline)
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search people, tags, places, captions")
-        .onSubmit(of: .search) { searchSent = search.trimmingCharacters(in: .whitespaces) }
-        .onChange(of: search) { _, s in if s.isEmpty, !searchSent.isEmpty { searchSent = "" } }
+        .searchSuggestions { SearchSuggestionRows(text: $search, query: $filters) }
+        .onSubmit(of: .search) {
+            let q = search.trimmingCharacters(in: .whitespaces)
+            filters = filters.setting("q", q.isEmpty ? nil : q)
+        }
+        .onChange(of: search) { _, s in if s.isEmpty, filters.value("q") != nil { filters = filters.setting("q", nil) } }
         .task(id: effective) { await load() }
-        .safeAreaInset(edge: .bottom) { if selecting { selectionBar } }
-        .fullScreenCover(item: $viewer) { PhotoPager(start: $0).environmentObject(store).environmentObject(router) }
-        .alert("New album", isPresented: $newAlbum) {
-            TextField("Name", text: $albumName)
-            Button("Cancel", role: .cancel) {}
-            Button("Create") { Task { await addToAlbum(nil, name: albumName) } }
-        } message: { Text("The \(selected.count == 1 ? "photo goes" : "\(selected.count) photos go") into a new album.") }
-        .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("OK", role: .cancel) {} }
-        .sheet(isPresented: Binding(get: { !sharing.isEmpty }, set: { if !$0 { cleanShared() } })) { ShareSheet(items: sharing) }
+        .task { await BulkCatalog.shared.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixPhotosChanged)) { n in
+            if let gone = n.userInfo?["removed"] as? [Int], !gone.isEmpty { list?.ids.removeAll { gone.contains($0) } }
+            Task { await load() }
+        }
+        .modifier(Sheets(screen: self))
+    }
+
+    /// The sheets and bars of the screen (apart from the main chain, which the compiler otherwise chokes on).
+    private struct Sheets: ViewModifier {
+        let screen: PhotoGridScreen
+
+        func body(content: Content) -> some View {
+            content
+                .overlay(alignment: .bottom) { BulkToastOverlay() }
+                .sheet(isPresented: screen.$showFilters) { FilterSheet(query: screen.$filters) }
+                .sheet(isPresented: screen.$download) { BulkDownloadSheet(query: screen.effective, title: screen.title ?? screen.filters.title(screen.store)) }
+                .safeAreaInset(edge: .bottom) { if screen.selecting { screen.bulkBar } }
+                .fullScreenCover(item: screen.$viewer) { PhotoPager(start: $0).environmentObject(screen.store).environmentObject(screen.router) }
+        }
+    }
+
+    private var bulkBar: some View {
+        BulkActionBar(ids: Array(selected), total: list?.ids.count ?? 0, album: filters.value("ualbum").flatMap(Int.init),
+                      selectAll: { selected = Set(list?.ids ?? []) }, deselect: { selected = [] }) { outcome in
+            selecting = false; selected = []
+            if case .removed(let gone) = outcome { list?.ids.removeAll { gone.contains($0) } }
+            Task { await load() }
+        }
     }
 
     // MARK: the grid
@@ -89,15 +110,15 @@ struct PhotoGridScreen: View {
         if let list {
             let rows = Self.rows(list, width: max(width, 100), height: rowHeight, byDay: currentSort == "new" || currentSort == "old")
             LazyVStack(alignment: .leading, spacing: 3) {
-                HStack {
+                HStack(alignment: .top) {
                     let noun = list.videos.count == list.ids.count ? "video" : list.videos.isEmpty ? "photo" : "item"
                     Text(list.ids.count == 1 ? "1 \(noun)" : "\(list.ids.count.formatted()) \(noun)s").font(.subheadline).foregroundStyle(.secondary)
-                    if isRoot, !query.filters.isEmpty { Spacer() }
-                    chips
+                        .padding(.top, 6)
+                    FilterChips(query: $filters)
                 }
                 .padding(.vertical, 6)
                 if list.ids.isEmpty {
-                    Text(searchSent.isEmpty ? "No photos here." : "Nothing matches “\(searchSent)”.")
+                    Text(filters.value("q").map { "Nothing matches “\($0)”." } ?? "No photos here.")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 80)
                 }
                 ForEach(rows) { row in
@@ -170,20 +191,6 @@ struct PhotoGridScreen: View {
         }
     }
 
-    /// The filters this list came with, as chips (tap one to drop it).
-    @ViewBuilder private var chips: some View {
-        if isRoot {
-            Menu {
-                Picker("Show", selection: $kind) {
-                    Text("Photos and videos").tag("all"); Text("Photos").tag("photo"); Text("Videos").tag("video")
-                }
-            } label: {
-                Label(kind == "all" ? "All" : kind == "photo" ? "Photos" : "Videos", systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.subheadline)
-            }
-        }
-    }
-
     // MARK: toolbar
 
     @ToolbarContentBuilder private func toolbar(_ proxy: ScrollViewProxy) -> some ToolbarContent {
@@ -191,11 +198,21 @@ struct PhotoGridScreen: View {
             if selecting {
                 Button("Done") { selecting = false; selected = [] }
             } else {
+                Button { showFilters = true } label: {
+                    Image(systemName: filters.filters.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                }
+                .accessibilityLabel("Filters")
                 Menu {
                     Picker("Order", selection: Binding(get: { currentSort }, set: { sort = $0 })) {
+                        if list?.ranked == true { Text("Best match").tag("rel") }
                         Text("Newest first").tag("new"); Text("Oldest first").tag("old")
                         Text("Recently changed").tag("added"); Text("Top rated").tag("rating")
+                        Text("Sharpest first").tag("sharp"); Text("Blurriest first").tag("blur")
                         Text("File name").tag("name"); Text("Largest files").tag("size")
+                    }
+                    SavedSearchesMenu(query: $filters)
+                    if list?.ids.isEmpty == false {
+                        Button { download = true } label: { Label("Download all as zip", systemImage: "arrow.down.circle") }
                     }
                     Picker("Size", selection: $size) {
                         Text("Small").tag("s"); Text("Medium").tag("m"); Text("Large").tag("l")
@@ -229,67 +246,6 @@ struct PhotoGridScreen: View {
     }
 
     // MARK: selection
-
-    private var selectionBar: some View {
-        HStack(spacing: 22) {
-            Text(selected.isEmpty ? "Select photos" : "\(selected.count) selected").font(.subheadline.weight(.medium))
-            Spacer()
-            Button { Task { await favorite(true) } } label: { Image(systemName: "heart") }.accessibilityLabel("Add to favorites")
-            Button { Task { await favorite(false) } } label: { Image(systemName: "heart.slash") }.accessibilityLabel("Remove from favorites")
-            Menu {
-                ForEach(store.albums) { a in Button(a.name) { Task { await addToAlbum(a.id) } } }
-                Divider()
-                Button { albumName = ""; newAlbum = true } label: { Label("New album…", systemImage: "plus") }
-            } label: { Image(systemName: "rectangle.stack.badge.plus") }
-                .accessibilityLabel("Add to album")
-            Button { Task { await share() } } label: {
-                if preparing { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
-            }
-            .accessibilityLabel("Share")
-        }
-        .font(.title3)
-        .disabled(selected.isEmpty || preparing)
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(.bar)
-    }
-
-    private func favorite(_ on: Bool) async {
-        if await store.setFavorites(Array(selected), on) { selecting = false; selected = [] }
-        else { note = "Couldn't change your favorites. Check that you're signed in." }
-    }
-
-    private func addToAlbum(_ album: Int?, name: String? = nil) async {
-        do {
-            _ = try await store.addToAlbum(Array(selected), album: album, name: name)
-            note = "Added \(selected.count == 1 ? "1 photo" : "\(selected.count) photos") to \(album.flatMap { a in store.albums.first { $0.id == a }?.name } ?? name ?? "the album")."
-            selecting = false; selected = []
-        } catch {
-            note = error.localizedDescription
-        }
-    }
-
-    /// The originals, downloaded for the share sheet (at most 50 at a time).
-    private func share() async {
-        preparing = true
-        defer { preparing = false }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        var out: [URL] = []
-        for id in selected.prefix(50) {
-            guard let (tmp, resp) = try? await IopixClient.shared.session.download(for: IopixClient.shared.request("orig/\(id)")),
-                  (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
-            let name = (resp as? HTTPURLResponse).flatMap { PhotoPager.filename($0) } ?? "iopix-\(id).jpg"
-            var dst = dir.appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: dst.path) { dst = dir.appendingPathComponent("\(id)-\(name)") }
-            if (try? FileManager.default.moveItem(at: tmp, to: dst)) != nil { out.append(dst) }
-        }
-        if out.isEmpty { note = "Couldn't get the photos to share." } else { sharing = out }
-    }
-
-    private func cleanShared() {
-        if let first = sharing.first { try? FileManager.default.removeItem(at: first.deletingLastPathComponent()) }
-        sharing = []
-    }
 
     // MARK: data
 
@@ -338,7 +294,7 @@ struct PhotoGridScreen: View {
             guard !pending.isEmpty else { return }
             let gaps = spacing * CGFloat(pending.count - 1)
             let h = full ? (width - gaps) / CGFloat(sum) : min(height, (width - gaps) / CGFloat(sum))
-            out.append(GridRow(id: out.count, kind: .photos(pending, h)))
+            out.append(GridRow(id: "p\(list.ids[pending[0]])", kind: .photos(pending, h)))
             pending = []; sum = 0
         }
         var lastDay: DateComponents?
@@ -354,7 +310,7 @@ struct PhotoGridScreen: View {
                         out[headerIndex] = GridRow(id: out[headerIndex].id, kind: .day(label, i - dayStart, year: y))
                     }
                     let label = t > 0 ? dayFormat.string(from: Date(timeIntervalSince1970: t)) : "Date unknown"
-                    out.append(GridRow(id: out.count, kind: .day(label, 0, year: d.year ?? 0)))
+                    out.append(GridRow(id: "d\(list.ids[i])", kind: .day(label, 0, year: d.year ?? 0)))
                     lastDay = d
                     dayStart = i
                 }
