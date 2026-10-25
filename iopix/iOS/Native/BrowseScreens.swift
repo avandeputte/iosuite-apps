@@ -79,7 +79,6 @@ struct ThumbRow: View {
                 Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
     }

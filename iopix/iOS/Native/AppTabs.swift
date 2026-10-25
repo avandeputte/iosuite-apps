@@ -3,9 +3,18 @@ import SwiftUI
 /// The app's tabs, all native. Settings, Maintenance and editing a photo open the web app (under More).
 struct AppTabs: View {
     @EnvironmentObject private var router: Router
+    @Environment(\.horizontalSizeClass) private var width
     var showUploads: () -> Void
 
     var body: some View {
+        if width == .regular {
+            SidebarLayout(showUploads: showUploads)  // iPad and Mac: every page listed in the sidebar
+        } else {
+            tabs
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $router.tab) {
             ExploreView(showUploads: showUploads)
                 .tabItem { Label(AppTab.explore.title, systemImage: AppTab.explore.symbol) }
@@ -32,7 +41,124 @@ struct AppTabs: View {
                 .tabItem { Label(AppTab.more.title, systemImage: AppTab.more.symbol) }
                 .tag(AppTab.more)
         }
-        .adaptableSidebar()
+    }
+}
+
+/// On a wide screen the pages are listed in a sidebar, every one of them, instead of a tab bar with a More tab.
+struct SidebarLayout: View {
+    @EnvironmentObject private var router: Router
+    @EnvironmentObject private var queue: UploadQueue
+    var showUploads: () -> Void
+
+    /// A sidebar row: one of the main tabs, or a page from More.
+    enum Item: Hashable {
+        case tab(AppTab)
+        case page(Screen)
+    }
+
+    /// The sidebar's selection, read from and written to the router (so links from anywhere pick the right row).
+    private var selection: Binding<Item?> {
+        Binding(
+            get: { router.tab == .more ? router.morePath.first.map(Item.page) ?? .page(.albums) : .tab(router.tab) },
+            set: { item in
+                switch item {
+                case .tab(let t): router.tab = t
+                case .page(let s): router.tab = .more; router.morePath = [s]
+                case nil: break
+                }
+            })
+    }
+
+    private struct Row: Identifiable {
+        let title: String, symbol: String, hue: Color, screen: Screen
+        var id: Screen { screen }
+    }
+
+    private var library: [Row] {
+        var rows = [Row(title: "Favorites", symbol: "heart.fill", hue: Hue.rose, screen: .photos(PhotoQuery([("fav", "1")]), title: "Favorites")),
+                    Row(title: "Folders", symbol: "folder.fill", hue: Hue.teal, screen: .folders(parent: nil)),
+                    Row(title: "Albums", symbol: "rectangle.stack.fill", hue: Hue.indigo, screen: .albums),
+                    Row(title: "Tags", symbol: "tag.fill", hue: Hue.orange, screen: .tags(parent: nil)),
+                    Row(title: "Map", symbol: "map.fill", hue: Hue.cyan, screen: .map),
+                    Row(title: "Events & trips", symbol: "calendar", hue: Hue.cyan, screen: .events)]
+        let editor = queue.account?.canWrite == true
+        if editor { rows.append(Row(title: "Import", symbol: "square.and.arrow.down.on.square", hue: Hue.blue, screen: .importPhotos)) }
+        if editor { rows.append(Row(title: "Trash", symbol: "trash", hue: Hue.rose, screen: .trash)) }
+        rows += [Row(title: "Duplicate files", symbol: "doc.on.doc", hue: Hue.orange, screen: .duplicates),
+                 Row(title: "Near-duplicates", symbol: "square.on.square", hue: Hue.orange, screen: .nearDuplicates),
+                 Row(title: "Bursts & best shots", symbol: "square.stack.3d.down.right", hue: Hue.amber, screen: .bursts),
+                 Row(title: "Detected content", symbol: "sparkles", hue: Hue.purple, screen: .detected)]
+        if editor { rows.append(Row(title: "Metadata quality", symbol: "checkmark.seal", hue: Hue.teal, screen: .quality)) }
+        rows.append(Row(title: "History", symbol: "clock.arrow.circlepath", hue: Hue.slate, screen: .history(photo: nil)))
+        return rows
+    }
+
+    private var iopix: [Row] {
+        var rows = [Row(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, screen: .settings)]
+        if queue.account?.isAdmin == true { rows.append(Row(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, screen: .maintenance)) }
+        return rows
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            List(selection: selection) {
+                Section {
+                    ForEach([AppTab.explore, .photos, .people, .places], id: \.self) { t in
+                        Label(t.title, systemImage: t.symbol).tag(Item.tab(t))
+                    }
+                }
+                Section("Library") { ForEach(library) { row($0) } }
+                Section("iopix") {
+                    ForEach(iopix) { row($0) }
+                    Button(action: showUploads) {
+                        Label { Text("Send photos to iopix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationTitle("iopix")
+        } detail: {
+            detail
+        }
+    }
+
+    private func row(_ r: Row) -> some View {
+        Label { Text(r.title) } icon: { icon(r.symbol, r.hue) }.tag(Item.page(r.screen))
+    }
+
+    private func icon(_ symbol: String, _ hue: Color) -> some View {
+        Image(systemName: symbol).foregroundStyle(.white).font(.caption)
+            .frame(width: 24, height: 24).background(hue, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch router.tab {
+        case .explore:
+            ExploreView(showUploads: showUploads)
+        case .photos:
+            NavigationStack(path: $router.photosPath) {
+                PhotoGridScreen(query: PhotoQuery(), title: "Photos", isRoot: true, showUploads: showUploads)
+                    .navigationDestination(for: Screen.self) { ScreenView(destination: $0, showUploads: showUploads) }
+            }
+        case .people:
+            NavigationStack(path: $router.peoplePath) {
+                FacesPeopleScreen()
+                    .navigationDestination(for: Screen.self) { ScreenView(destination: $0, showUploads: showUploads) }
+            }
+        case .places:
+            NavigationStack(path: $router.placesPath) {
+                PlacesScreen()
+                    .navigationDestination(for: Screen.self) { ScreenView(destination: $0, showUploads: showUploads) }
+            }
+        case .more:
+            // the chosen page is the stack's root; what it opens goes on after it in morePath
+            let root = router.morePath.first ?? .albums
+            NavigationStack(path: Binding(get: { Array(router.morePath.dropFirst()) }, set: { router.morePath = [root] + $0 })) {
+                ScreenView(destination: root, showUploads: showUploads)
+                    .navigationDestination(for: Screen.self) { ScreenView(destination: $0, showUploads: showUploads) }
+            }
+            .id(root)
+        }
     }
 }
 
