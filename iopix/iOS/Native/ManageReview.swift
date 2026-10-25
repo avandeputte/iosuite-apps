@@ -74,10 +74,31 @@ struct ManageDuplicatesScreen: View {
         .pager($viewer)
         .confirmationDialog("Move this copy to the trash?", isPresented: Binding(get: { trashing != nil }, set: { if !$0 { trashing = nil } }), titleVisibility: .visible) {
             Button("Move to trash", role: .destructive) {
-                if let (_, c) = trashing { Task { notice = await trashPhotos([c.id]); await load(); await store.load() } }
+                if let (_, c) = trashing { Task { await trash(c) } }
             }
-        } message: { Text("The other copies stay. It can be restored from the Trash.") }
+        } message: {
+            let name = trashing.map { (_, c) in c.album.isEmpty ? c.name : c.album + "/" + c.name } ?? ""
+            Text("\(name)\n\nThe other copies stay. It can be restored from the Trash.")
+        }
         .notice($notice)
+    }
+
+    /// The copy leaves the list at once (a group with one file left is no longer a duplicate); the server's list
+    /// follows once it has rebuilt its index, a moment later, and is read again then.
+    private func trash(_ c: Copy) async {
+        let seen = await FacesAPI.indexVersion()
+        let n = await trashPhotos([c.id])
+        notice = n
+        guard !n.failed else { return }
+        let before = groups
+        groups = groups.compactMap { g in
+            let left = g.items.filter { $0.id != c.id }
+            return left.count > 1 ? Group(size: g.size, items: left) : nil
+        }
+        if let g = before.first(where: { $0.items.contains { $0.id == c.id } }) { wasted = max(0, wasted - g.size) }
+        await FacesAPI.awaitReindex(after: seen)
+        await load()
+        await store.load()
     }
 
     private func load() async {
@@ -241,7 +262,12 @@ struct ManageBurstsScreen: View {
             Button("Move the other frames to the trash", role: .destructive) {
                 if let b = keeping {
                     let best = b.frames.first { $0.best } ?? b.frames[0]
-                    Task { notice = await trashPhotos(b.frames.filter { $0.id != best.id }.map(\.id)); await load(more: false); await store.load() }
+                    Task {
+                        let seen = await FacesAPI.indexVersion()
+                        notice = await trashPhotos(b.frames.filter { $0.id != best.id }.map(\.id))
+                        await FacesAPI.awaitReindex(after: seen)  // the server's list follows once it has rebuilt
+                        await load(more: false); await store.load()
+                    }
                 }
             }
         } message: { Text("They can be restored from the Trash.") }
