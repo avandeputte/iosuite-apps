@@ -370,6 +370,7 @@ struct ExploreView: View {
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
+        .contextMenu { photoMenu(h.list.ids[h.index]) }
         .accessibilityLabel("\(h.title), \(h.subtitle)")
     }
 
@@ -419,7 +420,17 @@ struct ExploreView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+        .contextMenu { photoMenu(list.ids[i]) }
         .accessibilityLabel(i < list.times.count && list.times[i] > 0 ? PhotoPager.day(list.times[i]) : "Photo")
+    }
+
+    /// Right-click (Mac) or long-press on a photo, as in the Photos grid.
+    @ViewBuilder private func photoMenu(_ id: Int) -> some View {
+        let fav = store.favoriteIDs.contains(id)
+        Button { Task { await store.setFavorite(id, !fav) } } label: {
+            Label(fav ? "Remove from Favorites" : "Add to Favorites", systemImage: fav ? "heart.slash" : "heart")
+        }
+        Button { router.open("#/photos?p=\(id)") } label: { Label("Open in iopix", systemImage: "safari") }
     }
 
     private func rows(_ list: PhotoList, limit: Int) -> some View {
@@ -432,6 +443,7 @@ struct ExploreView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
+                .contextMenu { photoMenu(list.ids[i]) }
                 .accessibilityLabel(i < list.times.count && list.times[i] > 0 ? PhotoPager.day(list.times[i]) : "Photo")
             }
         }

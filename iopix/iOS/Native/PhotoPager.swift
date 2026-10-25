@@ -23,7 +23,12 @@ struct PhotoPager: View {
     @State private var reloadKey = 0
     @ObservedObject private var rights = EditRights.shared
     @State private var chrome = true
-    @State private var info = false
+    /// The info pane beside the photo (wide screens) stays open from one photo, and one viewing, to the next.
+    @AppStorage("iopix.viewer.infoPane") private var pane = false
+    @State private var sheet = false
+    /// Face boxes over the photo, as the web app's F key shows them; kept from one photo to the next.
+    @AppStorage("iopix.viewer.faces") private var showFaces = false
+    private var info: Bool { sidePane ? pane : sheet }
     @Environment(\.horizontalSizeClass) private var width
     /// On a wide screen (iPad) the details sit in a pane beside the photo, as on the web; on a phone in a sheet.
     private var sidePane: Bool { width == .regular }
@@ -57,12 +62,12 @@ struct PhotoPager: View {
                 Color.black.ignoresSafeArea()
                 // pages are made as they come into view, so a list of the whole library swipes as well as a short one
                 PageView(count: ids.count, index: $index) { i in
-                    AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true) {
+                    AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true, showFaces: showFaces) {
                         withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
                     }
                     .ignoresSafeArea())
                 }
-                .id(reloadKey)
+                .id("\(reloadKey)-\(showFaces)")
                 .ignoresSafeArea()
             }
             .overlay(alignment: .top) { if chrome { topBar } }
@@ -78,7 +83,7 @@ struct PhotoPager: View {
         }
         .animation(.easeInOut(duration: 0.25), value: info)
         .statusBarHidden(!chrome)
-        .sheet(isPresented: Binding(get: { info && !sidePane }, set: { info = $0 })) {
+        .sheet(isPresented: Binding(get: { sheet && !sidePane }, set: { sheet = $0 })) {
             PhotoInfoSheet(photo: current)
                 .presentationDetents([.medium, .large])
         }
@@ -132,12 +137,18 @@ struct PhotoPager: View {
                 ViewerIcon(symbol: fav ? "heart.fill" : "heart", tint: fav ? .pink : .white)
             }
             .accessibilityLabel(fav ? "Remove from favorites" : "Add to favorites")
-            Button { info.toggle() } label: { ViewerIcon(symbol: info ? "info.circle.fill" : "info.circle") }
+            if !isVideo(index) {
+                Button { showFaces.toggle() } label: { ViewerIcon(symbol: showFaces ? "person.crop.square.fill" : "person.crop.square") }
+                    .accessibilityLabel(showFaces ? "Hide faces" : "Show faces")
+            }
+            Button {
+                if sidePane { pane.toggle() } else { sheet.toggle() }
+            } label: { ViewerIcon(symbol: info ? "info.circle.fill" : "info.circle") }
                 .accessibilityLabel("Info")
             Menu {
                 if rights.canWrite {
                     Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-                    Button { faces = true } label: { Label("Faces", systemImage: "person.crop.rectangle") }
+                    Button { faces = true } label: { Label("Edit faces…", systemImage: "person.crop.rectangle") }
                 }
                 Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
             } label: {
@@ -219,6 +230,7 @@ struct ShareSheet: UIViewControllerRepresentable {
 /// viewer's buttons).
 struct ZoomablePhoto: UIViewRepresentable {
     let id: Int
+    var faces: FaceBoxes?
     var tapped: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -237,6 +249,10 @@ struct ZoomablePhoto: UIViewRepresentable {
         image.frame = scroll.bounds
         image.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scroll.addSubview(image)
+        let layer = FaceLayer(frame: image.bounds)
+        layer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        image.addSubview(layer)  // inside the picture: the boxes zoom and pan with it
+        context.coordinator.faceLayer = layer
         context.coordinator.scroll = scroll
         context.coordinator.image = image
         let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTap(_:)))
@@ -251,6 +267,7 @@ struct ZoomablePhoto: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         let c = context.coordinator
         c.tapped = tapped
+        c.faceLayer?.boxes = faces
         guard c.loaded != id else { return }
         c.loaded = id
         scroll.zoomScale = 1
@@ -265,6 +282,7 @@ struct ZoomablePhoto: UIViewRepresentable {
     final class Coordinator: NSObject, UIScrollViewDelegate {
         weak var scroll: UIScrollView?
         weak var image: UIImageView?
+        weak var faceLayer: FaceLayer?
         var loaded: Int?
         var tapped: () -> Void = {}
 
@@ -290,16 +308,22 @@ struct MediaPage: View {
     let id: Int
     let knownVideo: Bool
     let active: Bool
+    var showFaces = false
     var tapped: () -> Void
     @State private var video: Bool?
+    @State private var boxes: FaceBoxes?
 
     var body: some View {
         Group {
             if knownVideo || video == true {
                 VideoPage(id: id, active: active)
             } else {
-                ZoomablePhoto(id: id, tapped: tapped)
+                ZoomablePhoto(id: id, faces: showFaces ? boxes : nil, tapped: tapped)
             }
+        }
+        .task(id: showFaces ? id : -id) {
+            guard showFaces, boxes == nil, let d = await PhotoDetail.load(id), !d.video else { return }
+            boxes = FaceBoxes(width: d.w, height: d.h, faces: d.faces.filter { $0.rect.count == 4 })
         }
         .task(id: id) {
             guard !knownVideo, video == nil, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
@@ -542,3 +566,87 @@ private enum MacToolbar {
     }
 }
 #endif
+
+/// The faces of one photo, in its own (upright) pixels.
+struct FaceBoxes {
+    let width: Int
+    let height: Int
+    let faces: [PhotoDetail.Face]
+}
+
+/// Face boxes drawn over the picture where it sits (aspect fit), each with its name below: named in white,
+/// suggestions in yellow, unknown faces dashed.
+final class FaceLayer: UIView {
+    var boxes: FaceBoxes? { didSet { rebuild() } }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func rebuild() {
+        subviews.forEach { $0.removeFromSuperview() }
+        for f in boxes?.faces ?? [] {
+            let box = UIView()
+            box.layer.borderWidth = 2
+            box.layer.cornerRadius = 4
+            let color: UIColor = f.kind == .suggested ? .systemYellow : .white
+            box.layer.borderColor = color.cgColor
+            if f.kind == .unknown {
+                let dash = CAShapeLayer()
+                dash.strokeColor = UIColor.white.cgColor
+                dash.fillColor = nil
+                dash.lineDashPattern = [5, 4]
+                dash.lineWidth = 2
+                box.layer.borderWidth = 0
+                box.layer.addSublayer(dash)
+            }
+            box.layer.shadowColor = UIColor.black.cgColor
+            box.layer.shadowOpacity = 0.5
+            box.layer.shadowRadius = 2
+            box.layer.shadowOffset = .zero
+            addSubview(box)
+            let label = PaddedLabel()
+            label.text = f.kind == .unknown ? "Unknown" : (f.kind == .suggested ? "\(f.name ?? "")?" : f.name)
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = color
+            label.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+            label.layer.cornerRadius = 4
+            label.clipsToBounds = true
+            label.isHidden = label.text?.isEmpty ?? true
+            addSubview(label)
+        }
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let b = boxes, b.width > 0, b.height > 0 else { return }
+        // where an aspect-fit picture of the photo's shape sits in these bounds
+        let scale = min(bounds.width / CGFloat(b.width), bounds.height / CGFloat(b.height))
+        let ox = (bounds.width - CGFloat(b.width) * scale) / 2, oy = (bounds.height - CGFloat(b.height) * scale) / 2
+        let views = subviews
+        for (k, f) in b.faces.enumerated() where k * 2 + 1 < views.count {
+            let r = CGRect(x: ox + CGFloat(f.rect[0]) * scale, y: oy + CGFloat(f.rect[1]) * scale,
+                           width: CGFloat(f.rect[2]) * scale, height: CGFloat(f.rect[3]) * scale)
+            let box = views[k * 2], label = views[k * 2 + 1]
+            box.frame = r
+            if let dash = box.layer.sublayers?.first as? CAShapeLayer {
+                dash.path = UIBezierPath(roundedRect: box.bounds, cornerRadius: 4).cgPath
+            }
+            let size = label.sizeThatFits(CGSize(width: 220, height: 30))
+            label.frame = CGRect(x: r.midX - size.width / 2, y: r.maxY + 3, width: size.width, height: size.height)
+        }
+    }
+}
+
+private final class PaddedLabel: UILabel {
+    override func drawText(in rect: CGRect) { super.drawText(in: rect.insetBy(dx: 5, dy: 2)) }
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let s = super.sizeThatFits(size)
+        return CGSize(width: s.width + 10, height: s.height + 4)
+    }
+}
