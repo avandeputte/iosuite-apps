@@ -67,7 +67,7 @@ struct FacesPersonPicker: View {
     }
 
     private func row(_ t: FacesTag) -> some View {
-        Button { dismiss(); pick(t.id, t.name) } label: {
+        Button { pick(t.id, t.name); dismiss() } label: {
             HStack(spacing: 12) {
                 FaceImage(person: t.person).frame(width: 40, height: 40).clipShape(Circle())
                 VStack(alignment: .leading, spacing: 1) {
@@ -104,8 +104,8 @@ struct FacesPersonPicker: View {
                                 let root = tags.first { $0.full == "People" }?.id
                                 let id = try await FacesAPI.createPerson(name, parent: family == 0 ? root : family)
                                 creating = false
-                                dismiss()
                                 pick(id, name)
+                                dismiss()
                             } catch {
                                 creating = false
                                 problem = error.localizedDescription
@@ -166,7 +166,9 @@ struct FacesReviewScreen: View {
         .refreshable { await load() }
         .safeAreaInset(edge: .bottom) { if canManage, !selected.isEmpty, !(tab == "unknown" && showingGroups) { plainBar } }
         .sheet(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } })) {
-            FacesPersonPicker(photo: pickPhoto) { id, name in picking?(id, name); picking = nil }
+            // the action is taken now: closing the sheet clears `picking` before the choice comes back
+            let action = picking
+            FacesPersonPicker(photo: pickPhoto) { id, name in action?(id, name); picking = nil }
         }
         .confirmationDialog("Remove \(confirmRemove.count == 1 ? "this face region" : "\(confirmRemove.count) face regions")?",
                             isPresented: Binding(get: { !confirmRemove.isEmpty }, set: { if !$0 { confirmRemove = [] } }), titleVisibility: .visible) {

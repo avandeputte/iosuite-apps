@@ -180,12 +180,7 @@ struct PhotoGridScreen: View {
             RemoteImage(path: "thumb/\(id)")
                 .frame(width: CGFloat(list.ratio(i)) * h, height: h)
                 .clipped()
-                .overlay(alignment: .bottomLeading) {
-                    if list.isVideo(i) { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).shadow(radius: 2).padding(5) }
-                }
-                .overlay(alignment: .topTrailing) {
-                    if store.favoriteIDs.contains(id) { Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.white).shadow(radius: 2).padding(5) }
-                }
+                .overlay { TileBadges(list: list, index: i, favorite: store.favoriteIDs.contains(id)) }
                 .overlay {
                     if selecting {
                         ZStack(alignment: .bottomTrailing) {

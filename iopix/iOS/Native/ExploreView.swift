@@ -311,12 +311,7 @@ struct ExploreView: View {
             ForEach(0..<count, id: \.self) { i in
                 Button { viewer = PagerStart(list: list, index: i) } label: {
                     RemoteImage(path: "thumb/\(list.ids[i])")
-                        .overlay(alignment: .bottomLeading) {
-                            if list.isVideo(i) { Image(systemName: "play.fill").font(.caption).foregroundStyle(.white).shadow(radius: 2).padding(6) }
-                        }
-                        .overlay(alignment: .topTrailing) {
-                            if store.favoriteIDs.contains(list.ids[i]) { Image(systemName: "heart.fill").font(.caption).foregroundStyle(.white).shadow(radius: 2).padding(6) }
-                        }
+                        .overlay { TileBadges(list: list, index: i, favorite: store.favoriteIDs.contains(list.ids[i])) }
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)

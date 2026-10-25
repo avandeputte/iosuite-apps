@@ -66,7 +66,6 @@ struct PhotoPager: View {
                 .ignoresSafeArea()
             }
             .overlay(alignment: .top) { if chrome { topBar } }
-            .overlay(alignment: .bottom) { if chrome { bottomBar } }
             if info && sidePane {
                 PhotoInfoPane(photo: current)
                     .frame(width: 360)
@@ -111,14 +110,30 @@ struct PhotoPager: View {
         HStack {
             Button { dismiss() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44) }
                 .accessibilityLabel("Close")
-            Spacer()
-            VStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
                 if let t = takenAt(index) {
-                    Text(Self.day(t)).font(.subheadline.weight(.semibold))
+                    Text(Self.day(t)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 if ids.count > 1 { Text("\(index + 1) of \(ids.count)").font(.caption).foregroundStyle(.white.opacity(0.7)) }
             }
-            Spacer()
+            Spacer(minLength: 4)
+            // share, favorite and info at the top right, beside the picture's corner (as on the web)
+            Button { Task { await share() } } label: {
+                Group { if preparing { ProgressView().tint(.white) } else { Image(systemName: "square.and.arrow.up") } }
+                    .font(.headline).frame(width: 40, height: 44)
+            }
+            .accessibilityLabel("Share")
+            .disabled(preparing)
+            let fav = store.favoriteIDs.contains(current)
+            Button { Task { await store.setFavorite(current, !fav) } } label: {
+                Image(systemName: fav ? "heart.fill" : "heart").foregroundStyle(fav ? .pink : .white)
+                    .font(.headline).frame(width: 40, height: 44)
+            }
+            .accessibilityLabel(fav ? "Remove from favorites" : "Add to favorites")
+            Button { info.toggle() } label: {
+                Image(systemName: info ? "info.circle.fill" : "info.circle").font(.headline).frame(width: 40, height: 44)
+            }
+            .accessibilityLabel("Info")
             Menu {
                 if rights.canWrite {
                     Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
@@ -126,35 +141,13 @@ struct PhotoPager: View {
                 }
                 Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.headline).frame(width: 44, height: 44)
+                Image(systemName: "ellipsis.circle").font(.headline).frame(width: 40, height: 44)
             }
             .accessibilityLabel("More")
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-    }
-
-    private var bottomBar: some View {
-        HStack(spacing: 44) {
-            Button { Task { await share() } } label: {
-                if preparing { ProgressView().tint(.white) } else { Image(systemName: "square.and.arrow.up") }
-            }
-            .accessibilityLabel("Share")
-            .disabled(preparing)
-            let fav = store.favoriteIDs.contains(current)
-            Button { Task { await store.setFavorite(current, !fav) } } label: {
-                Image(systemName: fav ? "heart.fill" : "heart").foregroundStyle(fav ? .pink : .white)
-            }
-            .accessibilityLabel(fav ? "Remove from favorites" : "Add to favorites")
-            Button { info.toggle() } label: { Image(systemName: info && sidePane ? "info.circle.fill" : "info.circle") }
-                .accessibilityLabel("Info")
-        }
-        .font(.title2)
-        .foregroundStyle(.white)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity)
-        .background(LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
     /// The original file, downloaded to a temporary place for the share sheet (removed after).

@@ -8,6 +8,12 @@ struct PhotoList: Equatable {
     var times: [Double] = []   // when each was taken (seconds since 1970), when known
     var ratios: [Double] = []  // width / height of each, when known (for rows of photos at their own shape)
     var ranked = false         // a search by meaning: the server's order is best match first
+    var geo: Set<Int> = []     // positions with a location
+    var faces: Set<Int> = []   // positions with a named face
+    var durations: [Int: Int] = [:]  // position of a video -> its length in seconds, when known
+
+    func hasLocation(_ i: Int) -> Bool { geo.contains(i) }
+    func hasFaces(_ i: Int) -> Bool { faces.contains(i) }
 
     func ratio(_ i: Int) -> Double { i < ratios.count ? ratios[i] : 1.5 }
 
@@ -23,6 +29,11 @@ struct PhotoList: Equatable {
         videos = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
         times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         ranked = j["ranked"] as? Bool ?? false
+        geo = Set((j["geo"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+        faces = Set((j["faces"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+        for (k, v) in j["video"] as? [String: Any] ?? [:] {
+            if let i = Int(k), let d = (v as? NSNumber)?.intValue, d > 0 { durations[i] = d }
+        }
         let w = (j["w"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         let h = (j["h"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         ratios = zip(w, h).map { w, h in h > 0 && w > 0 ? min(2.2, max(0.5, w / h)) : 1.5 }
@@ -375,3 +386,51 @@ struct RemoteImage: View {
         }
     }
 }
+
+#if os(iOS)
+import SwiftUI
+
+/// The marks on a thumbnail, as the web app draws them: a heart for a favorite (bottom left), a face and a pin for
+/// named faces and a location (bottom right), and a video's length (top right). The Display setting can hide the
+/// heart, face and pin.
+struct TileBadges: View {
+    let list: PhotoList
+    let index: Int
+    let favorite: Bool
+    @AppStorage("iopix.pref.badges") private var badges = "1"
+
+    var body: some View {
+        ZStack {
+            if list.isVideo(index) {
+                HStack(spacing: 2) {
+                    if let d = list.durations[index] { Text(Self.length(d)).font(.caption2.weight(.medium)) }
+                    Image(systemName: "play.fill").font(.caption2)
+                }
+                .padding(5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+            if badges != "0" {
+                if favorite {
+                    Image(systemName: "heart.fill").font(.system(size: 11))
+                        .padding(5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
+                if list.hasFaces(index) || list.hasLocation(index) {
+                    HStack(spacing: 3) {
+                        if list.hasFaces(index) { Image(systemName: "face.smiling") }
+                        if list.hasLocation(index) { Image(systemName: "mappin") }
+                    }
+                    .font(.system(size: 11))
+                    .padding(5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.8), radius: 2)
+        .allowsHitTesting(false)
+    }
+
+    static func length(_ s: Int) -> String { s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60) }
+}
+#endif
