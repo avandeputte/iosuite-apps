@@ -63,7 +63,7 @@ final class ShareModel: ObservableObject {
         }
 
         // one at a time: a photo is fetched (from iCloud when needed), sent, and its copy removed before the next
-        var added = 0, already = 0, notAdded: [String] = []
+        var added = 0, already = 0, queued = 0, notAdded: [String] = []
         let total = providers.count
         for (i, p) in providers.enumerated() {
             if Task.isCancelled { return }
@@ -74,6 +74,16 @@ final class ShareModel: ObservableObject {
             }
             defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
             do {
+                // iopix 1.78 and later: iOS sends it in the background, so the sheet can close right away
+                if let prepared = try await IopixClient.shared.prepareUpload(file: file, name: file.lastPathComponent, folder: BackgroundUploads.outbox) {
+                    switch prepared {
+                    case .alreadyThere: already += 1
+                    case .request(let r, let body):
+                        BackgroundUploads.shared(BackgroundUploads.shareIdentifier).send(r, body: body, tag: file.lastPathComponent)
+                        queued += 1
+                    }
+                    continue
+                }
                 let outcome = try await IopixClient.shared.upload(file: file, name: file.lastPathComponent) { pr in
                     Task { @MainActor in self.phase = .sending(index: i, total: total, progress: pr) }
                 }
@@ -89,6 +99,7 @@ final class ShareModel: ObservableObject {
         }
         var lines: [String] = []
         if added > 0 { lines.append("\(Self.count(added)) sent to iopix.") }
+        if queued > 0 { lines.append("\(Self.count(queued)) on \(queued == 1 ? "its" : "their") way to iopix. It carries on after you close this; the iopix app lists it when done.") }
         if already > 0 { lines.append("\(Self.count(already)) \(already == 1 ? "was" : "were") already in iopix.") }
         lines += notAdded
         phase = .finished(lines.joined(separator: "\n"))

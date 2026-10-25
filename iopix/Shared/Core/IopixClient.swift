@@ -300,6 +300,46 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         return .skipped("iopix did not add it.")
     }
 
+    /// An upload ready to hand to a background session: the request and its body on disk.
+    enum PreparedUpload {
+        case alreadyThere
+        case request(URLRequest, body: URL)
+    }
+
+    /// For iopix 1.78 and later (nil on an older server): checks whether the library already has the file, else
+    /// writes the one-request upload body into `folder` (a place that outlives this process, for background sending).
+    func prepareUpload(file: URL, name: String, to destination: Destination = .current, folder: URL) async throws -> PreparedUpload? {
+        if destination.needsPatterns {
+            if patternSupport != true { _ = try await layouts() }
+            guard patternSupport == true else { throw IopixError.needsServerUpdate }
+        }
+        guard await modernImport() else { return nil }
+        if let print = try? Self.fingerprint(file), await alreadyThere([print]).contains(print.sha256) { return .alreadyThere }
+        var fields = ["duplicates": "skip"]
+        for (k, v) in destination.runFields { fields[k] = "\(v)" }
+        let boundary = "iopix-\(UUID().uuidString)"
+        let body = try Multipart.write(file: file, name: name, boundary: boundary, fields: fields, into: folder)
+        var r = request("api/import", method: "POST")
+        r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // a background session sends from another process: the sign-in goes with the request itself
+        for (k, v) in HTTPCookie.requestHeaderFields(with: AppConfig.cookies.cookies(for: r.url!) ?? []) { r.setValue(v, forHTTPHeaderField: k) }
+        return .request(r, body: body)
+    }
+
+    /// What the server did with a one-request upload.
+    func outcome(_ data: Data, _ resp: URLResponse) throws -> UploadOutcome {
+        if (resp as? HTTPURLResponse)?.statusCode == 409 {
+            throw URLError(.resourceUnavailable)  // digiKam has the library open: nothing was kept, try again later
+        }
+        let result = try check(data, resp)
+        if let added = result["added"] as? [Any], !added.isEmpty { return .added }
+        if let s = (result["skipped"] as? [[String: Any]])?.first {
+            if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
+            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+        }
+        return .skipped("iopix did not add it.")
+    }
+
     /// iopix 1.78 and later: asks first whether the library already has the file (nothing is sent then), else sends
     /// it with the import choices in one request.
     private func uploadInOne(file: URL, name: String, to destination: Destination, progress: @escaping (Double) -> Void) async throws -> UploadOutcome {
@@ -315,16 +355,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         var r = request("api/import", method: "POST")
         r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let (data, resp) = try await session.upload(for: r, fromFile: body, delegate: ProgressDelegate(progress))
-        if (resp as? HTTPURLResponse)?.statusCode == 409 {
-            throw URLError(.resourceUnavailable)  // digiKam has the library open: nothing was kept, try again later
-        }
-        let result = try check(data, resp)
-        if let added = result["added"] as? [Any], !added.isEmpty { return .added }
-        if let s = (result["skipped"] as? [[String: Any]])?.first {
-            if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
-            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
-        }
-        return .skipped("iopix did not add it.")
+        return try outcome(data, resp)
     }
 
     private func discard(_ token: String) async {
@@ -345,8 +376,8 @@ private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
 
 /// A multipart body written to a file, so a large video is streamed from disk and never held in memory.
 enum Multipart {
-    static func write(file: URL, name: String, boundary: String, fields: [String: String] = [:]) throws -> URL {
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("upload-\(UUID().uuidString)")
+    static func write(file: URL, name: String, boundary: String, fields: [String: String] = [:], into folder: URL? = nil) throws -> URL {
+        let out = (folder ?? FileManager.default.temporaryDirectory).appendingPathComponent("upload-\(UUID().uuidString)")
         // the body is a copy of the file: make sure the disk has room for it first (a full disk is a plain error,
         // not a crash)
         if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,

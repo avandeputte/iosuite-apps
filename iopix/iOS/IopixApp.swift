@@ -2,12 +2,25 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
+/// iOS wakes the app when background sending finishes (also the share sheet's): the uploads pick their results up.
+final class IopixAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        BackgroundUploads.wakeHandlers[identifier] = completionHandler
+        _ = BackgroundUploads.shared(identifier)
+    }
+}
+
 @main
 struct IopixApp: App {
+    @UIApplicationDelegateAdaptor(IopixAppDelegate.self) private var appDelegate
     @StateObject private var queue = UploadQueue.shared
     @StateObject private var watcher = PhotosWatcher.shared
     @StateObject private var launch = LaunchState()
     @Environment(\.scenePhase) private var phase
+
+    init() {
+        UploadQueue.shared.startBackground()
+    }
 
     var body: some Scene {
         WindowGroup {

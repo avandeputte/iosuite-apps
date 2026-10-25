@@ -67,7 +67,12 @@ final class UploadQueue: ObservableObject {
         if let data = try? Data(contentsOf: listFile) {
             // item by item, so one entry a newer or older version wrote differently does not lose the whole list
             if let saved = try? JSONDecoder().decode([Lossy<UploadItem>].self, from: data) {
+                // on iPhone an item may still be on its way in the background: startBackground() looks before resetting it
+                #if os(iOS)
+                items = saved.compactMap(\.value).map { var i = $0; i.progress = 0; return i }
+                #else
                 items = saved.compactMap(\.value).map { var i = $0; if i.state == .sending { i.state = .waiting }; i.progress = 0; return i }
+                #endif
             } else {
                 try? FileManager.default.moveItem(at: listFile, to: listFile.appendingPathExtension("bad"))
             }
@@ -218,6 +223,21 @@ final class UploadQueue: ObservableObject {
             do {
                 let (file, cleanup) = try await prepare(item)
                 defer { cleanup() }
+                #if os(iOS)
+                // iopix 1.78 and later: hand the photo to iOS, which keeps sending it after the app is put away
+                if let prepared = try await IopixClient.shared.prepareUpload(file: file, name: item.name, folder: BackgroundUploads.outbox) {
+                    switch prepared {
+                    case .alreadyThere:
+                        update(id) { $0.state = .duplicate }
+                        if let done = items.first(where: { $0.id == id }) { removeStoredFile(done) }
+                    case .request(let request, let body):
+                        update(id) { $0.message = "Sending" }
+                        BackgroundUploads.shared(BackgroundUploads.appIdentifier).send(request, body: body, tag: id.uuidString)
+                    }
+                    offline = false
+                    continue
+                }
+                #endif
                 let task = Task { try await IopixClient.shared.upload(file: file, name: item.name) { p in
                     Task { @MainActor in self.update(id, save: false) { $0.progress = p } }
                 } }
@@ -267,6 +287,75 @@ final class UploadQueue: ObservableObject {
         }
         trimHistory()
     }
+
+    #if os(iOS)
+    /// At launch: takes the results of background sending (also the share sheet's), and puts back in line the items
+    /// that were being sent but that iOS no longer has.
+    func startBackground() {
+        BackgroundUploads.onFinish = { [weak self] tag, result in self?.finishedInBackground(tag, result) }
+        BackgroundUploads.onProgress = { [weak self] tag, f in
+            guard let self, let id = UUID(uuidString: tag) else { return }
+            self.update(id, save: false) { $0.progress = f }
+        }
+        for logged in BackgroundUploads.takeLogged() { recordShared(logged) }
+        _ = BackgroundUploads.shared(BackgroundUploads.shareIdentifier)  // its finished uploads come here now
+        let app = BackgroundUploads.shared(BackgroundUploads.appIdentifier)
+        Task {
+            let going = await app.inFlight()
+            var changed = false
+            for i in items.indices where items[i].state == .sending && !going.contains(items[i].id.uuidString) {
+                items[i].state = .waiting
+                changed = true
+            }
+            if changed { save() }
+            kick()
+        }
+    }
+
+    private func finishedInBackground(_ tag: String, _ result: Result<UploadOutcome, Error>) {
+        guard let id = UUID(uuidString: tag), items.contains(where: { $0.id == id }) else {
+            // the share sheet's: shown in the list as done
+            switch result {
+            case .success(let o): recordShared(.init(tag: tag, outcome: o == .added ? "added" : o == .alreadyThere ? "already" : "skipped", message: nil, at: Date()))
+            case .failure(let e): recordShared(.init(tag: tag, outcome: "failed", message: e.localizedDescription, at: Date()))
+            }
+            return
+        }
+        switch result {
+        case .success(let o):
+            update(id) {
+                $0.message = nil
+                switch o {
+                case .added: $0.state = .done
+                case .alreadyThere: $0.state = .duplicate
+                case .skipped(let why): $0.state = .failed; $0.message = why
+                }
+                $0.progress = 1
+            }
+            if let done = items.first(where: { $0.id == id }), done.state != .failed { removeStoredFile(done) }
+            if case .added = o { NotificationCenter.default.post(name: .iopixUploadsDone, object: nil, userInfo: ["count": 1]) }
+        case .failure(let e):
+            // no connection, the server restarting, or digiKam busy: back in line for a later try
+            let tries = (items.first { $0.id == id }?.attempts ?? 0) + 1
+            update(id) {
+                $0.attempts = tries
+                $0.state = tries >= 6 ? .failed : .waiting
+                $0.message = tries >= 6 ? Self.plain(e) : "Waiting for a connection"
+            }
+            if tries < 6 { scheduleRetry(after: Double(min(tries, 5)) * 60) }
+        }
+        trimHistory()
+        save()
+    }
+
+    /// A photo sent from the share sheet, added to the list as finished.
+    private func recordShared(_ l: BackgroundUploads.Logged) {
+        let state: UploadItem.State = l.outcome == "added" ? .done : l.outcome == "already" ? .duplicate : .failed
+        items.append(UploadItem(name: l.tag, source: .file(""), state: state, message: l.message))
+        trimHistory()
+        save()
+    }
+    #endif
 
     private func prepare(_ item: UploadItem) async throws -> (URL, () -> Void) {
         switch item.source {
