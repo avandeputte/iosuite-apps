@@ -37,32 +37,102 @@ enum AppTab: String, Hashable, CaseIterable {
     }
 }
 
-/// Which tab is showing, and the web page each web tab was last on.
+/// A list of photos the server can give: the same filters as the web app's Photos page (tag, year, place,
+/// from/to, fav, type, q...).
+struct PhotoQuery: Hashable {
+    var items: [URLQueryItem] = []
+
+    init(_ items: [URLQueryItem] = []) { self.items = items }
+
+    init(_ pairs: [(String, String)]) { items = pairs.map { URLQueryItem(name: $0.0, value: $0.1) } }
+
+    /// From the part of a web address after ? ("tag=12&sort=old").
+    init(query: String) {
+        var c = URLComponents()
+        c.percentEncodedQuery = query
+        items = c.queryItems ?? []
+    }
+
+    func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+
+    func setting(_ name: String, _ value: String?) -> PhotoQuery {
+        var q = self
+        q.items.removeAll { $0.name == name }
+        if let value { q.items.append(URLQueryItem(name: name, value: value)) }
+        return q
+    }
+
+    /// The filters a person chose (not the order).
+    var filters: [URLQueryItem] { items.filter { $0.name != "sort" } }
+}
+
+/// A native screen a link can lead to, inside a tab.
+enum Screen: Hashable {
+    case photos(PhotoQuery, title: String? = nil)
+    case folders(parent: Int?)
+    case albums
+    case tags(parent: Int?)
+    case events
+    case map
+    case web(String)
+}
+
+/// Which tab is showing, and the screens opened in each.
 @MainActor
 final class Router: ObservableObject {
     static let shared = Router()
 
     @Published var tab: AppTab = .explore
-    /// Pages opened from More, one deep (a page of the web app each).
-    @Published var morePath: [String] = []
+    @Published var photosPath: [Screen] = []
+    @Published var peoplePath: [Screen] = []
+    @Published var placesPath: [Screen] = []
+    @Published var morePath: [Screen] = []
+    @Published var placesShowsMap = true
     var lastRoute: [AppTab: String] = [:]
 
-    /// Opens a page of the web app ("#/photos?year=2020") in the tab it belongs to.
+    /// Opens an address of the web app ("#/photos?year=2020") as the native screen for it, in the tab it belongs
+    /// to. Settings, Maintenance, editing a photo (#/photos?p=) and the other admin pages open the web app.
     func open(_ route: String) {
-        let view = route.dropFirst(2).split(whereSeparator: { $0 == "?" || $0 == "/" }).first.map(String.init) ?? "photos"
-        let target: AppTab
+        let body = route.hasPrefix("#/") ? String(route.dropFirst(2)) : route
+        let parts = body.split(separator: "?", maxSplits: 1).map(String.init)
+        let view = parts.first.map { String($0.split(separator: "/").first ?? "") } ?? ""
+        let query = PhotoQuery(query: parts.count > 1 ? parts[1] : "")
         switch view {
-        case "people", "faces": target = .people
-        case "places": target = .places
-        case "photos", "favorites": target = .photos
-        default: target = .more
+        case "", "explore":
+            tab = .explore
+        case "photos" where query.value("p") == nil:
+            photosPath = query.filters.isEmpty ? [] : [.photos(query)]
+            tab = .photos
+        case "favorites":
+            photosPath = [.photos(PhotoQuery([("fav", "1")]))]
+            tab = .photos
+        case "people":
+            peoplePath = []
+            tab = .people
+        case "places":
+            placesShowsMap = false
+            placesPath = []
+            tab = .places
+        case "map":
+            placesShowsMap = true
+            placesPath = []
+            tab = .places
+        case "folders":
+            morePath = [.folders(parent: nil)]
+            tab = .more
+        case "albums":
+            morePath = [.albums]
+            tab = .more
+        case "tags":
+            morePath = [.tags(parent: nil)]
+            tab = .more
+        case "events":
+            morePath = [.events]
+            tab = .more
+        default:
+            morePath = [.web(route)]
+            tab = .more
         }
-        lastRoute[target] = route
-        if target == .more {
-            morePath = [route]
-        }
-        if tab == target, target != .more { WebShell.shared.go(route) }
-        tab = target
     }
 }
 

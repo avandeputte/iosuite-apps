@@ -74,13 +74,6 @@ struct RootView: View {
             .onAppear {
                 WebShell.shared.onCookiesChanged = { Task { await queue.refreshAccount() } }
             }
-            .overlay(alignment: .bottomTrailing) {
-                // on the web tabs only (Explore has the button in its bar); hidden while the page asks for a
-                // sign-in: its sign-in sheet sits right where the button goes
-                if router.tab != .explore, router.tab != .more, queue.canSend || !queue.pending.isEmpty || !queue.reviewing.isEmpty {
-                    uploadButton
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in
                 if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
             }

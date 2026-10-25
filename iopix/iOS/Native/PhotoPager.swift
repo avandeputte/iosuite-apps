@@ -23,27 +23,29 @@ struct PhotoPager: View {
     @State private var preparing = false
     @State private var problem: String?
 
+    init(start: PagerStart) {
+        self.start = start
+        _index = State(initialValue: min(max(start.index, 0), max(start.list.ids.count - 1, 0)))
+    }
+
     private var ids: [Int] { start.list.ids }
     private var current: Int { ids.isEmpty ? 0 : ids[min(index, ids.count - 1)] }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            TabView(selection: $index) {
-                ForEach(Array(ids.enumerated()), id: \.offset) { i, id in
-                    MediaPage(id: id, knownVideo: start.list.isVideo(i), active: i == index) {
-                        withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
-                    }
-                    .tag(i)
+            // pages are made as they come into view, so a list of the whole library swipes as well as a short one
+            PageView(count: ids.count, index: $index) { i in
+                AnyView(MediaPage(id: ids[i], knownVideo: start.list.isVideo(i), active: true) {
+                    withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
                 }
+                .ignoresSafeArea())
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
         }
         .overlay(alignment: .top) { if chrome { topBar } }
         .overlay(alignment: .bottom) { if chrome { bottomBar } }
         .statusBarHidden(!chrome)
-        .onAppear { index = min(max(start.index, 0), max(ids.count - 1, 0)) }
         .sheet(isPresented: $info) {
             PhotoInfoSheet(photo: current)
                 .presentationDetents([.medium, .large])
@@ -130,7 +132,7 @@ struct PhotoPager: View {
         router.open("#/photos?p=\(current)")
     }
 
-    private static func filename(_ r: HTTPURLResponse) -> String? {
+    static func filename(_ r: HTTPURLResponse) -> String? {
         guard let cd = r.value(forHTTPHeaderField: "Content-Disposition") else { return nil }
         if let star = cd.range(of: "filename*=UTF-8''") {
             let v = cd[star.upperBound...].split(separator: ";").first.map(String.init) ?? ""
@@ -353,6 +355,62 @@ struct PhotoInfoSheet: View {
     @ViewBuilder private func row(_ icon: String, _ text: String?) -> some View {
         if let text {
             Label { Text(text).textSelection(.enabled) } icon: { Image(systemName: icon).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+/// Swiping between pages, made one at a time as they come into view (UIPageViewController).
+struct PageView: UIViewControllerRepresentable {
+    let count: Int
+    @Binding var index: Int
+    let page: (Int) -> AnyView
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let pvc = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal, options: [.interPageSpacing: 16])
+        pvc.view.backgroundColor = .clear
+        pvc.dataSource = context.coordinator
+        pvc.delegate = context.coordinator
+        if count > 0 { pvc.setViewControllers([context.coordinator.controller(min(index, count - 1))], direction: .forward, animated: false) }
+        return pvc
+    }
+
+    func updateUIViewController(_ pvc: UIPageViewController, context: Context) {
+        context.coordinator.parent = self
+        let shown = (pvc.viewControllers?.first as? Page)?.index
+        if count > 0, shown != index, index < count {
+            pvc.setViewControllers([context.coordinator.controller(index)], direction: (shown ?? 0) < index ? .forward : .reverse, animated: false)
+        }
+    }
+
+    final class Page: UIHostingController<AnyView> {
+        var index = 0
+    }
+
+    final class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+        var parent: PageView
+        init(_ p: PageView) { parent = p }
+
+        func controller(_ i: Int) -> Page {
+            let c = Page(rootView: parent.page(i))
+            c.index = i
+            c.view.backgroundColor = .clear
+            return c
+        }
+
+        func pageViewController(_ pvc: UIPageViewController, viewControllerBefore vc: UIViewController) -> UIViewController? {
+            guard let i = (vc as? Page)?.index, i > 0 else { return nil }
+            return controller(i - 1)
+        }
+
+        func pageViewController(_ pvc: UIPageViewController, viewControllerAfter vc: UIViewController) -> UIViewController? {
+            guard let i = (vc as? Page)?.index, i + 1 < parent.count else { return nil }
+            return controller(i + 1)
+        }
+
+        func pageViewController(_ pvc: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
+            if completed, let i = (pvc.viewControllers?.first as? Page)?.index { parent.index = i }
         }
     }
 }

@@ -235,6 +235,51 @@ final class LibraryStore: ObservableObject {
     }
 
     /// Your own favorites in iopix (not a change to the library's photos).
+    /// Several at once (the grid's selection). False when the server refused.
+    @discardableResult
+    func setFavorites(_ ids: [Int], _ on: Bool) async -> Bool {
+        guard !ids.isEmpty else { return true }
+        let before = favoriteIDs
+        if on { favoriteIDs.formUnion(ids) } else { favoriteIDs.subtract(ids) }
+        favorites = favoriteIDs.count
+        do {
+            _ = try await Self.post("api/favorites", ["ids": ids, "on": on])
+            return true
+        } catch {
+            favoriteIDs = before
+            favorites = before.count
+            return false
+        }
+    }
+
+    /// Adds photos to one of your albums, or to a new one when `album` is nil (named `name`). Returns the album.
+    func addToAlbum(_ ids: [Int], album: Int?, name: String? = nil) async throws -> Int {
+        let id: Int
+        if let album {
+            _ = try await Self.post("api/ualbums/\(album)", ["ids": ids, "on": true])
+            id = album
+        } else {
+            let r = try await Self.post("api/ualbums", ["name": name ?? "New album", "ids": ids])
+            id = (r["id"] as? NSNumber)?.intValue ?? 0
+        }
+        if let st = try? await IopixClient.shared.json("api/state") {
+            albums = (st["albums"] as? [[String: Any]] ?? []).compactMap { a in
+                guard let id = (a["id"] as? NSNumber)?.intValue else { return nil }
+                return Album(id: id, name: a["name"] as? String ?? "", count: (a["n"] as? NSNumber)?.intValue ?? 0,
+                             cover: (a["cover"] as? NSNumber)?.intValue)
+            }
+        }
+        return id
+    }
+
+    private static func post(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
+        var r = IopixClient.shared.request(path, method: "POST")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await IopixClient.shared.session.data(for: r)
+        return try IopixClient.shared.check(data, resp)
+    }
+
     func setFavorite(_ id: Int, _ on: Bool) async {
         if on { favoriteIDs.insert(id) } else { favoriteIDs.remove(id) }
         favorites = favoriteIDs.count
