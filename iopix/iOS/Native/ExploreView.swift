@@ -52,7 +52,7 @@ final class ExploreModel: ObservableObject {
                                                                             URLQueryItem(name: "n", value: "36"),
                                                                             URLQueryItem(name: "pairs", value: "3")]) {
             if let d = j["onThisDay"] as? [String: Any] { today = PhotoList(json: d) } else { today = PhotoList() }
-            if let d = j["random"] as? [String: Any] { random = await Self.withMarks(PhotoList(json: d)) }
+            if let d = j["random"] as? [String: Any] { random = d["geo"] != nil ? PhotoList(json: d) : await Self.withMarks(PhotoList(json: d)) }
             if let d = j["thenAndNow"] as? [String: Any] { pairs = Self.pairs(d) }
             if let list = j["events"] as? [[String: Any]] { trips = Self.trips(["events": list]) }
             else if let d = j["events"] as? [String: Any] { trips = Self.trips(d) }
@@ -77,10 +77,10 @@ final class ExploreModel: ObservableObject {
     }
 
     func shuffle() async {
-        if let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "36")]) { random = await Self.withMarks(PhotoList(json: j)) }
+        if let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "36")]) { random = j["geo"] != nil ? PhotoList(json: j) : await Self.withMarks(PhotoList(json: j)) }
     }
 
-    /// The random list comes without the faces, location and video marks: they are read for the same ids from the
+    /// Before iopix 1.78.2 the random list comes without the faces, location and video marks: they are read for the same ids from the
     /// photo list (which keeps its own order) and put back in the random order.
     static func withMarks(_ list: PhotoList) async -> PhotoList {
         guard !list.ids.isEmpty, list.geo.isEmpty, list.faces.isEmpty, list.videos.isEmpty,
