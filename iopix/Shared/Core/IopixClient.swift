@@ -5,6 +5,8 @@ struct Account: Equatable {
     var name: String?
     var signedIn: Bool
     var canWrite: Bool
+    var isAdmin = false
+    var person: Int? = nil  // the person in the library this account is ("Photos of me")
 }
 
 /// What became of one file sent to iopix.
@@ -58,7 +60,14 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     var server: URL { AppConfig.serverURL }
 
     func request(_ path: String, method: String = "GET") -> URLRequest {
-        var r = URLRequest(url: server.appendingPathComponent(path))
+        // a path may carry its own query ("face/12?v=3"): only the part before ? is a path
+        let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
+        var url = server.appendingPathComponent(parts[0])
+        if parts.count == 2, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            c.percentEncodedQuery = parts[1]
+            url = c.url ?? url
+        }
+        var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
@@ -120,7 +129,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         let user = j["user"] as? [String: Any]
         return Account(name: user?["name"] as? String,
                        signedIn: j["signedIn"] as? Bool ?? false,
-                       canWrite: j["canWrite"] as? Bool ?? false)
+                       canWrite: j["canWrite"] as? Bool ?? false,
+                       isAdmin: j["isAdmin"] as? Bool ?? false,
+                       person: (user?["person"] as? NSNumber)?.intValue)
     }
 
     /// The accounts on the sign-in screen: name, and whether it needs a password.

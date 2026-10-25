@@ -92,7 +92,8 @@ targets:
     platform: macOS
     sources:
       - Mac
-      - Shared
+      - path: Shared
+        excludes: ["Library/**"]  # the browsing screens' code: iPhone, iPad and Apple TV only
       - MacWidgetShared
     dependencies:
       - target: iopixMacShare
@@ -137,6 +138,7 @@ targets:
     sources:
       - TV
       - Shared/Core
+      - Shared/Library
     dependencies:
       - target: iopixTopShelf
     entitlements:

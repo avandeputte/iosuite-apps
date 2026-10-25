@@ -6,6 +6,9 @@ struct PhotoList: Equatable {
     var ids: [Int] = []
     var videos: Set<Int> = []  // positions in ids
     var times: [Double] = []   // when each was taken (seconds since 1970), when known
+    var ratios: [Double] = []  // width / height of each, when known (for rows of photos at their own shape)
+
+    func ratio(_ i: Int) -> Double { i < ratios.count ? ratios[i] : 1.5 }
 
     func isVideo(_ i: Int) -> Bool { videos.contains(i) }
 
@@ -18,6 +21,9 @@ struct PhotoList: Equatable {
         ids = (j["id"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
         videos = Set((j["video"] as? [String: Any] ?? [:]).keys.compactMap(Int.init))
         times = (j["ts"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        let w = (j["w"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        let h = (j["h"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        ratios = zip(w, h).map { w, h in h > 0 && w > 0 ? min(2.2, max(0.5, w / h)) : 1.5 }
     }
 
     init(ids: [Int] = [], videos: Set<Int> = [], times: [Double] = []) {
@@ -38,6 +44,29 @@ struct Person: Identifiable, Hashable {
     let name: String
     let count: Int
     let face: Int?
+    var all = 0          // photos with them, sub-tags included (what the web app shows)
+    var icon: Int? = nil // version of their face picture
+    var cover: Int? = nil
+}
+
+/// The numbers and lists the library summary has, for Explore.
+struct LibrarySummary: Equatable {
+    var total = 0, videos = 0, geotagged = 0
+    var bytes: Int64 = 0
+    var folders = 0
+    var years: [(Int, Int)] = []
+    var cameras: [(String, Int)] = []
+    var creators: [(String, Int)] = []
+    var formats: [(String, Int)] = []
+    var ratings: [(Int, Int)] = []
+    var things: [TagItem] = []  // the top tags, as the web app's Explore lists them
+
+    static func == (a: LibrarySummary, b: LibrarySummary) -> Bool {
+        a.total == b.total && a.videos == b.videos && a.bytes == b.bytes && a.things == b.things && a.years.map(\.0) == b.years.map(\.0)
+    }
+
+    func count(rating: Int) -> Int { ratings.first { $0.0 == rating }?.1 ?? 0 }
+    var threeAndUp: Int { ratings.filter { $0.0 >= 3 }.reduce(0) { $0 + $1.1 } }
 }
 
 struct Place: Identifiable, Hashable {
@@ -77,6 +106,9 @@ final class LibraryStore: ObservableObject {
     @Published var favoriteIDs: Set<Int> = []
     @Published var places: [Place] = []
     @Published var tags: [TagItem] = []
+    @Published var summary = LibrarySummary()
+    @Published var loaded = false
+    @Published var needsSignIn = false
     @Published var problem: String?
 
     /// The tags shown under a tag (nil: the top ones), most photos first.
@@ -97,9 +129,12 @@ final class LibraryStore: ObservableObject {
             people = (meta["tags"] as? [[String: Any]] ?? []).compactMap { t in
                 guard (t["person"] as? NSNumber)?.boolValue == true, let id = (t["id"] as? NSNumber)?.intValue,
                       let n = (t["n"] as? NSNumber)?.intValue, n > 0 else { return nil }
-                return Person(id: id, name: t["name"] as? String ?? "", count: n, face: (t["face"] as? NSNumber)?.intValue)
+                return Person(id: id, name: t["name"] as? String ?? "", count: n, face: (t["face"] as? NSNumber)?.intValue,
+                              all: (t["nAll"] as? NSNumber)?.intValue ?? n, icon: (t["icon"] as? NSNumber)?.intValue,
+                              cover: (t["cover"] as? NSNumber)?.intValue)
             }.sorted { $0.count > $1.count }
             tags = Self.tags(from: meta["tags"] as? [[String: Any]] ?? [])
+            summary = Self.summary(from: meta)
             years = (meta["years"] as? [[Any]] ?? []).compactMap { y in
                 guard y.count == 2, let year = (y[0] as? NSNumber)?.intValue, let n = (y[1] as? NSNumber)?.intValue else { return nil }
                 return (year, n)
@@ -118,9 +153,42 @@ final class LibraryStore: ObservableObject {
                 return Place(name: name, region: p[1] as? String, country: p[2] as? String, count: n, cover: (p[4] as? NSNumber)?.intValue)
             }
             problem = nil
+            needsSignIn = false
+            loaded = true
+        } catch IopixError.needsSignIn {
+            needsSignIn = true
+            problem = IopixError.needsSignIn.localizedDescription
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    private static func summary(from m: [String: Any]) -> LibrarySummary {
+        func int(_ k: String) -> Int { (m[k] as? NSNumber)?.intValue ?? 0 }
+        func pairs(_ k: String) -> [(String, Int)] {
+            (m[k] as? [[Any]] ?? []).compactMap { p in
+                guard p.count >= 2, let n = (p[1] as? NSNumber)?.intValue else { return nil }
+                return ((p[0] as? String) ?? (p[0] as? NSNumber)?.stringValue ?? "", n)
+            }
+        }
+        var s = LibrarySummary()
+        s.total = int("total"); s.videos = int("videos"); s.geotagged = int("geotagged")
+        s.bytes = (m["bytes"] as? NSNumber)?.int64Value ?? 0
+        s.folders = (m["albums"] as? [Any])?.count ?? 0
+        s.years = pairs("years").compactMap { p in Int(p.0).map { ($0, p.1) } }
+        s.cameras = pairs("cameras"); s.creators = pairs("creators"); s.formats = pairs("formats")
+        s.ratings = pairs("ratings").compactMap { p in Int(p.0).map { ($0, p.1) } }
+        // the top tags with photos, as the web app's Things (a person at the top with no tags under it is not one)
+        let raw = m["tags"] as? [[String: Any]] ?? []
+        let parents = Set(raw.compactMap { ($0["pid"] as? NSNumber)?.intValue })
+        s.things = raw.compactMap { t -> TagItem? in
+            guard t["pid"] == nil || t["pid"] is NSNull, let id = (t["id"] as? NSNumber)?.intValue,
+                  let all = (t["nAll"] as? NSNumber)?.intValue, all > 0 else { return nil }
+            if (t["person"] as? NSNumber)?.boolValue == true && !parents.contains(id) { return nil }
+            return TagItem(id: id, parent: nil, name: (t["name"] as? String ?? "").trimmingCharacters(in: .whitespaces), count: all,
+                           cover: (t["cover"] as? NSNumber)?.intValue)
+        }.sorted { $0.count > $1.count }
+        return s
     }
 
     /// Tags that are not people and hold photos. A tag that only groups people (People, People/Van de Putte) is
@@ -236,7 +304,11 @@ struct RemoteImage: View {
                     Color.clear.overlay(Image(uiImage: image).resizable().scaledToFill()).clipped()
                 }
             } else if !fit {
+                #if os(tvOS)
                 Color.white.opacity(0.06)
+                #else
+                Color.secondary.opacity(0.12)
+                #endif
             }
         }
         .task(id: path) {

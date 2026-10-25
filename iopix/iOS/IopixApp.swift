@@ -45,12 +45,13 @@ final class LaunchState: ObservableObject {
 struct RootView: View {
     @EnvironmentObject private var queue: UploadQueue
     @EnvironmentObject private var launch: LaunchState
+    @StateObject private var store = LibraryStore()
+    @StateObject private var router = Router.shared
     @State private var showUploads = false
     @State private var server = AppConfig.serverURL
 
     @State private var needsServer = !AppConfig.hasServer
     @State private var dropping = false
-    @StateObject private var web = WebStatus()
 
     var body: some View {
         if needsServer {
@@ -67,49 +68,22 @@ struct RootView: View {
     }
 
     private var library: some View {
-        IopixWebView(url: server, status: web) { Task { await queue.refreshAccount() } }
-            .id(server)
-            .background(Color(.systemBackground))
-            .overlay {
-                if let why = web.failed {
-                    VStack(spacing: 16) {
-                        Image("Mark").resizable().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 16))
-                        Text("Can't reach iopix").font(.title3.bold())
-                        Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        Text("It tries again by itself when the connection changes.").font(.footnote).foregroundStyle(.secondary)
-                        Button("Try again") { web.retry() }.buttonStyle(.borderedProminent)
-                        Button("Change server") { showUploads = true }.font(.footnote)
-                    }
-                    .padding(32)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(.systemBackground))
-                }
+        AppTabs { showUploads = true }
+            .environmentObject(store)
+            .environmentObject(router)
+            .onAppear {
+                WebShell.shared.onCookiesChanged = { Task { await queue.refreshAccount() } }
             }
             .overlay(alignment: .bottomTrailing) {
-                // hidden while the page asks for a sign-in: its sign-in sheet sits right where the button goes
-                // (still shown when iopix can't be reached, so the server address can be changed)
-                if queue.canSend || !queue.pending.isEmpty || !queue.reviewing.isEmpty || queue.offline {
-                Button { showUploads = true } label: {
-                    Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")
-                        .font(.title3.weight(.semibold))
-                        .frame(width: 48, height: 48)
-                        .background(.regularMaterial, in: Circle())
-                        .overlay(alignment: .topTrailing) {
-                            if !queue.pending.isEmpty || !queue.reviewing.isEmpty {
-                                Text("\(queue.pending.count + queue.reviewing.count)")
-                                    .font(.caption2.bold())
-                                    .padding(4)
-                                    .background(Color.accentColor, in: Capsule())
-                                    .foregroundStyle(.white)
-                            }
-                        }
-                }
-                .accessibilityLabel("Send photos to iopix")
-                .padding(.trailing, 16)
-                .padding(.bottom, 72)
+                // on the web tabs only (Explore has the button in its bar); hidden while the page asks for a
+                // sign-in: its sign-in sheet sits right where the button goes
+                if router.tab != .explore, router.tab != .more, queue.canSend || !queue.pending.isEmpty || !queue.reviewing.isEmpty {
+                    uploadButton
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in if web.failed != nil { web.retry() } }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in
+                if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
             // photos dragged in from Photos or Files (iPad side by side) go to the queue
             .dropDestination(for: PickedFile.self) { files, _ in
@@ -118,10 +92,36 @@ struct RootView: View {
             } isTargeted: { dropping = $0 }
             .overlay { if dropping { DropHint() } }
             .sheet(isPresented: $showUploads, onDismiss: {
-                if server != AppConfig.serverURL { web.failed = nil; server = AppConfig.serverURL }  // the address was changed in the sheet
+                if server != AppConfig.serverURL {  // the address was changed in the sheet: start over with the new one
+                    server = AppConfig.serverURL
+                    WebShell.shared.reset()
+                    Router.shared.lastRoute = [:]
+                    Task { await store.load() }
+                }
             }) {
                 UploadsView()
             }
+    }
+
+    private var uploadButton: some View {
+        Button { showUploads = true } label: {
+            Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")
+                .font(.title3.weight(.semibold))
+                .frame(width: 48, height: 48)
+                .background(.regularMaterial, in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if !queue.pending.isEmpty || !queue.reviewing.isEmpty {
+                        Text("\(queue.pending.count + queue.reviewing.count)")
+                            .font(.caption2.bold())
+                            .padding(4)
+                            .background(Color.accentColor, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+        }
+        .accessibilityLabel("Send photos to iopix")
+        .padding(.trailing, 16)
+        .padding(.bottom, 64)
     }
 }
 

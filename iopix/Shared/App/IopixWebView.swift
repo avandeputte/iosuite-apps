@@ -78,7 +78,11 @@ struct IopixWebView: PlatformViewRepresentable {
     func updateNSView(_ view: WKWebView, context: Context) {}
     #endif
 
-    private func make(_ context: Context) -> WKWebView {
+    private func make(_ context: Context) -> WKWebView { Self.build(context.coordinator, url: url) }
+
+    /// The web view with everything the app adds to it. On iPhone and iPad it is made once and moved between the
+    /// tabs that show the web app (WebShell); on the Mac it belongs to its window.
+    static func build(_ coordinator: Coordinator, url: URL) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
         #if os(iOS)
@@ -87,14 +91,18 @@ struct IopixWebView: PlatformViewRepresentable {
         #if os(macOS)
         // right-clicking a photo: the page says which one, and the native menu gets Add to / Remove from Favorites
         cfg.userContentController.addUserScript(WKUserScript(source: PhotoMenu.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        cfg.userContentController.add(PhotoMenu.Relay(context.coordinator), name: PhotoMenu.handler)
+        cfg.userContentController.add(PhotoMenu.Relay(coordinator), name: PhotoMenu.handler)
         let web = PhotoMenuWebView(frame: .zero, configuration: cfg)
-        web.photoMenu = context.coordinator.photoMenu
+        web.photoMenu = coordinator.photoMenu
         #else
+        // inside the app's own tabs: the page's own bar and side menu give way to them, and the app hears where the
+        // page is (so a link to Explore opens the native Explore)
+        cfg.userContentController.addUserScript(WKUserScript(source: WebShell.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        cfg.userContentController.add(WebShell.Relay(), name: WebShell.handler)
         let web = WKWebView(frame: .zero, configuration: cfg)
         #endif
-        web.navigationDelegate = context.coordinator
-        web.uiDelegate = context.coordinator
+        web.navigationDelegate = coordinator
+        web.uiDelegate = coordinator
         web.allowsBackForwardNavigationGestures = true
         #if os(iOS)
         web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
@@ -103,16 +111,16 @@ struct IopixWebView: PlatformViewRepresentable {
         #endif
         #if os(iOS)
         let refresh = UIRefreshControl()
-        refresh.addTarget(context.coordinator, action: #selector(Coordinator.reload(_:)), for: .valueChanged)
+        refresh.addTarget(coordinator, action: #selector(Coordinator.reload(_:)), for: .valueChanged)
         web.scrollView.refreshControl = refresh
         web.scrollView.contentInsetAdjustmentBehavior = .never
         #endif
-        cfg.websiteDataStore.httpCookieStore.add(context.coordinator)
-        context.coordinator.web = web
-        context.coordinator.status?.web = web
-        context.coordinator.watchNetwork()
-        let st = context.coordinator.status
-        context.coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name.iopixReload, object: nil, queue: .main) { [weak web, weak st] _ in
+        cfg.websiteDataStore.httpCookieStore.add(coordinator)
+        coordinator.web = web
+        coordinator.status?.web = web
+        coordinator.watchNetwork()
+        let st = coordinator.status
+        coordinator.reloadObserver = NotificationCenter.default.addObserver(forName: Notification.Name.iopixReload, object: nil, queue: .main) { [weak web, weak st] _ in
             guard let web else { return }
             if let st { st.retry() }  // clears a failure first, and loads the server when the page never came
             else if web.url == nil { web.load(URLRequest(url: AppConfig.serverURL)) } else { web.reload() }
