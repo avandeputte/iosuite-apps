@@ -97,6 +97,7 @@ struct PhotoPager: View {
         .fullScreenCover(isPresented: $faces) {
             EditFacesView(photo: current) { reloadKey += 1 }
         }
+        .hidesMacToolbar()
         .task { await rights.refresh() }
         .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { if $0 == nil { removeShared() } })) { f in
             ShareSheet(items: [f.url])
@@ -507,3 +508,29 @@ struct ViewerIcon: View {
         .contentShape(Circle())
     }
 }
+
+extension View {
+    /// On the Mac, the window's own toolbar (the screen underneath's buttons: photo size, send photos) stays above
+    /// a full-screen cover; while the viewer is up it is hidden, so only the viewer's buttons show.
+    func hidesMacToolbar() -> some View {
+        #if targetEnvironment(macCatalyst)
+        return onAppear { MacToolbar.hide(true) }.onDisappear { MacToolbar.hide(false) }
+        #else
+        return self
+        #endif
+    }
+}
+
+#if targetEnvironment(macCatalyst)
+@MainActor
+private enum MacToolbar {
+    static var depth = 0
+
+    static func hide(_ on: Bool) {
+        depth = max(0, depth + (on ? 1 : -1))
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            scene.titlebar?.toolbar?.isVisible = depth == 0
+        }
+    }
+}
+#endif
