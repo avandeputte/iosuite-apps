@@ -153,7 +153,9 @@ final class WebShell {
     }
 
     private static func url(for route: String) -> URL {
-        URL(string: AppConfig.serverURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + route) ?? AppConfig.serverURL
+        // ?app=1: the web app's own in-app mode (iopix 1.77 and later) hides its bar and side menu and reports its
+        // routes; the injected script above does the same for older servers
+        URL(string: AppConfig.serverURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/?app=1" + route) ?? AppConfig.serverURL
     }
 
     final class Relay: NSObject, WKScriptMessageHandler {
