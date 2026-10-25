@@ -18,6 +18,17 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>net.iothing.iopix.native</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>iopix-native</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
@@ -41,6 +52,28 @@
 	<string>iopix can record a video for your iopix library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>iopix sends the photos and videos you choose, and new ones if you turn that on, to your iopix library.</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Send to iopix Native</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>sendToIopixNative</string>
+			<key>NSPortName</key>
+			<string>iopix Native</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.movie</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>

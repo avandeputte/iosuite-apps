@@ -9,12 +9,27 @@ import Combine
     func setUp(_ act: @escaping (String) -> Void)
     func update(_ state: [String: Any])
     func activate()
+    /// The Dock icon: a badge ("3", "5 new", nil) and a progress bar (0...1; below 0 hides it).
+    func dock(_ badge: String?, progress: Double)
+    /// An open panel for folders; `done` gets the chosen paths (none when cancelled).
+    func pickFolders(_ message: String, _ done: @escaping ([String]) -> Void)
+    /// Puts the picture at `path` on every screen's desktop.
+    func setWallpaper(_ path: String)
+    /// `mounted` is called with the path of each drive that appears from now on.
+    func watchVolumes(_ mounted: @escaping (String) -> Void)
+    /// Opens a file, folder or URL ("x-apple.systempreferences:…") with the Mac's default app.
+    func openPath(_ path: String)
+    /// Open at login (SMAppService): whether it is on, and turning it on or off ("" or why it failed).
+    func loginItem() -> Bool
+    func setLoginItem(_ on: Bool) -> String
+    /// Finder's right-click › Services › Send to iopix Native: `send` gets the file and folder paths.
+    func offerServices(_ send: @escaping ([String]) -> Void)
 }
 
 @MainActor
 final class MacMenuBar {
     static let shared = MacMenuBar()
-    private var bar: IopixStatusBarProtocol?
+    private(set) var bar: IopixStatusBarProtocol?
     private var watch: AnyCancellable?
 
     func start() {

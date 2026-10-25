@@ -94,6 +94,11 @@ struct AdminSettingsScreen: View {
                     NavigationLink { AdminMaintenanceScreen() } label: { Label("Maintenance", systemImage: "wrench.and.screwdriver") }
                 }
             }
+            #if targetEnvironment(macCatalyst)
+            Section {
+                NavigationLink { MacSettingsScreen() } label: { Label("Mac", systemImage: "desktopcomputer") }
+            }
+            #endif
             Section {
                 NavigationLink { AdminAboutScreen(model: model) } label: { Label("About \(model.appName)", systemImage: "info.circle") }
             }

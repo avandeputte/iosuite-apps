@@ -1,6 +1,8 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import CoreSpotlight
+import UserNotifications
 
 /// iOS wakes the app when background sending finishes (also the share sheet's): the uploads pick their results up.
 final class IopixAppDelegate: NSObject, UIApplicationDelegate {
@@ -22,7 +24,11 @@ struct IopixApp: App {
     init() {
         UploadQueue.shared.startBackground()
         #if targetEnvironment(macCatalyst)
-        Task { @MainActor in MacMenuBar.shared.start() }
+        UNUserNotificationCenter.current().delegate = MacNotifier.shared  // early: a clicked banner can start the app
+        Task { @MainActor in
+            MacMenuBar.shared.start()
+            MacExtras.start()
+        }
         #endif
     }
 
@@ -70,6 +76,7 @@ struct RootView: View {
 
     @State private var needsServer = !AppConfig.hasServer
     @State private var signingIn = false
+    @State private var showCards = false
     @State private var dropping = false
 
     var body: some View {
@@ -98,6 +105,26 @@ struct RootView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSignIn)) { _ in signingIn = true }
+            #if targetEnvironment(macCatalyst)
+            .onReceive(NotificationCenter.default.publisher(for: .iopixCards)) { _ in showCards = true }
+            .sheet(isPresented: $showCards) { MacCardImportSheet() }
+            #endif
+            // iopix-native://photo/<id> (the widget), ://review, ://today
+            .onOpenURL { url in
+                guard url.scheme == "iopix-native" else { return }
+                switch url.host {
+                case "photo": if let id = Int(url.lastPathComponent) { router.open("#/photos?ids=\(id)") }
+                case "review": showUploads = true
+                case "today":
+                    let c = Calendar.current.dateComponents([.month, .day], from: Date())
+                    router.open(String(format: "#/photos?md=%02d-%02d", c.month ?? 1, c.day ?? 1))
+                default: break
+                }
+            }
+            // a Spotlight result: its id is the page of the library to open
+            .onContinueUserActivity(CSSearchableItemActionType) { a in
+                if let route = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { router.open(route) }
+            }
             .sheet(isPresented: $signingIn) { SignInView { showUploads = true }.environmentObject(store) }
             // photos dragged in from Photos or Files (iPad side by side) go to the queue
             .dropDestination(for: PickedFile.self) { files, _ in

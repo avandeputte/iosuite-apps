@@ -22,6 +22,7 @@ targets:
     sources:
       - iOS
       - Shared
+      - NativeWidget/Shared  # the widget's choices (the app prepares its photos, on Mac)
     entitlements:
       path: iOS/iopix.entitlements
       properties:
@@ -44,6 +45,15 @@ targets:
         NSCameraUsageDescription: iopix can take a photo for your iopix library.
         NSMicrophoneUsageDescription: iopix can record a video for your iopix library.
         NSLocalNetworkUsageDescription: iopix connects to your photo server on your home network.
+        CFBundleURLTypes:  # the widget's links (Mac); not iopix:// which the separate Mac app answers
+          - CFBundleURLName: net.iothing.iopix.native
+            CFBundleURLSchemes: [iopix-native]
+        NSServices:  # Finder › right-click › Services › Send to iopix Native (Mac; the plug-in answers it)
+          - NSMenuItem: {default: Send to iopix Native}
+            NSMessage: sendToIopixNative
+            NSPortName: iopix Native
+            NSRequiredContext: {}
+            NSSendFileTypes: [public.image, public.movie, public.folder]
         NSAppTransportSecurity:  # a self-hosted server may be plain http on the home network
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
@@ -59,11 +69,38 @@ targets:
     dependencies:
       - target: iopixShare
       - target: iopixMacBridge  # the menu bar icon, on Mac only
-        platformFilter: maccatalyst
+        platformFilter: macOS  # XcodeGen: the Mac Catalyst slice only
         embed: true
         codeSign: true
         copy:
           destination: plugins
+      - target: iopixNativeWidget  # the desktop widget, on Mac only (the app feeds it there)
+        platformFilter: macOS  # XcodeGen: the Mac Catalyst slice only
+        embed: true
+  iopixNativeWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - NativeWidget
+    entitlements:
+      path: NativeWidget/iopixNativeWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.net.iothing.iopix]
+    info:
+      path: NativeWidget/Info.plist
+      properties:
+        CFBundleDisplayName: iopix
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix.widget
+        TARGETED_DEVICE_FAMILY: "1,2,6"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        SKIP_INSTALL: YES
   iopixMacBridge:
     type: bundle
     platform: macOS
