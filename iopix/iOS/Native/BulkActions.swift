@@ -91,9 +91,10 @@ struct BulkActionBar: View {
             }
             HStack(spacing: 0) {
                 barButton(allFavorite ? "heart.fill" : "heart", allFavorite ? "Unfavorite" : "Favorite") {
+                    let removing = allFavorite  // read before the store changes under us
                     Task {
-                        if await store.setFavorites(ids, !allFavorite) {
-                            BulkToast.shared.show(allFavorite ? "Removed from favorites." : "Added to favorites.")
+                        if await store.setFavorites(ids, !removing) {
+                            BulkToast.shared.show(removing ? "Removed from favorites." : "Added to favorites.")
                         } else { BulkToast.shared.show("Couldn't change your favorites.") }
                     }
                 }

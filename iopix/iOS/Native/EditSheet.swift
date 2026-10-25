@@ -276,11 +276,13 @@ struct PhotoEditSheet: View {
         saving = true
         defer { saving = false }
         do {
+            let seen = await FacesAPI.indexVersion()
             try await EditAPI.edit([photo], c)
             if let added = c["add_tags"] as? [Int] { await catalog.noteRecent(added) }
             onOutcome(.changed)
-            await load()
             toast = "Saved."
+            await FacesAPI.awaitReindex(after: seen)  // the server shows the change once it has reindexed
+            await load()
         } catch {
             toast = "Not saved: \(error.localizedDescription)"
         }
