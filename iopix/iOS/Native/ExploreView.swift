@@ -129,6 +129,7 @@ struct ExploreView: View {
     @StateObject private var model = ExploreModel()
     @AppStorage("explore.size") private var size = "m"
     @State private var viewer: PagerStart?
+    @State private var signingIn = false
     var showUploads: () -> Void = {}
 
     private var wide: Bool { width == .regular }
@@ -269,10 +270,11 @@ struct ExploreView: View {
             Image(systemName: "person.crop.circle.badge.questionmark").font(.system(size: 56)).foregroundStyle(.secondary)
             Text("Sign in to iopix").font(.title3.bold())
             Text("Your library shows here once you're signed in.").foregroundStyle(.secondary)
-            Button("Sign in") { router.open("#/photos") }.buttonStyle(.borderedProminent)
+            Button("Sign in") { signingIn = true }.buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 100)
+        .sheet(isPresented: $signingIn) { SignInView(changeServer: showUploads) }
     }
 
     private func unreachable(_ why: String) -> some View {

@@ -27,6 +27,17 @@ enum CookieSync {
         }
     }
 
+    /// The other way: a sign-in made in the app goes to the web page's store, so the page is signed in too (and
+    /// `pull` does not take it for a sign-out on the page).
+    @MainActor
+    static func push() async {
+        let host = AppConfig.serverURL.host?.lowercased() ?? ""
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        for c in AppConfig.cookies.cookies ?? [] where matches(c, host) {
+            await store.setCookie(c)
+        }
+    }
+
     static func matches(_ c: HTTPCookie, _ host: String) -> Bool {
         let d = c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return host == d || host.hasSuffix("." + d)

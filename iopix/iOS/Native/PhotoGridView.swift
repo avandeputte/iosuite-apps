@@ -27,6 +27,8 @@ struct PhotoGridScreen: View {
     @State fileprivate var filters: PhotoQuery
     @State fileprivate var showFilters = false
     @State fileprivate var download = false
+    @State private var signingIn = false
+    @State private var signInNeeded = false
     @State fileprivate var selecting = false
     @State private var selected: Set<Int> = []
     @State fileprivate var viewer: PagerStart?
@@ -155,9 +157,14 @@ struct PhotoGridScreen: View {
             VStack(spacing: 12) {
                 Text("Couldn't load the photos").font(.headline)
                 Text(problem).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Button("Try again") { Task { await load(force: true) } }.buttonStyle(.borderedProminent)
+                if signInNeeded {
+                    Button("Sign in") { signingIn = true }.buttonStyle(.borderedProminent)
+                } else {
+                    Button("Try again") { Task { await load(force: true) } }.buttonStyle(.borderedProminent)
+                }
             }
             .padding(32).frame(maxWidth: .infinity).padding(.top, 60)
+            .sheet(isPresented: $signingIn, onDismiss: { Task { await load(force: true) } }) { SignInView(changeServer: showUploads) }
         } else {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 120)
         }
@@ -269,6 +276,7 @@ struct PhotoGridScreen: View {
             selected = selected.intersection(l.ids)
         } catch {
             if list == nil { problem = error.localizedDescription }
+            if case IopixError.needsSignIn = error { signInNeeded = true } else { signInNeeded = false }
         }
     }
 

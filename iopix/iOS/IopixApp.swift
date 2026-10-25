@@ -158,6 +158,7 @@ struct UploadsView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var loading = false
     @State private var pickNote: String?
+    @State private var signingIn = false
     @State private var serverText = AppConfig.serverURL.absoluteString
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ServiceToken.clientSecret ?? ""
@@ -265,7 +266,10 @@ struct UploadsView: View {
         } else if queue.offline {
             Label("iopix can't be reached right now.", systemImage: "wifi.exclamationmark")
         } else {
-            Label("Sign in on the iopix page first. Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
+            Button { signingIn = true } label: {
+                Label("Sign in to iopix… Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
+            }
+            .sheet(isPresented: $signingIn) { SignInView() }
         }
     }
 
