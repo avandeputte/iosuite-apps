@@ -23,6 +23,7 @@ struct IopixApp: App {
 
     init() {
         UploadQueue.shared.startBackground()
+        NetworkRoute.shared.start()
         #if targetEnvironment(macCatalyst)
         UNUserNotificationCenter.current().delegate = MacNotifier.shared  // early: a clicked banner can start the app
         Task { @MainActor in
@@ -102,6 +103,14 @@ struct RootView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in
                 if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
+                if store.problem != nil, !store.needsSignIn { Task { await store.load() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixNetworkMoved)) { _ in
+                // left home (or came back): the same address now leads another way, perhaps through Cloudflare
+                Task {
+                    await store.load()
+                    await queue.refreshAccount()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSignIn)) { _ in signingIn = true }

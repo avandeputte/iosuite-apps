@@ -134,6 +134,26 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         }
     }
 
+    /// The sign-in page of another host the server sits behind (Cloudflare Access away from home), or nil when
+    /// iopix answers itself. Asked without following the redirect, so no cookie goes to that host.
+    func gate() async -> URL? {
+        var r = request("api/auth/accounts")
+        r.timeoutInterval = 20
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (_, resp) = try? await session.data(for: r), let http = resp as? HTTPURLResponse else { return nil }
+        let me = server.host?.lowercased()
+        if let host = http.url?.host?.lowercased(), host != me { return http.url }
+        guard (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
+              let url = URL(string: loc, relativeTo: http.url ?? server)?.absoluteURL,
+              url.host?.lowercased() != me else { return nil }
+        return url
+    }
+
+    /// Network changed (home Wi-Fi to cellular): the next requests open new connections, by the new route.
+    func networkMoved() {
+        session.flush {}
+    }
+
     func account() async throws -> Account {
         let (data, resp) = try await session.data(for: request("api/auth/me"))
         let j = try check(data, resp)

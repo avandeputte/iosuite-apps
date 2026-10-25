@@ -6,7 +6,7 @@ import Network
 /// copied to the store the uploads (and the iPhone share extension) use, whenever they change.
 enum CookieSync {
     @MainActor
-    static func pull(from store: WKHTTPCookieStore) async {
+    static func pull(from store: WKHTTPCookieStore, keepingOthers: Bool = false) async {
         #if os(iOS)
         // without an App Group the uploads use the store the web view already shares: copying would only loop
         guard AppConfig.hasGroup else { return }
@@ -14,7 +14,7 @@ enum CookieSync {
         let host = AppConfig.serverURL.host?.lowercased() ?? ""
         let web = await store.allCookies().filter { matches($0, host) }
         let names = Set(web.map { "\($0.domain)|\($0.name)" })
-        for c in AppConfig.cookies.cookies ?? [] where matches(c, host) && !names.contains("\(c.domain)|\(c.name)") {
+        for c in AppConfig.cookies.cookies ?? [] where !keepingOthers && matches(c, host) && !names.contains("\(c.domain)|\(c.name)") {
             AppConfig.cookies.deleteCookie(c)  // signed out on the page
         }
         for c in web {
