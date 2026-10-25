@@ -41,6 +41,15 @@ The apps only send files. iopix does everything else on the server: it puts each
 folders, writes the database rows and sidecars, and skips anything that is already in the library (same
 content), so sending a photo twice does no harm.
 
+## iPhone and iPad
+
+The iPhone and iPad app is native: Explore, Photos (filters, search, saved searches, selection with bulk
+actions), People and Faces, Places with a map, Folders, Albums, Tags, Trash, Import, Duplicates, Bursts,
+Detected content, Metadata quality, History, Settings and Maintenance, and editing a photo (details, tags,
+location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or later for background sending,
+one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
+the slower paths. "Open in iopix" shows the same photo in the web app.
+
 ## How it signs in
 
 The apps sign in exactly like a browser: the iPhone app's web view, or the Mac app's sign-in window, shows the
