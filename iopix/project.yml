@@ -58,6 +58,28 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: iopixShare
+      - target: iopixMacBridge  # the menu bar icon, on Mac only
+        platformFilter: maccatalyst
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
+  iopixMacBridge:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - MacBridge
+    info:
+      path: MacBridge/Info.plist
+      properties:
+        NSPrincipalClass: IopixStatusBar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix.macbridge
+        SKIP_INSTALL: YES
   iopixShare:
     type: app-extension
     platform: iOS

@@ -21,6 +21,9 @@ struct IopixApp: App {
 
     init() {
         UploadQueue.shared.startBackground()
+        #if targetEnvironment(macCatalyst)
+        Task { @MainActor in MacMenuBar.shared.start() }
+        #endif
     }
 
     var body: some Scene {
@@ -66,6 +69,7 @@ struct RootView: View {
     @State private var server = AppConfig.serverURL
 
     @State private var needsServer = !AppConfig.hasServer
+    @State private var signingIn = false
     @State private var dropping = false
 
     var body: some View {
@@ -93,6 +97,8 @@ struct RootView: View {
                 if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixSignIn)) { _ in signingIn = true }
+            .sheet(isPresented: $signingIn) { SignInView { showUploads = true }.environmentObject(store) }
             // photos dragged in from Photos or Files (iPad side by side) go to the queue
             .dropDestination(for: PickedFile.self) { files, _ in
                 queue.add(files: files.map(\.url), move: true)
@@ -374,4 +380,9 @@ struct ServerSetupView: View {
 
 extension Notification.Name {
     static let iopixBecameActive = Notification.Name("iopixBecameActive")
+}
+
+extension Notification.Name {
+    /// Asks the app to show the sign-in (the Mac menu bar's "Sign in…").
+    static let iopixSignIn = Notification.Name("iopixSignIn")
 }
