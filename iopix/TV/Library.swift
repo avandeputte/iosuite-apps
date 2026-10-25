@@ -124,7 +124,8 @@ final class LibraryStore: ObservableObject {
     }
 
     /// Tags that are not people and hold photos. A tag that only groups people (People, People/Van de Putte) is
-    /// left out: those are on the People page. digiKam's own internal tags (names starting with _) too.
+    /// left out, and so is everything under a top-level tag that is mostly people: those are on the People page.
+    /// digiKam's own internal tags (names starting with _) too.
     private static func tags(from raw: [[String: Any]]) -> [TagItem] {
         struct Raw { let id: Int, pid: Int?, name: String, person: Bool, n: Int, all: Int, cover: Int? }
         let list = raw.compactMap { t -> Raw? in
@@ -144,7 +145,18 @@ final class LibraryStore: ObservableObject {
             memo[t.id] = r
             return r
         }
-        let hidden = Set(list.filter { $0.name.hasPrefix("_") }.map(\.id))
+        // a top-level tag that is mostly people (digiKam's People) is left out whole: a name in it that was never
+        // marked as a person (People/Kline/Carole Kline) is still a person, not a theme
+        let byID = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func root(_ t: Raw) -> Int {
+            var r = t, steps = 0
+            while let p = r.pid, let up = byID[p], steps < 50 { r = up; steps += 1 }
+            return r.id
+        }
+        var total: [Int: Int] = [:], persons: [Int: Int] = [:]
+        for t in list { let r = root(t); total[r, default: 0] += 1; if t.person { persons[r, default: 0] += 1 } }
+        let peopleRoots = Set(total.keys.filter { persons[$0, default: 0] * 2 > total[$0]! })
+        let hidden = Set(list.filter { $0.name.hasPrefix("_") || peopleRoots.contains($0.id) }.map(\.id))
         func underHidden(_ t: Raw) -> Bool {
             var p = t.pid, steps = 0
             while let q = p, steps < 50 { if hidden.contains(q) { return true }; p = list.first { $0.id == q }?.pid; steps += 1 }
