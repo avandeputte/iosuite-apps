@@ -52,7 +52,7 @@ final class ExploreModel: ObservableObject {
                                                                             URLQueryItem(name: "n", value: "36"),
                                                                             URLQueryItem(name: "pairs", value: "3")]) {
             if let d = j["onThisDay"] as? [String: Any] { today = PhotoList(json: d) } else { today = PhotoList() }
-            if let d = j["random"] as? [String: Any] { random = PhotoList(json: d) }
+            if let d = j["random"] as? [String: Any] { random = await Self.withMarks(PhotoList(json: d)) }
             if let d = j["thenAndNow"] as? [String: Any] { pairs = Self.pairs(d) }
             if let list = j["events"] as? [[String: Any]] { trips = Self.trips(["events": list]) }
             else if let d = j["events"] as? [String: Any] { trips = Self.trips(d) }
@@ -77,7 +77,25 @@ final class ExploreModel: ObservableObject {
     }
 
     func shuffle() async {
-        if let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "36")]) { random = PhotoList(json: j) }
+        if let j = try? await IopixClient.shared.json("api/random", query: [URLQueryItem(name: "n", value: "36")]) { random = await Self.withMarks(PhotoList(json: j)) }
+    }
+
+    /// The random list comes without the faces, location and video marks: they are read for the same ids from the
+    /// photo list (which keeps its own order) and put back in the random order.
+    static func withMarks(_ list: PhotoList) async -> PhotoList {
+        guard !list.ids.isEmpty, list.geo.isEmpty, list.faces.isEmpty, list.videos.isEmpty,
+              let full = try? await PhotoList.load([URLQueryItem(name: "ids", value: list.ids.map(String.init).joined(separator: ","))]) else { return list }
+        var at: [Int: Int] = [:]
+        for (i, id) in full.ids.enumerated() { at[id] = i }
+        var out = list
+        for (i, id) in list.ids.enumerated() {
+            guard let j = at[id] else { continue }
+            if full.geo.contains(j) { out.geo.insert(i) }
+            if full.faces.contains(j) { out.faces.insert(i) }
+            if full.videos.contains(j) { out.videos.insert(i) }
+            if let d = full.durations[j] { out.durations[i] = d }
+        }
+        return out
     }
 
     func loadPairs() async {
