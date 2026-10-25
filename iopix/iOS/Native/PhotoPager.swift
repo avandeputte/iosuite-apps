@@ -24,6 +24,9 @@ struct PhotoPager: View {
     @ObservedObject private var rights = EditRights.shared
     @State private var chrome = true
     @State private var info = false
+    @Environment(\.horizontalSizeClass) private var width
+    /// On a wide screen (iPad) the details sit in a pane beside the photo, as on the web; on a phone in a sheet.
+    private var sidePane: Bool { width == .regular }
     @State private var sharing: URL?
     @State private var preparing = false
     @State private var problem: String?
@@ -49,22 +52,30 @@ struct PhotoPager: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            // pages are made as they come into view, so a list of the whole library swipes as well as a short one
-            PageView(count: ids.count, index: $index) { i in
-                AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true) {
-                    withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
+        HStack(spacing: 0) {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                // pages are made as they come into view, so a list of the whole library swipes as well as a short one
+                PageView(count: ids.count, index: $index) { i in
+                    AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true) {
+                        withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
+                    }
+                    .ignoresSafeArea())
                 }
-                .ignoresSafeArea())
+                .id(reloadKey)
+                .ignoresSafeArea()
             }
-            .id(reloadKey)
-            .ignoresSafeArea()
+            .overlay(alignment: .top) { if chrome { topBar } }
+            .overlay(alignment: .bottom) { if chrome { bottomBar } }
+            if info && sidePane {
+                PhotoInfoPane(photo: current)
+                    .frame(width: 360)
+                    .transition(.move(edge: .trailing))
+            }
         }
-        .overlay(alignment: .top) { if chrome { topBar } }
-        .overlay(alignment: .bottom) { if chrome { bottomBar } }
+        .animation(.easeInOut(duration: 0.25), value: info)
         .statusBarHidden(!chrome)
-        .sheet(isPresented: $info) {
+        .sheet(isPresented: Binding(get: { info && !sidePane }, set: { info = $0 })) {
             PhotoInfoSheet(photo: current)
                 .presentationDetents([.medium, .large])
         }
@@ -136,7 +147,7 @@ struct PhotoPager: View {
                 Image(systemName: fav ? "heart.fill" : "heart").foregroundStyle(fav ? .pink : .white)
             }
             .accessibilityLabel(fav ? "Remove from favorites" : "Add to favorites")
-            Button { info = true } label: { Image(systemName: "info.circle") }
+            Button { info.toggle() } label: { Image(systemName: info && sidePane ? "info.circle.fill" : "info.circle") }
                 .accessibilityLabel("Info")
         }
         .font(.title2)
@@ -359,15 +370,43 @@ extension VideoPage {
     }
 }
 
+/// The details beside the photo on a wide screen, like the web app's info panel.
+struct PhotoInfoPane: View {
+    let photo: Int
+    @EnvironmentObject private var store: LibraryStore
+
+    var body: some View {
+        PhotoInfoList(photo: photo)
+            .scrollContentBackground(.hidden)
+            .background(.regularMaterial)
+            .overlay(alignment: .topLeading) {
+                Text("Info").font(.headline).padding(.horizontal, 20).padding(.top, 14)
+            }
+            .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+struct PhotoInfoSheet: View {
+    let photo: Int
+
+    var body: some View {
+        NavigationStack {
+            PhotoInfoList(photo: photo)
+                .navigationTitle("Info")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
 /// What iopix knows about a photo: its caption (never the AI description), date, place, people, tags, folder,
 /// camera and file.
-struct PhotoInfoSheet: View {
+struct PhotoInfoList: View {
     let photo: Int
     @State private var info: PhotoInfo?
     @State private var failed = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 if let info {
                     if let t = info.title { Section { Text(t).font(.headline) } }
@@ -386,8 +425,6 @@ struct PhotoInfoSheet: View {
                     ProgressView().frame(maxWidth: .infinity)
                 }
             }
-            .navigationTitle("Info")
-            .navigationBarTitleDisplayMode(.inline)
         }
         .task(id: photo) {
             info = await PhotoInfo.load(photo)
