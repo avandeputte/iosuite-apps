@@ -67,7 +67,11 @@ struct PhotoPager: View {
             }
             .overlay(alignment: .top) { if chrome { topBar } }
             if info && sidePane {
-                PhotoInfoPane(photo: current)
+                PhotoInfoPane(photo: current) { route in
+                    // a date, person, tag or place in the panel: its photos, as the web app's panel does
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.open(route) }
+                }
                     .frame(width: 360)
                     .transition(.move(edge: .trailing))
             }
@@ -365,11 +369,10 @@ extension VideoPage {
 /// The details beside the photo on a wide screen, like the web app's info panel.
 struct PhotoInfoPane: View {
     let photo: Int
-    @EnvironmentObject private var store: LibraryStore
+    var open: (String) -> Void = { _ in }
 
     var body: some View {
-        PhotoInfoList(photo: photo)
-            .scrollContentBackground(.hidden)
+        PhotoInfoFull(photo: photo, open: open)
             .background(.regularMaterial)
             .overlay(alignment: .topLeading) {
                 Text("Info").font(.headline).padding(.horizontal, 20).padding(.top, 14)
