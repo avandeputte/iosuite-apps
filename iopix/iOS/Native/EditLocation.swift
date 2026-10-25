@@ -36,13 +36,14 @@ struct EditLocationSheet: View {
                         if let c = proxy.convert(p, from: .local) { pin = c; alt = nil }
                     }
                 }
-                .frame(minHeight: 240)
+                .frame(height: mapHeight)  // a fixed share: the found places and suggestions below need room too
                 List {
-                    if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
                     if !hits.isEmpty {
                         Section("Found") { ForEach(hits) { row($0) } }
                     }
                     Section {
+                        // what came of a search or a suggestion shows here, where the eye is
+                        if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
                         if suggestions.isEmpty {
                             Button { Task { await suggest() } } label: {
                                 if looking { ProgressView() } else { Label("Suggest from photos taken around then", systemImage: "sparkles") }
@@ -62,12 +63,15 @@ struct EditLocationSheet: View {
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Cancel")
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Use") { if let p = pin { done(p.latitude, p.longitude, alt) }; dismiss() }.disabled(pin == nil)
                 }
             }
             .onAppear {
+                Task { await suggest() }  // the likely places, from photos taken around then, are offered at once
                 if let lat, let lon {
                     let c = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     pin = c
@@ -76,6 +80,9 @@ struct EditLocationSheet: View {
             }
         }
     }
+
+    @Environment(\.horizontalSizeClass) private var width
+    private var mapHeight: CGFloat { width == .regular ? 320 : 260 }
 
     private func row(_ h: Hit) -> some View {
         Button {
@@ -146,5 +153,12 @@ struct EditLocationSheet: View {
         } catch {
             note = error.localizedDescription
         }
+    }
+}
+
+extension View {
+    /// On iPad and Mac a sheet opened from another sheet comes out small; this one asks for a page-sized sheet.
+    @ViewBuilder func roomySheet() -> some View {
+        if #available(iOS 18.0, *) { presentationSizing(.page) } else { self }
     }
 }

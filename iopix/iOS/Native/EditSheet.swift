@@ -97,6 +97,7 @@ struct PhotoEditSheet: View {
             EditLocationSheet(photo: photo, lat: draft.lat, lon: draft.lon) { la, lo, alt in
                 draft.lat = la; draft.lon = lo; draft.alt = alt
             }
+            .roomySheet()
         }
         .fullScreenCover(isPresented: $faces, onDismiss: { Task { await load(keepDraft: true) } }) {
             EditFacesView(photo: photo) { onOutcome(.changed) }

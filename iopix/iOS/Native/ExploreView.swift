@@ -172,6 +172,7 @@ struct ExploreView: View {
                     content
                 }
             }
+            .background(alignment: .top) { wash }
             .navigationTitle("Explore")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { sizePicker }
@@ -211,6 +212,7 @@ struct ExploreView: View {
     @ViewBuilder private var content: some View {
         let s = store.summary
         VStack(alignment: .leading, spacing: 28) {
+            if let h = hero { banner(h) }
             stats(s)
             if !model.today.ids.isEmpty {
                 section(Hue.rose, "calendar", "On this day · \(Date().formatted(.dateTime.month(.wide).day()))",
@@ -306,6 +308,69 @@ struct ExploreView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
         .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in Task { await reload() } }
+    }
+
+    // MARK: the banner
+
+    /// The photo at the top: one taken on this day in an earlier year, else a favorite, else a random one.
+    private struct Hero { let list: PhotoList; let index: Int; let title: String; let subtitle: String }
+
+    private var hero: Hero? {
+        let t = model.today
+        if !t.ids.isEmpty {
+            // the widest of today's photos makes the best banner
+            let i = (0..<t.ids.count).filter { !t.isVideo($0) }.max { t.ratio($0) < t.ratio($1) } ?? 0
+            let ts = i < t.times.count ? t.times[i] : 0
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+            let year = ts > 0 ? cal.component(.year, from: Date(timeIntervalSince1970: ts)) : 0
+            let ago = Calendar.current.component(.year, from: Date()) - year
+            return Hero(list: t, index: i, title: "On this day",
+                        subtitle: year > 0 ? (ago == 1 ? "\(year) · a year ago" : "\(year) · \(ago) years ago") : Date().formatted(.dateTime.month(.wide).day()))
+        }
+        let r = model.random
+        guard !r.ids.isEmpty else { return nil }
+        let favs = (0..<r.ids.count).filter { store.favoriteIDs.contains(r.ids[$0]) }
+        let i = favs.first ?? (0..<r.ids.count).max { r.ratio($0) < r.ratio($1) } ?? 0
+        let ts = i < r.times.count ? r.times[i] : 0
+        return Hero(list: r, index: i, title: favs.isEmpty ? "Rediscover" : "From your favorites",
+                    subtitle: ts > 0 ? PhotoPager.day(ts) : "")
+    }
+
+    /// The banner's photo, blurred, behind the top of the page: a little colour from the library itself.
+    @ViewBuilder private var wash: some View {
+        if let h = hero {
+            RemoteImage(path: "thumb/\(h.list.ids[h.index])")
+                .frame(height: wide ? 560 : 420)
+                .blur(radius: 60)
+                .opacity(0.45)
+                .mask(LinearGradient(colors: [.black, .black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom))
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func banner(_ h: Hero) -> some View {
+        Button { viewer = PagerStart(list: h.list, index: h.index) } label: {
+            RemoteImage(path: "preview/\(h.list.ids[h.index])")
+                .frame(maxWidth: .infinity)
+                .frame(height: wide ? 380 : 240)
+                .clipped()
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(h.title).font(.title2.bold())
+                        if !h.subtitle.isEmpty { Text(h.subtitle).font(.subheadline) }
+                    }
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.5), radius: 4)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(h.title), \(h.subtitle)")
     }
 
     // MARK: the numbers

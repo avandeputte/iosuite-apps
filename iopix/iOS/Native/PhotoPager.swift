@@ -107,8 +107,8 @@ struct PhotoPager: View {
     }
 
     private var topBar: some View {
-        HStack {
-            Button { dismiss() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44) }
+        HStack(spacing: 8) {
+            Button { dismiss() } label: { ViewerIcon(symbol: "xmark") }
                 .accessibilityLabel("Close")
             VStack(alignment: .leading, spacing: 2) {
                 if let t = takenAt(index) {
@@ -116,24 +116,19 @@ struct PhotoPager: View {
                 }
                 if ids.count > 1 { Text("\(index + 1) of \(ids.count)").font(.caption).foregroundStyle(.white.opacity(0.7)) }
             }
+            .shadow(color: .black.opacity(0.6), radius: 3)
             Spacer(minLength: 4)
-            // share, favorite and info at the top right, beside the picture's corner (as on the web)
-            Button { Task { await share() } } label: {
-                Group { if preparing { ProgressView().tint(.white) } else { Image(systemName: "square.and.arrow.up") } }
-                    .font(.headline).frame(width: 40, height: 44)
-            }
-            .accessibilityLabel("Share")
-            .disabled(preparing)
+            // share, favorite, info and more at the top right, all drawn the same way on iPhone, iPad and Mac
+            Button { Task { await share() } } label: { ViewerIcon(symbol: "square.and.arrow.up", busy: preparing) }
+                .accessibilityLabel("Share")
+                .disabled(preparing)
             let fav = store.favoriteIDs.contains(current)
             Button { Task { await store.setFavorite(current, !fav) } } label: {
-                Image(systemName: fav ? "heart.fill" : "heart").foregroundStyle(fav ? .pink : .white)
-                    .font(.headline).frame(width: 40, height: 44)
+                ViewerIcon(symbol: fav ? "heart.fill" : "heart", tint: fav ? .pink : .white)
             }
             .accessibilityLabel(fav ? "Remove from favorites" : "Add to favorites")
-            Button { info.toggle() } label: {
-                Image(systemName: info ? "info.circle.fill" : "info.circle").font(.headline).frame(width: 40, height: 44)
-            }
-            .accessibilityLabel("Info")
+            Button { info.toggle() } label: { ViewerIcon(symbol: info ? "info.circle.fill" : "info.circle") }
+                .accessibilityLabel("Info")
             Menu {
                 if rights.canWrite {
                     Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
@@ -141,10 +136,13 @@ struct PhotoPager: View {
                 }
                 Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.headline).frame(width: 40, height: 44)
+                ViewerIcon(symbol: "ellipsis")
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
             .accessibilityLabel("More")
         }
+        .buttonStyle(.plain)
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
@@ -491,4 +489,21 @@ struct PageView: UIViewControllerRepresentable {
 extension Notification.Name {
     /// Photos were trashed, restored or added from the viewer or an editing sheet; lists reload. userInfo["removed"]: ids gone.
     static let iopixPhotosChanged = Notification.Name("iopixPhotosChanged")
+}
+
+/// A round button of the photo viewer: the same on iPhone, iPad and Mac (where buttons and menus otherwise get
+/// different frames), and readable on a bright photo.
+struct ViewerIcon: View {
+    let symbol: String
+    var tint: Color = .white
+    var busy = false
+
+    var body: some View {
+        ZStack {
+            Circle().fill(.black.opacity(0.35))
+            if busy { ProgressView().tint(.white) } else { Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint) }
+        }
+        .frame(width: 38, height: 38)
+        .contentShape(Circle())
+    }
 }
