@@ -156,11 +156,24 @@ enum FacesAPI {
         return (failed.count, failed.first?["error"] as? String)
     }
 
-    /// A new person, directly under People or in a family (People/<family>). Returns the person's tag id.
-    static func createPerson(_ name: String, family: Int?) async throws -> Int {
-        let r = try await post("api/faces/person", ["name": name, "parent": family ?? 0])
+    /// A new person under a family (People/<family>) or the People root itself; `parent` is that tag's id (0 makes a
+    /// top-level tag, so callers pass the People root when there is no family). Returns the person's tag id.
+    static func createPerson(_ name: String, parent: Int?) async throws -> Int {
+        let r = try await post("api/faces/person", ["name": name, "parent": parent ?? 0])
         guard let id = (r["id"] as? NSNumber)?.intValue else { throw IopixError.server("The person was not made.") }
         return id
+    }
+
+    /// The index's version (api/status), to tell when a change has been taken in.
+    static func indexVersion() async -> String? { (try? await client.json("api/status"))?["version"] as? String }
+
+    /// Waits, up to about five seconds, for the index to move past `seen`: a face change shows in the counts and
+    /// lists only once the server has reindexed.
+    static func awaitReindex(after seen: String?) async {
+        for _ in 0..<10 {
+            try? await Task.sleep(for: .milliseconds(500))
+            if let v = await indexVersion(), v != seen { return }
+        }
     }
 
     static func nearby(_ photo: Int) async -> [Int] {
@@ -241,11 +254,15 @@ struct FaceCell: View {
         }
     }
 
-    static func month(_ ts: Double) -> String {
-        guard ts > 0 else { return "" }
+    private static let monthFormatter: DateFormatter = {
         let f = DateFormatter()
         f.timeZone = TimeZone(identifier: "UTC")
         f.setLocalizedDateFormatFromTemplate("MMM yyyy")
-        return f.string(from: Date(timeIntervalSince1970: ts))
+        return f
+    }()
+
+    static func month(_ ts: Double) -> String {
+        guard ts > 0 else { return "" }
+        return monthFormatter.string(from: Date(timeIntervalSince1970: ts))
     }
 }

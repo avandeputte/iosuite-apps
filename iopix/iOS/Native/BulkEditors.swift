@@ -383,6 +383,7 @@ struct BulkLocationSheet: View {
     @State private var alt = ""
     @State private var altNote: String?
     @State private var altTyped = false
+    @State private var autoAlt = ""  // the last altitude the app filled in itself, to tell a typed one apart
     @State private var search = ""
     @State private var results: [(name: String, detail: String?, lat: Double, lon: Double)] = []
     @State private var resultNote: String?
@@ -416,7 +417,7 @@ struct BulkLocationSheet: View {
                     if let suggestions {
                         if suggestions.isEmpty { Text("No photo with a location was taken within 6 hours of the first one.").font(.caption).foregroundStyle(.secondary) }
                         ForEach(suggestions, id: \.id) { s in
-                            Button { place(s.lat, s.lon, zoomTo: 0.005); if let a = s.alt { alt = String(format: "%.1f", a); altTyped = true; altNote = "altitude from that photo" } } label: {
+                            Button { place(s.lat, s.lon, zoomTo: 0.005); if let a = s.alt { autoAlt = String(format: "%.1f", a); alt = autoAlt; altTyped = true; altNote = "altitude from that photo" } } label: {
                                 HStack {
                                     RemoteImage(path: "thumb/\(s.id)").frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: 5))
                                     VStack(alignment: .leading) {
@@ -451,7 +452,9 @@ struct BulkLocationSheet: View {
                     TextField("Longitude", text: $lon).keyboardType(.numbersAndPunctuation).onSubmit { Task { await fetchAltitude() } }
                     if !townOnly {
                         TextField("Altitude (metres)", text: $alt).keyboardType(.numbersAndPunctuation)
-                            .onChange(of: alt) { _, _ in }
+                            .onChange(of: alt) { _, v in
+                                if v != autoAlt { altTyped = !v.isEmpty; if altTyped { altNote = nil } }  // typed: the pin no longer sets it
+                            }
                         if let altNote { Text(altNote).font(.caption).foregroundStyle(.secondary) }
                     }
                     Toggle("Only the town is known", isOn: $townOnly)
@@ -497,7 +500,7 @@ struct BulkLocationSheet: View {
             altNote = "no altitude service reachable"; return
         }
         guard pin?.latitude == p.latitude else { return }
-        if let a = (r["alt"] as? NSNumber)?.doubleValue { alt = String(format: "%.1f", a) }
+        if let a = (r["alt"] as? NSNumber)?.doubleValue { autoAlt = String(format: "%.1f", a); alt = autoAlt }
         altNote = (r["source"] as? String).map { "ground height from \($0)" }
     }
 

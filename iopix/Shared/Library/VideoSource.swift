@@ -15,7 +15,9 @@ enum VideoSource {
     static func url(for id: Int) async throws -> URL {
         let client = IopixClient.shared
         let orig = AppConfig.serverURL.appendingPathComponent("orig/\(id)")
-        guard let d = try? await client.json("api/photo/\(id)"), let playable = d["playable"] as? Bool, !playable else { return orig }
+        let d = try? await client.json("api/photo/\(id)")
+        try Task.checkCancellation()  // swiped away while asking: no player for a page that has gone
+        guard let d, let playable = d["playable"] as? Bool, !playable else { return orig }
         let mp4 = AppConfig.serverURL.appendingPathComponent("video/\(id).mp4")
         for _ in 0..<240 {  // up to about 20 minutes for a long video
             try Task.checkCancellation()

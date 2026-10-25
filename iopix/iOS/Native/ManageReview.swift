@@ -38,6 +38,7 @@ struct ManageDuplicatesScreen: View {
     @State private var groups: [Group] = []
     @State private var wasted = 0
     @State private var loaded = false
+    @State private var problem: String?
     @State private var viewer: PagerStart?
     @State private var trashing: (Group, Copy)?
     @State private var notice: Notice?
@@ -45,7 +46,9 @@ struct ManageDuplicatesScreen: View {
     var body: some View {
         List {
             Section {
-                if loaded {
+                if let problem {
+                    Text(problem).foregroundStyle(.secondary)
+                } else if loaded {
                     Text(groups.isEmpty ? "No duplicate files." : "\(ManageAPI.plural(groups.count, "group")) of identical files · \(ManageAPI.bytes(wasted)) taken by the extra copies.")
                         .foregroundStyle(.secondary)
                 } else { ProgressView() }
@@ -78,7 +81,8 @@ struct ManageDuplicatesScreen: View {
     }
 
     private func load() async {
-        guard let j = try? await ManageAPI.get("api/duplicates") else { loaded = true; return }
+        let j: [String: Any]
+        do { j = try await ManageAPI.get("api/duplicates"); problem = nil } catch { problem = error.localizedDescription; loaded = true; return }
         wasted = (j["wasted"] as? NSNumber)?.intValue ?? 0
         groups = (j["groups"] as? [[String: Any]] ?? []).map { g in
             Group(size: (g["size"] as? NSNumber)?.intValue ?? 0, items: (g["items"] as? [[String: Any]] ?? []).compactMap { x in
@@ -162,7 +166,7 @@ struct ManageNearDuplicatesScreen: View {
         loaded = true
         if running {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            await load()
+            if !Task.isCancelled { await load() }
         }
     }
 
@@ -191,6 +195,7 @@ struct ManageBurstsScreen: View {
     @State private var photos = 0
     @State private var loaded = false
     @State private var loading = false
+    @State private var problem: String?
     @State private var viewer: PagerStart?
     @State private var keeping: Burst?
     @State private var notice: Notice?
@@ -198,7 +203,9 @@ struct ManageBurstsScreen: View {
     var body: some View {
         List {
             Section {
-                if loaded {
+                if let problem {
+                    Text(problem).foregroundStyle(.secondary)
+                } else if loaded {
                     Text(total == 0 ? "No bursts found." : "\(ManageAPI.plural(total, "burst")) covering \(ManageAPI.plural(photos, "photo")). Check the best frame before moving the rest to the trash.")
                         .foregroundStyle(.secondary)
                 } else { ProgressView() }
@@ -245,7 +252,11 @@ struct ManageBurstsScreen: View {
         loading = true
         defer { loading = false }
         let offset = more ? bursts.count : 0
-        guard let j = try? await ManageAPI.get("api/bursts", [URLQueryItem(name: "offset", value: "\(offset)"), URLQueryItem(name: "limit", value: "40")]) else { loaded = true; return }
+        let j: [String: Any]
+        do {
+            j = try await ManageAPI.get("api/bursts", [URLQueryItem(name: "offset", value: "\(offset)"), URLQueryItem(name: "limit", value: "40")])
+            problem = nil
+        } catch { problem = error.localizedDescription; loaded = true; return }
         total = (j["bursts"] as? NSNumber)?.intValue ?? 0
         photos = (j["photos"] as? NSNumber)?.intValue ?? 0
         let page: [Burst] = (j["groups"] as? [[String: Any]] ?? []).compactMap { g in
@@ -332,6 +343,7 @@ struct ManageQualityScreen: View {
     @State private var problem: String?
     @State private var viewer: PagerStart?
     @State private var confirm: String?
+    @State private var ignoring: [Int] = []
     @State private var notice: Notice?
 
     var body: some View {
@@ -364,12 +376,18 @@ struct ManageQualityScreen: View {
         .task { await rights.load(); await load() }
         .refreshable { await load() }
         .pager($viewer)
-        .confirmationDialog(confirm == "files" ? "Clean up the image files too?" : "Remove the doubled face boxes?", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(confirm == "files" ? "Clean up the image files too?" : "Remove the doubled face boxes?", isPresented: Binding(get: { confirm != nil && confirm != "ignore" }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
             Button(confirm == "files" ? "Clean up image files" : "Remove doubles", role: .destructive) {
                 let files = confirm == "files"
                 Task { await act("api/quality/fix", ["files": files]) { r in "Cleaning up \(ManageAPI.plural((r["photos"] as? NSNumber)?.intValue ?? 0, files ? "image file" : "photo")) in the background." } }
             }
         } message: { Text("One box is kept in each group of near-identical boxes; the sidecars are rewritten. A backup is taken first.") }
+        .confirmationDialog("Ignore the unnamed faces on \(ManageAPI.plural(ignoring.count, "photo"))?", isPresented: Binding(get: { confirm == "ignore" }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
+            Button("Ignore these faces", role: .destructive) {
+                let photos = ignoring
+                Task { await act("api/quality/ignore", ["photos": photos]) { r in "\(ManageAPI.plural((r["ignored"] as? NSNumber)?.intValue ?? 0, "face")) ignored." } }
+            }
+        } message: { Text("They become faces not to name. Each change is in the history, with undo.") }
         .notice($notice)
     }
 
@@ -383,9 +401,7 @@ struct ManageQualityScreen: View {
                 Task { await act("api/quality/fit", [:]) { r in "\((r["fitted"] as? NSNumber)?.intValue ?? 0) trimmed, \((r["removed"] as? NSNumber)?.intValue ?? 0) removed." } }
             }
         case "unnamed":
-            Button("Ignore these unnamed faces") {
-                Task { await act("api/quality/ignore", ["photos": c.photos]) { r in "\(ManageAPI.plural((r["ignored"] as? NSNumber)?.intValue ?? 0, "face")) ignored." } }
-            }
+            Button("Ignore these unnamed faces") { ignoring = c.photos; confirm = "ignore" }
             Button("Accept them as they are") { Task { await accept(c.key, c.photos) } }
         case "untagged", "nolocation", "wrongfolder", "baddate":
             Button("Accept these as they are") { Task { await accept(c.key, c.photos) } }
@@ -464,11 +480,13 @@ struct ManageHistoryScreen: View {
     @State private var sent = ""
     @State private var action = ""
     @State private var loaded = false
+    @State private var problem: String?
     @State private var viewer: PagerStart?
     @State private var notice: Notice?
 
-    private static let actions: [(String, String)] = [("", "All changes"), ("edit", "Edits"), ("tag", "Tags"), ("face", "Faces"), ("moved", "Moved"),
-                                                      ("trashed", "Trashed"), ("deleted", "Deleted"), ("added", "Added"), ("restore", "Restores")]
+    private static let actions: [(String, String)] = [("", "All changes"), ("edit", "Edits"), ("lossless", "Files"), ("tag", "Tags"), ("face", "Faces"), ("moved", "Moved"),
+                                                      ("trashed", "Trashed"), ("deleted", "Deleted"), ("added", "Added"), ("restore", "Restores"), ("revert", "Undone"),
+                                                      ("guard", "Protected"), ("sync", "Sync"), ("database", "digiKam")]
     private static let restoreLabels = ["undo": "Undo", "trash": "Restore from trash", "sidecar": "Put the sidecar back",
                                         "deleted": "Bring the photo back", "original": "Put the original file back"]
 
@@ -506,7 +524,8 @@ struct ManageHistoryScreen: View {
             if entries.count < total {
                 Button("Show more") { Task { await load(more: true) } }
             }
-            if loaded && entries.isEmpty { Text("No changes yet.").foregroundStyle(.secondary) }
+            if let problem { Text(problem).foregroundStyle(.secondary) }
+            if loaded && entries.isEmpty && problem == nil { Text("No changes yet.").foregroundStyle(.secondary) }
         }
         .navigationTitle(photo == nil ? "History" : "This photo's history")
         .searchable(text: $search, prompt: "Search changes, file names, people")
@@ -523,7 +542,8 @@ struct ManageHistoryScreen: View {
         if !sent.isEmpty { q.append(URLQueryItem(name: "q", value: sent)) }
         if !action.isEmpty { q.append(URLQueryItem(name: "action", value: action)) }
         if let photo { q.append(URLQueryItem(name: "photo", value: "\(photo)")) }
-        guard let j = try? await ManageAPI.get("api/history", q) else { loaded = true; return }
+        let j: [String: Any]
+        do { j = try await ManageAPI.get("api/history", q); problem = nil } catch { problem = error.localizedDescription; loaded = true; return }
         total = (j["total"] as? NSNumber)?.intValue ?? 0
         let page: [Entry] = (j["entries"] as? [[String: Any]] ?? []).compactMap { e in
             guard let id = (e["id"] as? NSNumber)?.intValue else { return nil }

@@ -157,6 +157,7 @@ struct UploadsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var picked: [PhotosPickerItem] = []
     @State private var loading = false
+    @State private var pickNote: String?
     @State private var serverText = AppConfig.serverURL.absoluteString
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ServiceToken.clientSecret ?? ""
@@ -170,6 +171,7 @@ struct UploadsView: View {
                         Label(loading ? "Getting your photos…" : "Choose photos and videos", systemImage: "photo.on.rectangle.angled")
                     }
                     .disabled(loading)
+                    if let pickNote { Text(pickNote).font(.footnote).foregroundStyle(.orange) }
                 }
 
                 Section {
@@ -230,6 +232,7 @@ struct UploadsView: View {
                         Button("Sign out", role: .destructive) {
                             Task {
                                 await IopixClient.shared.signOut()
+                                ImageCache.shared.removeAll()
                                 await CookieSync.clearWebView()
                                 await queue.refreshAccount()
                                 NotificationCenter.default.post(name: .iopixReload, object: nil)  // the page shows the sign-in again
@@ -271,10 +274,12 @@ struct UploadsView: View {
         loading = true
         Task {
             var files: [URL] = []
+            var failed = 0
             for item in items {
-                if let f = try? await item.loadTransferable(type: PickedFile.self) { files.append(f.url) }
+                if let f = try? await item.loadTransferable(type: PickedFile.self) { files.append(f.url) } else { failed += 1 }
             }
             queue.add(files: files, move: true)
+            if failed > 0 { pickNote = failed == 1 ? "One photo couldn't be read (not downloaded from iCloud?)." : "\(failed) photos couldn't be read (not downloaded from iCloud?)." }
             picked = []
             loading = false
         }

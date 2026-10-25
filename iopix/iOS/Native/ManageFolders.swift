@@ -74,6 +74,7 @@ struct ManageFoldersScreen: View {
     @StateObject private var ownTree = FolderTree()
     var tree: FolderTree? = nil
     @EnvironmentObject private var store: LibraryStore
+    @StateObject private var rights = ManageRights()
     @State private var picked: [PhotosPickerItem] = []
     @State private var uploading = false
     @State private var newFolder = false
@@ -90,6 +91,8 @@ struct ManageFoldersScreen: View {
     }
 
     private var t: FolderTree { tree ?? ownTree }
+    /// The server's canManage says the library can be changed; only editors may do it (the server refuses others).
+    private var canManage: Bool { t.canManage && rights.canWrite }
 
     var body: some View {
         let here = t.node(parent)
@@ -120,14 +123,14 @@ struct ManageFoldersScreen: View {
                     ThumbRow(cover: cover(f.id), title: f.name, sub: f.nAll == 0 ? "Empty" : f.nAll.formatted(), symbol: "folder")
                 }
                 .swipeActions(edge: .trailing) {
-                    if t.canManage && f.pid != nil {
+                    if canManage && f.pid != nil {
                         Button("Rename") { renameText = f.name; renaming = f }.tint(Hue.blue)
                         Button("Move") { moving = f }.tint(Hue.indigo)
                         Button("Info") { editing = f }.tint(Hue.slate)
                     }
                 }
                 .contextMenu {
-                    if t.canManage && f.pid != nil {
+                    if canManage && f.pid != nil {
                         Button { renameText = f.name; renaming = f } label: { Label("Rename…", systemImage: "pencil") }
                         Button { moving = f } label: { Label("Move…", systemImage: "folder.badge.gearshape") }
                         Button { editing = f } label: { Label("Caption, date and collection…", systemImage: "info.circle") }
@@ -141,7 +144,7 @@ struct ManageFoldersScreen: View {
         .overlay { if uploading { ProgressView("Uploading…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .navigationTitle(here?.name ?? "Folders")
         .toolbar {
-            if t.canManage {
+            if canManage {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button { newName = ""; newFolder = true } label: { Label("New folder…", systemImage: "folder.badge.plus") }
@@ -160,7 +163,10 @@ struct ManageFoldersScreen: View {
                 }
             }
         }
-        .task { if tree == nil, !t.loaded { await t.load() } }
+        .task {
+            await rights.load()
+            if tree == nil, !t.loaded { await t.load() }
+        }
         .refreshable { await t.load(); await store.load() }
         .namePrompt("New folder", isPresented: $newFolder, text: $newName, action: "Create",
                     message: "Inside \(here?.name ?? t.children(of: nil).first?.name ?? "the library").") { name in
@@ -214,9 +220,14 @@ struct ManageFoldersScreen: View {
         guard !files.isEmpty else { notice = Notice(text: "Couldn't read the photos picked.", failed: true); return }
         do {
             let r = try await ManageAPI.upload("api/folders/\(folder.id)/upload", files: files)
-            let added = (r["added"] as? [Any])?.count ?? (r["uploaded"] as? [Any])?.count ?? files.count
-            notice = Notice(text: "\(ManageAPI.plural(added, "file")) uploaded into \(folder.name). digiKam reads them fully on its next start.")
+            let added = (r["added"] as? [Any])?.count ?? 0
+            let skipped = (r["skipped"] as? [[String: Any]] ?? []).map { "\($0["name"] as? String ?? ""): \($0["reason"] as? String ?? "skipped")" }
+            var text = "\(ManageAPI.plural(added, "file")) uploaded into \(folder.name)."
+            if added > 0 { text += " digiKam reads them fully on its next start." }
+            if !skipped.isEmpty { text += " Not uploaded: " + skipped.joined(separator: "; ") }
+            notice = Notice(text: text, failed: added == 0)
             await t.load()
+            await store.load()
         } catch {
             notice = Notice(text: error.localizedDescription, failed: true)
         }

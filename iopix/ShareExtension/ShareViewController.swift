@@ -42,6 +42,7 @@ final class ShareModel: ObservableObject {
 
     private func run() async {
         Self.sweep()  // folders a share left behind when the sheet was swiped away
+        BackgroundUploads.sweepOutbox()
         let providers = (context?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
             .filter { p in [UTType.movie, UTType.image].contains { p.hasItemConformingToTypeIdentifier($0.identifier) } }
         guard !providers.isEmpty else { phase = .failed("Only photos and videos can be sent to iopix."); return }

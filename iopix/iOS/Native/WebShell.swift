@@ -196,7 +196,8 @@ final class WebShell {
     private func webView(start: String) -> WKWebView {
         if let web, server == AppConfig.serverURL { return web }
         web?.removeFromSuperview()
-        let c = IopixWebView.Coordinator(onCookiesChanged, status: status)
+        // read when a cookie changes, not now: the web view can be made before the app has set `onCookiesChanged`
+        let c = IopixWebView.Coordinator({ WebShell.shared.onCookiesChanged() }, status: status)
         coordinator = c
         server = AppConfig.serverURL
         let w = IopixWebView.build(c, url: Self.url(for: start))

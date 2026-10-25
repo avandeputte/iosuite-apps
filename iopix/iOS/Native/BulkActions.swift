@@ -93,7 +93,7 @@ struct BulkActionBar: View {
                 barButton(allFavorite ? "heart.fill" : "heart", allFavorite ? "Unfavorite" : "Favorite") {
                     Task {
                         if await store.setFavorites(ids, !allFavorite) {
-                            BulkToast.shared.show(allFavorite ? "Added to favorites." : "Removed from favorites.")
+                            BulkToast.shared.show(allFavorite ? "Removed from favorites." : "Added to favorites.")
                         } else { BulkToast.shared.show("Couldn't change your favorites.") }
                     }
                 }
@@ -196,7 +196,12 @@ struct BulkActionBar: View {
         do {
             let r = try await BulkAPI.post("api/photos/transform", ["ids": Array(ids.prefix(500)), "op": op])
             let failed = (r["failed"] as? [Any])?.count ?? 0
-            BulkToast.shared.show(failed > 0 ? "\(failed) couldn't be changed." : "Done. Each change is in the edit log with Undo.")
+            for id in ids.prefix(500) {  // the pictures changed: their cached thumbnails are stale
+                ImageCache.shared.forget("thumb/\(id)"); ImageCache.shared.forget("preview/\(id)")
+            }
+            var msg = failed > 0 ? "\(failed) couldn't be changed." : "Done. Each change is in the edit log with Undo."
+            if ids.count > 500 { msg += " Only the first 500 were changed." }
+            BulkToast.shared.show(msg, seconds: ids.count > 500 ? 8 : 4)
             done(.changed)
         } catch { BulkToast.shared.show(error.localizedDescription) }
     }
@@ -388,7 +393,7 @@ struct BulkMoveSheet: View {
             var msg = "\(movedIDs.count == 1 ? "1 photo" : "\(movedIDs.count.formatted()) photos") moved to \(path)."
             if let first = failed.first { msg += " \(failed.count) couldn't be: \(first["error"] as? String ?? "")." }
             BulkToast.shared.show(msg, seconds: 8)
-            moved(movedIDs.isEmpty ? ids : movedIDs)
+            moved(movedIDs)  // only what the server moved leaves the list; the rest stay where they are
             dismiss()
         } catch {
             BulkToast.shared.show(error.localizedDescription, seconds: 8)

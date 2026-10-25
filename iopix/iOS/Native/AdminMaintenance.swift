@@ -173,11 +173,17 @@ struct AdminMaintenanceScreen: View {
         do {
             async let a = AdminAPI.get("api/maintenance")
             async let b = AdminAPI.get("api/status")
-            m = try await a
+            let got = try await a
             status = (try? await b) ?? status
+            if got.dict("paths").isEmpty {  // the server leaves the paths and storage out for everyone but admins
+                m = [:]
+                problem = "Maintenance is for admins."
+                return
+            }
+            m = got
             problem = nil
         } catch {
-            problem = "Maintenance is for admins: \(error.localizedDescription)"
+            problem = "Couldn't load Maintenance: \(error.localizedDescription)"
             return
         }
         if let c = try? await AdminAPI.get("api/consistency", [URLQueryItem(name: "limit", value: "1")]) {
@@ -262,6 +268,7 @@ struct AdminModelsScreen: View {
     @State private var checking = false
     @State private var confirm: AdminConfirm?
     @State private var poll: Task<Void, Never>?
+    @State private var gone = false
 
     /// A job's model: fixed (text reading uses RapidOCR) or the one chosen for its feature.
     private static let jobModel = ["vision": "ocr"]
@@ -301,7 +308,8 @@ struct AdminModelsScreen: View {
         .navigationTitle("AI analysis and models")
         .task { await load() }
         .refreshable { await load() }
-        .onDisappear { poll?.cancel() }
+        .onAppear { gone = false }
+        .onDisappear { gone = true; poll?.cancel() }
         .adminConfirm($confirm)
         .adminNotice(notice)
     }
@@ -443,6 +451,7 @@ struct AdminModelsScreen: View {
             notice.say("Download of \(f) failed: \(e)", error: true)
         }
         poll?.cancel()
+        if gone || Task.isCancelled { return }  // a load that finished after the screen went: no more polling
         if a.list("jobs").contains(where: { $0.bool("running") }) || progress.str("running") != nil {
             poll = Task {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -461,8 +470,9 @@ struct AdminStorageScreen: View {
     @State private var confirm: AdminConfirm?
     @State private var sharing: AdminSharedFile?
     @State private var downloading: String?
+    @State private var fresh: [String: Any]?  // the sizes after an action here (the parent's copy is what it was when this opened)
 
-    private var st: [String: Any] { m.dict("storage") }
+    private var st: [String: Any] { (fresh ?? m).dict("storage") }
 
     var body: some View {
         List {
@@ -514,7 +524,11 @@ struct AdminStorageScreen: View {
     }
 
     private func act(_ a: String, _ done: String) async {
-        await notice.run(done) { try await AdminAPI.post("api/maintenance", ["action": a]); await changed() }
+        await notice.run(done) {
+            try await AdminAPI.post("api/maintenance", ["action": a])
+            await changed()
+            fresh = (try? await AdminAPI.get("api/maintenance")) ?? fresh
+        }
     }
 
     private func fetch(_ path: String, _ name: String, tag: String) async {
@@ -574,7 +588,9 @@ struct AdminLogScreen: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
                 Button {
-                    Task { if let u = try? await AdminAPI.download("api/log/download", fallbackName: "server.log") { sharing = AdminSharedFile(url: u) } }
+                    Task {
+                        do { sharing = AdminSharedFile(url: try await AdminAPI.download("api/log/download", fallbackName: "server.log")) } catch { info = "Couldn't download the log: \(error.localizedDescription)" }
+                    }
                 } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Download the log")
             }
         }
@@ -611,6 +627,7 @@ struct AdminUpdateRow: View {
     @State private var token: [String: Any]?
     @State private var waiting: String?
     @State private var poll: Task<Void, Never>?
+    @State private var gone = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -637,7 +654,8 @@ struct AdminUpdateRow: View {
             }
         }
         .task { await load() }
-        .onDisappear { poll?.cancel() }
+        .onAppear { gone = false }
+        .onDisappear { gone = true; poll?.cancel() }
         .alert("MCP update token", isPresented: Binding(get: { token != nil }, set: { if !$0 { token = nil } }), presenting: token) { t in
             Button("Copy") { UIPasteboard.general.string = t.str("token") }
             if !t.bool("fromEnv") {
@@ -682,6 +700,7 @@ struct AdminUpdateRow: View {
     private func load() async {
         u = (try? await AdminAPI.get("api/update")) ?? u
         poll?.cancel()
+        if gone || Task.isCancelled { return }
         if u.dict("progress").bool("running") {
             poll = Task { try? await Task.sleep(nanoseconds: 5_000_000_000); if !Task.isCancelled { await load() } }
         }
@@ -695,6 +714,7 @@ struct AdminUpdateRow: View {
         let until = Date().addingTimeInterval(180)
         while Date() < until {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if gone { waiting = nil; return }  // the screen is gone; the server restarts on its own
             if let now = await versionKey(), now != was {
                 waiting = nil
                 notice.say("Updated to v\(now.split(separator: "|").first ?? "").")
@@ -725,6 +745,7 @@ struct AdminConsistencyScreen: View {
     @State private var poll: Task<Void, Never>?
     @State private var wasRunning = false
     @State private var editing = true
+    @State private var gone = false
 
     static let sources = [("db", "Database"), ("sidecar", "Sidecar"), ("file", "Image file")]
     static let fields: [String: String] = ["rating": "Rating", "title": "Title", "caption": "Caption", "tags": "Tags", "taken": "Date", "gps": "Location"]
@@ -781,7 +802,8 @@ struct AdminConsistencyScreen: View {
         .safeAreaInset(edge: .bottom) { if !selected.isEmpty { bar } }
         .task { editing = ((try? await AdminAPI.get("api/status"))?.bool("editing")) ?? true; await load() }
         .onChange(of: field) { _, _ in selected = []; Task { await load() } }
-        .onDisappear { poll?.cancel() }
+        .onAppear { gone = false }
+        .onDisappear { gone = true; poll?.cancel() }
         .refreshable { await load() }
         .adminConfirm($confirm)
         .adminNotice(notice)
@@ -954,6 +976,7 @@ struct AdminConsistencyScreen: View {
         }
         wasRunning = running
         poll?.cancel()
+        if gone || Task.isCancelled { return }
         if running {
             poll = Task { try? await Task.sleep(nanoseconds: 3_000_000_000); if !Task.isCancelled { await load() } }
         }

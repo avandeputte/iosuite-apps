@@ -165,7 +165,11 @@ struct ExploreView: View {
             }
             .refreshable { await reload() }
             .task { if !store.loaded { await reload() } else if model.account == nil { await model.load() } }
-            .onChange(of: queue.account) { _, a in if a?.signedIn == true, store.needsSignIn || !store.loaded { Task { await reload() } } }
+            .onChange(of: queue.account) { _, a in
+                guard let a else { return }  // unknown (offline): nothing to redo
+                // signed in: a library not shown yet; signed out: a library that is no longer this account's
+                if a.signedIn ? (store.needsSignIn || !store.loaded) : (store.loaded && !store.needsSignIn) { Task { await reload() } }
+            }
             .fullScreenCover(item: $viewer) { PhotoPager(start: $0).environmentObject(store).environmentObject(router) }
         }
     }
@@ -469,7 +473,8 @@ struct ExploreView: View {
     static func query(_ items: [String: String?]) -> String {
         var c = URLComponents()
         c.queryItems = items.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }.sorted { $0.name < $1.name }
-        return c.percentEncodedQuery ?? ""
+        // URLComponents leaves "+" as it is, and the server reads a bare "+" as a space
+        return (c.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
     }
 
     private static func years(_ y: Double) -> String { y.rounded() == y ? String(Int(y)) : String(format: "%.1f", y) }
@@ -538,7 +543,7 @@ struct JustifiedLayout: Layout {
             let count = i - start + 1
             let natural = CGFloat(sum) * height + spacing * CGFloat(count - 1)
             if natural >= width {
-                let h = (width - spacing * CGFloat(count - 1)) / CGFloat(sum)
+                let h = max(0, (width - spacing * CGFloat(count - 1)) / CGFloat(sum))  // a zero-width proposal: no negative heights
                 out.append((start..<(i + 1), h))
                 start = i + 1; sum = 0
             }

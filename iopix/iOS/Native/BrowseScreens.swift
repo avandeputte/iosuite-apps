@@ -1,76 +1,6 @@
 import SwiftUI
 import MapKit
 
-// MARK: - People
-
-/// Everyone named in the library, in the groups arranged in iopix (Family, Friends...), then everyone else, most
-/// photos first. Tap a person for their photos.
-struct PeopleScreen: View {
-    @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var router: Router
-    @Environment(\.horizontalSizeClass) private var width
-    @State private var groups: [(id: Int, name: String, members: [Int])] = []
-    @State private var search = ""
-
-    private var columns: [GridItem] { [GridItem(.adaptive(minimum: width == .regular ? 130 : 96), spacing: 14)] }
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                if !search.isEmpty {
-                    grid(store.people.filter { $0.name.localizedCaseInsensitiveContains(search) })
-                } else {
-                    let byID = Dictionary(store.people.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-                    ForEach(groups, id: \.id) { g in
-                        let members = g.members.compactMap { byID[$0] }
-                        if !members.isEmpty {
-                            Text(g.name).font(.title3.bold())
-                            grid(members)
-                        }
-                    }
-                    let rest = store.people.filter { p in !groups.contains { $0.members.contains(p.id) } }
-                    if !rest.isEmpty {
-                        if !groups.isEmpty { Text("Everyone else").font(.title3.bold()) }
-                        grid(rest)
-                    }
-                }
-                if store.people.isEmpty && store.loaded {
-                    Text("No people named yet. Name faces in iopix and they show here.").foregroundStyle(.secondary).padding(.top, 60)
-                }
-            }
-            .padding(16)
-        }
-        .navigationTitle("People")
-        .searchable(text: $search, prompt: "Find a person")
-        .refreshable { await store.load(); await loadGroups() }
-        .task { await loadGroups() }
-    }
-
-    private func grid(_ people: [Person]) -> some View {
-        LazyVGrid(columns: columns, spacing: 16) {
-            ForEach(people) { p in
-                Button { router.peoplePath.append(.photos(PhotoQuery([("tag", "\(p.id)")]), title: p.name)) } label: {
-                    VStack(spacing: 6) {
-                        FaceImage(person: p).aspectRatio(1, contentMode: .fit).clipShape(Circle())
-                        Text(p.name).font(.caption).lineLimit(2).multilineTextAlignment(.center)
-                            .frame(height: 32, alignment: .top)
-                        Text(p.all.formatted()).font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func loadGroups() async {
-        guard let j = try? await IopixClient.shared.json("api/people/groups") else { return }
-        groups = (j["groups"] as? [[String: Any]] ?? []).compactMap { g in
-            guard let id = (g["id"] as? NSNumber)?.intValue else { return nil }
-            return (id, g["name"] as? String ?? "", (g["members"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
-        }
-    }
-}
-
 // MARK: - Places
 
 /// Where photos were taken: a map with photos gathered as you zoom out, or the places by country.
@@ -248,7 +178,8 @@ struct PhotoMap: UIViewRepresentable {
             // start on where most photos are: the middle 90% of them
             let la = pts.map(\.1).sorted(), lo = pts.map(\.2).sorted()
             let a = Int(Double(pts.count) * 0.05), b = max(a, Int(Double(pts.count) * 0.95) - 1)
-            let span = MKCoordinateSpan(latitudeDelta: max(0.05, (la[b] - la[a]) * 1.3), longitudeDelta: max(0.05, (lo[b] - lo[a]) * 1.3))
+            // never wider than the world: MapKit throws on a span past 180° of latitude or 360° of longitude
+            let span = MKCoordinateSpan(latitudeDelta: min(170, max(0.05, (la[b] - la[a]) * 1.3)), longitudeDelta: min(360, max(0.05, (lo[b] - lo[a]) * 1.3)))
             map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: (la[a] + la[b]) / 2, longitude: (lo[a] + lo[b]) / 2), span: span), animated: false)
             regroup()
         }
@@ -257,16 +188,20 @@ struct PhotoMap: UIViewRepresentable {
 
         /// Bubbles of about 84 points across for what is on screen (a bubble is 52 wide, so they rarely overlap).
         private func regroup() {
-            guard let map, map.bounds.width > 0 else { return }
+            guard let map, map.bounds.width > 0, map.bounds.height > 0 else { return }
             let r = map.region
             let cellLat = r.span.latitudeDelta * 84 / Double(map.bounds.height)
             let cellLon = r.span.longitudeDelta * 84 / Double(map.bounds.width)
+            guard cellLat > 0, cellLon > 0, cellLat.isFinite, cellLon.isFinite else { return }  // a span of nothing: no cells to put photos in
             let minLat = r.center.latitude - r.span.latitudeDelta, maxLat = r.center.latitude + r.span.latitudeDelta
             let minLon = r.center.longitude - r.span.longitudeDelta, maxLon = r.center.longitude + r.span.longitudeDelta
+            // a view across the date line (or most of the world) takes every longitude: a plain range would miss the far side
+            let allLon = minLon < -180 || maxLon > 180
             struct Cell { var n = 0, cover = 0, lat = 0.0, lon = 0.0, a = 90.0, b = 180.0, c = -90.0, d = -180.0 }
-            var cells: [Int64: Cell] = [:]
-            for p in points where p.lat >= minLat && p.lat <= maxLat && p.lon >= minLon && p.lon <= maxLon {
-                let key = Int64((p.lat / cellLat).rounded(.down)) * 1_000_003 + Int64((p.lon / cellLon).rounded(.down))
+            struct Key: Hashable { let row: Int, col: Int }  // two numbers, not one made of both: no two cells share a key
+            var cells: [Key: Cell] = [:]
+            for p in points where p.lat >= minLat && p.lat <= maxLat && (allLon || (p.lon >= minLon && p.lon <= maxLon)) {
+                let key = Key(row: Int((p.lat / cellLat).rounded(.down)), col: Int((p.lon / cellLon).rounded(.down)))
                 var c = cells[key] ?? Cell(cover: p.id)
                 c.n += 1; c.lat += p.lat; c.lon += p.lon
                 c.a = min(c.a, p.lat); c.b = min(c.b, p.lon); c.c = max(c.c, p.lat); c.d = max(c.d, p.lon)
@@ -295,105 +230,14 @@ struct PhotoMap: UIViewRepresentable {
             if s.count <= 30 || mapView.region.span.latitudeDelta < 0.02 || (box.2 - box.0 < 0.002 && box.3 - box.1 < 0.002) {
                 open("\(box.0),\(box.1),\(box.2),\(box.3)")
             } else {
-                let span = MKCoordinateSpan(latitudeDelta: max(0.004, (box.2 - box.0) * 1.4), longitudeDelta: max(0.004, (box.3 - box.1) * 1.4))
+                let span = MKCoordinateSpan(latitudeDelta: min(170, max(0.004, (box.2 - box.0) * 1.4)), longitudeDelta: min(360, max(0.004, (box.3 - box.1) * 1.4)))
                 mapView.setRegion(MKCoordinateRegion(center: s.coordinate, span: span), animated: true)
             }
         }
     }
 }
 
-// MARK: - More
-
-/// The folders on disk, as digiKam has them: a folder's sub-folders, and all the photos in it.
-struct FoldersScreen: View {
-    let parent: Int?
-    @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var router: Router
-
-    var body: some View {
-        let subs = store.children(of: parent)
-        let here = parent.flatMap { p in store.folders.first { $0.id == p } }
-        List {
-            if let here {
-                Button { router.morePath.append(.photos(PhotoQuery([("album", "\(here.id)")]), title: here.name)) } label: {
-                    ThumbRow(cover: here.cover, title: "All photos in \(here.name)", sub: here.count.formatted(), symbol: "photo.stack")
-                }
-                .buttonStyle(.plain)
-            }
-            ForEach(subs) { f in
-                Button {
-                    if store.children(of: f.id).isEmpty { router.morePath.append(.photos(PhotoQuery([("album", "\(f.id)")]), title: f.name)) }
-                    else { router.morePath.append(.folders(parent: f.id)) }
-                } label: {
-                    ThumbRow(cover: f.cover, title: f.name, sub: f.count.formatted(), symbol: "folder")
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .navigationTitle(here?.name ?? "Folders")
-        .refreshable { await store.load() }
-    }
-}
-
-/// Your albums in iopix, and Favorites.
-struct AlbumsScreen: View {
-    @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var router: Router
-
-    var body: some View {
-        List {
-            Button { router.morePath.append(.photos(PhotoQuery([("fav", "1")]), title: "Favorites")) } label: {
-                ThumbRow(cover: nil, title: "Favorites", sub: store.favorites.formatted(), symbol: "heart.fill")
-            }
-            .buttonStyle(.plain)
-            ForEach(store.albums) { a in
-                Button { router.morePath.append(.photos(PhotoQuery([("ualbum", "\(a.id)")]), title: a.name)) } label: {
-                    ThumbRow(cover: a.cover, title: a.name, sub: a.count.formatted(), symbol: "rectangle.stack")
-                }
-                .buttonStyle(.plain)
-            }
-            if store.albums.isEmpty {
-                Text("No albums yet. Select photos and choose Add to album to make one.").font(.footnote).foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle("Albums")
-        .refreshable { await store.load() }
-    }
-}
-
-/// The library's tags (people are on the People tab): a tag's sub-tags, and all its photos.
-struct TagsScreen: View {
-    let parent: Int?
-    @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var router: Router
-
-    var body: some View {
-        let subs = store.tags(under: parent)
-        let here = parent.flatMap { p in store.tags.first { $0.id == p } }
-        List {
-            if let here {
-                Button { router.morePath.append(.photos(PhotoQuery([("tag", "\(here.id)")]), title: here.name)) } label: {
-                    ThumbRow(cover: here.cover, title: "All photos tagged \(here.name)", sub: here.count.formatted(), symbol: "tag")
-                }
-                .buttonStyle(.plain)
-            }
-            ForEach(subs) { t in
-                Button {
-                    if store.tags(under: t.id).isEmpty { router.morePath.append(.photos(PhotoQuery([("tag", "\(t.id)")]), title: t.name)) }
-                    else { router.morePath.append(.tags(parent: t.id)) }
-                } label: {
-                    ThumbRow(cover: t.cover, title: t.name, sub: t.count.formatted(), symbol: "tag")
-                }
-                .buttonStyle(.plain)
-            }
-            if subs.isEmpty && here == nil {
-                Text("No tags yet.").foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle(here?.name ?? "Tags")
-        .refreshable { await store.load() }
-    }
-}
+// MARK: - Events
 
 /// Days with many photos and trips away, newest first, as iopix finds them.
 struct EventsScreen: View {
@@ -403,6 +247,7 @@ struct EventsScreen: View {
     }
     @EnvironmentObject private var router: Router
     @State private var events: [Event]?
+    @State private var problem: String?
     @State private var show = "all"
 
     var body: some View {
@@ -420,7 +265,7 @@ struct EventsScreen: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if events.isEmpty { Text("No events found yet.").foregroundStyle(.secondary) }
+                if events.isEmpty { Text(problem.map { "Couldn't load the events. \($0)" } ?? "No events found yet.").foregroundStyle(.secondary) }
             } else {
                 ProgressView().frame(maxWidth: .infinity)
             }
@@ -431,7 +276,9 @@ struct EventsScreen: View {
     }
 
     private func load() async {
-        guard let j = try? await IopixClient.shared.json("api/events") else { events = events ?? []; return }
+        let j: [String: Any]
+        do { j = try await IopixClient.shared.json("api/events") } catch { problem = error.localizedDescription; events = events ?? []; return }
+        problem = nil
         events = (j["events"] as? [[String: Any]] ?? []).compactMap { e in
             guard let from = e["from"] as? String, let to = e["to"] as? String else { return nil }
             return Event(kind: e["kind"] as? String ?? "event", title: e["title"] as? String ?? from, when: e["when"] as? String ?? from,

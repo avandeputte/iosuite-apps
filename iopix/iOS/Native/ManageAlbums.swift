@@ -16,9 +16,11 @@ final class AlbumList: ObservableObject {
     @Published var canShare = false
     @Published var canPrivate = false
     @Published var loaded = false
+    @Published var problem: String?
 
     func load() async {
-        guard let st = try? await ManageAPI.get("api/state") else { loaded = true; return }
+        let st: [String: Any]
+        do { st = try await ManageAPI.get("api/state"); problem = nil } catch { problem = error.localizedDescription; loaded = true; return }
         canShare = st["canShareAlbums"] as? Bool ?? false
         canPrivate = st["canPrivateAlbums"] as? Bool ?? false
         albums = (st["albums"] as? [[String: Any]] ?? []).compactMap { a in
@@ -53,7 +55,8 @@ struct ManageAlbumsScreen: View {
             let shared = list.albums.filter(\.shared), mine = list.albums.filter { !$0.shared }
             if !shared.isEmpty { Section("Shared albums") { ForEach(shared) { row($0) } } }
             if !mine.isEmpty { Section("Only you") { ForEach(mine) { row($0) } } }
-            if list.loaded && list.albums.isEmpty {
+            if let problem = list.problem { Text(problem).foregroundStyle(.secondary) }
+            if list.loaded && list.albums.isEmpty && list.problem == nil {
                 Text("No albums yet. Make one here, or select photos and choose Add to album.").font(.footnote).foregroundStyle(.secondary)
             }
         }

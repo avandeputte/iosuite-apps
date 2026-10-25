@@ -195,6 +195,10 @@ extension PhotoQuery {
 
     /// Same filters, whatever their order (for matching a saved search).
     var key: String { filters.map { "\($0.name)=\($0.value ?? "")" }.sorted().joined(separator: "&") }
+
+    /// A saved search's query as the web app stores it (URLSearchParams writes a space as "+", which URLComponents
+    /// would keep as a plus).
+    static func saved(_ query: String) -> PhotoQuery { PhotoQuery(query: query.replacingOccurrences(of: "+", with: "%20")) }
 }
 
 /// A filter shown as a chip: what it says, and how to drop it.

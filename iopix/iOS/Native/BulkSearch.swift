@@ -161,7 +161,7 @@ struct SavedSearchesMenu: View {
     @State private var managing = false
     @State private var problem: String?
 
-    private var saved: BulkCatalog.Search? { catalog.searches.first { PhotoQuery(query: $0.query).key == query.key } }
+    private var saved: BulkCatalog.Search? { catalog.searches.first { PhotoQuery.saved($0.query).key == query.key } }
 
     var body: some View {
         Menu {
@@ -170,7 +170,7 @@ struct SavedSearchesMenu: View {
                     ForEach(catalog.searches) { s in
                         Button {
                             let sort = query.value("sort")
-                            query = PhotoQuery(query: s.query).setting("sort", sort)
+                            query = PhotoQuery.saved(s.query).setting("sort", sort)
                         } label: {
                             Label(s.name, systemImage: s.id == saved?.id ? "checkmark" : "magnifyingglass")
                         }
@@ -228,7 +228,7 @@ struct SavedSearchesSheet: View {
                 ForEach(catalog.searches) { s in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(s.name)
-                        Text(catalog.chips(PhotoQuery(query: s.query)).map(\.label).joined(separator: " · "))
+                        Text(catalog.chips(PhotoQuery.saved(s.query)).map(\.label).joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                     .swipeActions {
@@ -248,7 +248,10 @@ struct SavedSearchesSheet: View {
             .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Name", text: $name)
                 Button("Cancel", role: .cancel) {}
-                Button("Rename") { if let s = renaming { Task { await change(s, ["name": name]) } } }
+                Button("Rename") {
+                    let n = name.trimmingCharacters(in: .whitespaces)
+                    if let s = renaming, !n.isEmpty, n != s.name { Task { await change(s, ["name": n]) } }
+                }
             }
             .alert("Couldn't change it", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
                 Button("OK", role: .cancel) {}

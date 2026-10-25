@@ -48,10 +48,13 @@ struct PhotoGridScreen: View {
         }
     }
 
-    private var currentSort: String { sort ?? filters.value("sort") ?? (list?.ranked == true ? "rel" : "new") }
+    /// A search by meaning (sem, like, concept): the server's order is best match first unless a sort is asked for.
+    private var rankable: Bool { ["sem", "like", "concept"].contains { filters.value($0) != nil } }
+    private var currentSort: String { sort ?? filters.value("sort") ?? (rankable || list?.ranked == true ? "rel" : "new") }
 
     /// What is asked of the server: the filters chosen here (on top of the ones the screen opened with), in order.
-    fileprivate var effective: PhotoQuery { filters.setting("sort", currentSort) }
+    /// "Best match" is the server's own order for a ranked search, so no sort= goes with it.
+    fileprivate var effective: PhotoQuery { filters.setting("sort", currentSort == "rel" ? nil : currentSort) }
 
     var body: some View {
         GeometryReader { geo in
@@ -68,10 +71,11 @@ struct PhotoGridScreen: View {
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search people, tags, places, captions")
         .searchSuggestions { SearchSuggestionRows(text: $search, query: $filters) }
         .onSubmit(of: .search) {
+            // the text becomes a chip (as the web app does); its cross takes it away again
             let q = search.trimmingCharacters(in: .whitespaces)
-            filters = filters.setting("q", q.isEmpty ? nil : q)
+            if !q.isEmpty, !filters.has("q", q) { filters = filters.adding("q", q) }
+            search = ""
         }
-        .onChange(of: search) { _, s in if s.isEmpty, filters.value("q") != nil { filters = filters.setting("q", nil) } }
         .task(id: effective) { await load() }
         .task { await BulkCatalog.shared.load() }
         .onReceive(NotificationCenter.default.publisher(for: .iopixPhotosChanged)) { n in
@@ -96,10 +100,16 @@ struct PhotoGridScreen: View {
     }
 
     private var bulkBar: some View {
-        BulkActionBar(ids: Array(selected), total: list?.ids.count ?? 0, album: filters.value("ualbum").flatMap(Int.init),
-                      selectAll: { selected = Set(list?.ids ?? []) }, deselect: { selected = [] }) { outcome in
-            selecting = false; selected = []
-            if case .removed(let gone) = outcome { list?.ids.removeAll { gone.contains($0) } }
+        // the selection in the grid's order (what Copy metadata offers first, how a share or zip is numbered)
+        let ids = list.map { l in l.ids.filter { selected.contains($0) } } ?? Array(selected)
+        return BulkActionBar(ids: ids, total: list?.ids.count ?? 0, album: filters.value("ualbum").flatMap(Int.init),
+                             selectAll: { selected = Set(list?.ids ?? []) }, deselect: { selected = [] }) { outcome in
+            // the selection stays after a metadata change (the sheet may still be open, saving one change at a
+            // time); it ends when the photos left the list
+            if case .removed(let gone) = outcome {
+                selecting = false; selected = []
+                list?.ids.removeAll { gone.contains($0) }
+            }
             Task { await load() }
         }
     }
@@ -202,6 +212,8 @@ struct PhotoGridScreen: View {
                     Image(systemName: filters.filters.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                 }
                 .accessibilityLabel("Filters")
+                // its own item, not inside the menu below: its alerts and sheet need a view that stays on screen
+                SavedSearchesMenu(query: $filters)
                 Menu {
                     Picker("Order", selection: Binding(get: { currentSort }, set: { sort = $0 })) {
                         if list?.ranked == true { Text("Best match").tag("rel") }
@@ -210,8 +222,7 @@ struct PhotoGridScreen: View {
                         Text("Sharpest first").tag("sharp"); Text("Blurriest first").tag("blur")
                         Text("File name").tag("name"); Text("Largest files").tag("size")
                     }
-                    SavedSearchesMenu(query: $filters)
-                    if list?.ids.isEmpty == false {
+                    if list?.ids.isEmpty == false, !filters.filters.isEmpty {  // the whole library is not offered as one download
                         Button { download = true } label: { Label("Download all as zip", systemImage: "arrow.down.circle") }
                     }
                     Picker("Size", selection: $size) {

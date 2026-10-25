@@ -76,6 +76,7 @@ struct ManageTagsScreen: View {
     @State private var renameText = ""
     @State private var moving: TagTree.Node?
     @State private var merging: TagTree.Node?
+    @State private var mergeInto: (TagTree.Node, TagTree.Node)?
     @State private var deleting: TagTree.Node?
     @State private var search = ""
     @State private var notice: Notice?
@@ -153,9 +154,14 @@ struct ManageTagsScreen: View {
         }
         .sheet(item: $merging) { tag in
             TagPicker(tree: t, excluding: t.subtree(tag.id), allowTop: false, title: "Merge “\(tag.name)” into") { target in
-                if let target { Task { await op(["op": "merge", "id": tag.id, "into": target], "Merged.") } }
+                if let target, let into = t.node(target) { mergeInto = (tag, into) }
             }
         }
+        .confirmationDialog("Merge “\(mergeInto?.0.name ?? "")” into “\(mergeInto?.1.name ?? "")”?", isPresented: Binding(get: { mergeInto != nil }, set: { if !$0 { mergeInto = nil } }), titleVisibility: .visible) {
+            Button("Merge", role: .destructive) {
+                if let (tag, into) = mergeInto { Task { await op(["op": "merge", "id": tag.id, "into": into.id], "Merged “\(tag.name)” into “\(into.name)”.") } }
+            }
+        } message: { Text("Its \(ManageAPI.plural(mergeInto?.0.nAll ?? 0, "photo")) and face boxes move to “\(mergeInto?.1.name ?? "")”, then “\(mergeInto?.0.name ?? "")” is removed. A backup of digiKam's database is taken first.") }
         .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete tag", role: .destructive) {
                 if let tag = deleting { Task { await op(["op": "delete", "id": tag.id], "Tag deleted.") } }

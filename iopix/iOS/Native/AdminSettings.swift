@@ -26,7 +26,9 @@ final class AdminModel: ObservableObject {
             async let b = AdminAPI.get("api/status")
             me = try await a
             status = try await b
-            if isAdmin { m = (try? await AdminAPI.get("api/maintenance")) ?? m }
+            m = (try? await AdminAPI.get("api/maintenance")) ?? m  // everyone gets the counts; admins the paths and storage too
+            // the app's colors follow the account's theme (IopixApp reads it from UserDefaults)
+            if signedIn, let t = prefs.str("theme") { UserDefaults.standard.set(t, forKey: "iopix.pref.theme") }
             problem = nil
         } catch {
             problem = error.localizedDescription
@@ -56,6 +58,7 @@ final class AdminModel: ObservableObject {
 struct AdminSettingsScreen: View {
     @StateObject private var model = AdminModel()
     @StateObject private var notice = AdminNotice()
+    @EnvironmentObject private var queue: UploadQueue
     @State private var setup = false
 
     var body: some View {
@@ -98,7 +101,15 @@ struct AdminSettingsScreen: View {
         .navigationTitle("Settings")
         .task { await model.load() }
         .refreshable { await model.load() }
-        .sheet(isPresented: $setup) { AdminSetupSheet { Task { await model.load() } } }
+        .sheet(isPresented: $setup) {
+            AdminSetupSheet {  // signed in as the new admin now: the rest of the app should know
+                Task {
+                    await model.load()
+                    await queue.refreshAccount()
+                    NotificationCenter.default.post(name: .iopixReload, object: nil)
+                }
+            }
+        }
         .adminNotice(notice)
     }
 }
@@ -280,7 +291,7 @@ struct AdminDisplayScreen: View {
     var body: some View {
         Form {
             Section {
-                Picker("Appearance", selection: binding("theme", "light")) {
+                Picker("Appearance", selection: binding("theme", "system")) {
                     Text("Light").tag("light"); Text("Dark").tag("dark"); Text("System").tag("system")
                 }
             } footer: { Text("Light (the default) or dark colors, or follow the device's setting. \(keptWith)") }
@@ -600,6 +611,7 @@ struct AdminEditingScreen: View {
     @State private var templates: [Template] = []
     @State private var editing: Template?
     @State private var confirm: AdminConfirm?
+    @State private var poll: Task<Void, Never>?
 
     struct Template: Identifiable, Equatable {
         var id = UUID()
@@ -647,7 +659,8 @@ struct AdminEditingScreen: View {
                             await notice.run(nil) {
                                 let r = try await AdminAPI.post("api/placetags", ["ids": [Int]()])
                                 notice.say("Tagging \(AdminFormat.n(r.int("to_tag"))) photos\((r.int("creating") ?? 0) > 0 ? ", creating \(r.int("creating")!) tags" : "") in the background.")
-                                await pollPlaceTags()
+                                poll?.cancel()
+                                poll = Task { await pollPlaceTags() }
                             }
                         }
                     }
@@ -683,6 +696,7 @@ struct AdminEditingScreen: View {
         }
         .navigationTitle("Editing")
         .onAppear { templates = Self.parse(model.m["templates"]) }
+        .onDisappear { poll?.cancel() }
         .sheet(item: $editing) { t in
             AdminTemplateSheet(template: t) { saved in
                 if let i = templates.firstIndex(where: { $0.id == saved.id }) { templates[i] = saved } else { templates.append(saved) }
@@ -710,6 +724,7 @@ struct AdminEditingScreen: View {
     private func pollPlaceTags() async {
         for _ in 0..<200 {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if Task.isCancelled { return }  // the screen is gone
             guard let p = try? await AdminAPI.get("api/placetags") else { return }
             placeTags = p
             if !p.dict("progress").bool("running") { return }

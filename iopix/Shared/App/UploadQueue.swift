@@ -298,12 +298,15 @@ final class UploadQueue: ObservableObject {
             self.update(id, save: false) { $0.progress = f }
         }
         for logged in BackgroundUploads.takeLogged() { recordShared(logged) }
+        BackgroundUploads.sweepOutbox()
         _ = BackgroundUploads.shared(BackgroundUploads.shareIdentifier)  // its finished uploads come here now
         let app = BackgroundUploads.shared(BackgroundUploads.appIdentifier)
+        // only the items that were already being sent at launch: one handed to iOS while the question was out is fine
+        let wasSending = Set(items.filter { $0.state == .sending }.map(\.id))
         Task {
             let going = await app.inFlight()
             var changed = false
-            for i in items.indices where items[i].state == .sending && !going.contains(items[i].id.uuidString) {
+            for i in items.indices where wasSending.contains(items[i].id) && items[i].state == .sending && !going.contains(items[i].id.uuidString) {
                 items[i].state = .waiting
                 changed = true
             }
@@ -316,9 +319,12 @@ final class UploadQueue: ObservableObject {
         guard let id = UUID(uuidString: tag), items.contains(where: { $0.id == id }) else {
             // the share sheet's: shown in the list as done
             switch result {
-            case .success(let o): recordShared(.init(tag: tag, outcome: o == .added ? "added" : o == .alreadyThere ? "already" : "skipped", message: nil, at: Date()))
+            case .success(.added): recordShared(.init(tag: tag, outcome: "added", message: nil, at: Date()))
+            case .success(.alreadyThere): recordShared(.init(tag: tag, outcome: "already", message: nil, at: Date()))
+            case .success(.skipped(let why)): recordShared(.init(tag: tag, outcome: "skipped", message: why, at: Date()))
             case .failure(let e): recordShared(.init(tag: tag, outcome: "failed", message: e.localizedDescription, at: Date()))
             }
+            if case .success(.added) = result { IopixClient.shared.noteWrite() }
             return
         }
         switch result {
@@ -333,7 +339,17 @@ final class UploadQueue: ObservableObject {
                 $0.progress = 1
             }
             if let done = items.first(where: { $0.id == id }), done.state != .failed { removeStoredFile(done) }
-            if case .added = o { NotificationCenter.default.post(name: .iopixUploadsDone, object: nil, userInfo: ["count": 1]) }
+            if case .added = o {
+                IopixClient.shared.noteWrite()  // the lists read afresh for a while: the server's cached answers lag the change
+                NotificationCenter.default.post(name: .iopixUploadsDone, object: nil, userInfo: ["count": 1])
+            }
+        case .failure(let e as IopixError) where e == .needsSignIn:
+            update(id) { $0.state = .waiting }
+            needsSignIn = true
+            account = Account(name: nil, signedIn: false, canWrite: false)
+        case .failure(let e as IopixError):
+            // the server refused this file (or this account): trying again would not change that
+            update(id) { $0.attempts += 1; $0.state = .failed; $0.message = e.localizedDescription }
         case .failure(let e):
             // no connection, the server restarting, or digiKam busy: back in line for a later try
             let tries = (items.first { $0.id == id }?.attempts ?? 0) + 1

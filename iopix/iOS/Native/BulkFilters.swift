@@ -319,10 +319,14 @@ private struct RangeRow: View {
             Text("–").foregroundStyle(.secondary)
             field("max", $high, bounds.count > 1 ? bounds[1] : nil)
         }
-        .onAppear {
-            low = query.value("\(key)_min") ?? ""
-            high = query.value("\(key)_max") ?? ""
-        }
+        .onAppear { sync() }
+        .onChange(of: query.key) { _, _ in sync() }  // a chip's cross or Clear all took the value away
+    }
+
+    private func sync() {
+        let lo = query.value("\(key)_min") ?? "", hi = query.value("\(key)_max") ?? ""
+        if Double(low.replacingOccurrences(of: ",", with: ".")) != Double(lo) { low = lo }
+        if Double(high.replacingOccurrences(of: ",", with: ".")) != Double(hi) { high = hi }
     }
 
     private func field(_ which: String, _ text: Binding<String>, _ hint: Double?) -> some View {

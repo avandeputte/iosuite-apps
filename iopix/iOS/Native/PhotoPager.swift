@@ -296,7 +296,7 @@ struct MediaPage: View {
         }
         .task(id: id) {
             guard !knownVideo, video == nil, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
-            video = d["playable"] != nil || ((d["duration"] as? NSNumber)?.doubleValue ?? 0) > 0
+            video = (d["video"] as? NSNumber)?.boolValue == true || d["playable"] != nil || ((d["duration"] as? NSNumber)?.doubleValue ?? 0) > 0
         }
     }
 }
@@ -347,6 +347,7 @@ extension VideoPage {
             defer { preparing = nil }
             do {
                 let url = try await VideoSource.url(for: id)
+                try Task.checkCancellation()
                 let p = VideoSource.player(url)
                 player = p
                 p.play()

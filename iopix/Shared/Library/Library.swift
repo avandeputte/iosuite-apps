@@ -326,8 +326,16 @@ final class ImageCache {
 
     func cached(_ path: String) -> UIImage? { cache.object(forKey: path as NSString) }
 
-    /// After a photo was rotated or cropped: its old pictures are no longer right.
-    func forget(_ path: String) { cache.removeObject(forKey: path as NSString) }
+    /// After a photo was rotated or cropped: its old pictures are no longer right (the copy on disk the server let us
+    /// keep for a day too).
+    func forget(_ path: String) {
+        cache.removeObject(forKey: path as NSString)
+        let client = IopixClient.shared
+        client.session.configuration.urlCache?.removeCachedResponse(for: client.request(path))
+    }
+
+    /// Signed out: the pictures belonged to that account.
+    func removeAll() { cache.removeAllObjects() }
 
     func image(_ path: String) async -> UIImage? {
         if let hit = cached(path) { return hit }

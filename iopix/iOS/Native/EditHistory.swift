@@ -16,6 +16,7 @@ struct EditHistoryView: View {
     @State private var total = 0
     @State private var toast: String?
     @State private var working: Int?
+    @State private var problem: String?
 
     static let actions = ["edit": "Edit", "face": "Face", "tag": "Tag", "deleted": "Deleted", "trashed": "Trashed", "moved": "Moved",
                           "restore": "Restore", "sync": "Sync", "database": "digiKam", "revert": "Undo", "added": "Added",
@@ -26,7 +27,9 @@ struct EditHistoryView: View {
     var body: some View {
         NavigationStack {
             List {
-                if let entries {
+                if let problem {
+                    Text("Couldn't load the edit log: \(problem)").foregroundStyle(.secondary)
+                } else if let entries {
                     if entries.isEmpty { Text("iopix hasn't changed this photo.").foregroundStyle(.secondary) }
                     ForEach(entries) { e in
                         VStack(alignment: .leading, spacing: 4) {
@@ -64,10 +67,14 @@ struct EditHistoryView: View {
     }
 
     private func load() async {
-        guard let r = try? await EditAPI.get("api/history", [URLQueryItem(name: "photo", value: "\(photo)"), URLQueryItem(name: "limit", value: "100")]) else {
-            entries = entries ?? []
+        let r: [String: Any]
+        do {
+            r = try await EditAPI.get("api/history", [URLQueryItem(name: "photo", value: "\(photo)"), URLQueryItem(name: "limit", value: "100")])
+        } catch {
+            problem = error.localizedDescription
             return
         }
+        problem = nil
         total = (r["total"] as? NSNumber)?.intValue ?? 0
         entries = (r["entries"] as? [[String: Any]] ?? []).compactMap { e in
             guard let id = (e["id"] as? NSNumber)?.intValue else { return nil }

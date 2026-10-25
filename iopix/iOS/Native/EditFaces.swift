@@ -43,7 +43,7 @@ struct EditFacesView: View {
             }
             .editToast($toast)
         }
-        .task { await catalog.load(); await load() }
+        .task { await load(); await catalog.load() }  // the photo first: the library summary can take a moment
         .confirmationDialog(chosen?.label ?? "Face", isPresented: Binding(get: { chosen != nil }, set: { if !$0 { chosen = nil } }), titleVisibility: .visible) {
             if let f = chosen { menu(f) }
         }

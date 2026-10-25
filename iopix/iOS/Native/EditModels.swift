@@ -112,9 +112,14 @@ enum EditAPI {
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await IopixClient.shared.session.data(for: r)
-        if (resp as? HTTPURLResponse)?.statusCode == 409 {
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 409 {
             let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             throw Failure(message: j?["detail"] as? String ?? "iopix can't change this right now (is digiKam open?). Try again in a moment.")
+        }
+        // the server says why it refuses (editing turned off): that reason, not "could not connect"
+        if code == 503, let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let why = j["detail"] as? String {
+            throw Failure(message: why)
         }
         return try IopixClient.shared.check(data, resp)
     }
@@ -183,13 +188,14 @@ final class EditCatalog: ObservableObject {
         }
         tags = t.sorted { $0.full.localizedStandardCompare($1.full) == .orderedAscending }
         people = p.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
-        // folders: their path is built from the parent chain
-        let raw = (m["albums"] as? [[String: Any]] ?? []).compactMap { a -> (Int, Int?, String, Int)? in
+        // folders: the server's path (as the web app shows it), built from the parent chain when it has none
+        let raw = (m["albums"] as? [[String: Any]] ?? []).compactMap { a -> (Int, Int?, String, Int, String?)? in
             guard let id = (a["id"] as? NSNumber)?.intValue else { return nil }
-            return (id, (a["pid"] as? NSNumber)?.intValue, a["name"] as? String ?? "", (a["nAll"] as? NSNumber)?.intValue ?? 0)
+            return (id, (a["pid"] as? NSNumber)?.intValue, a["name"] as? String ?? "", (a["nAll"] as? NSNumber)?.intValue ?? 0, a["path"] as? String)
         }
         let byID = Dictionary(raw.map { ($0.0, $0) }, uniquingKeysWith: { a, _ in a })
         func path(_ id: Int) -> String {
+            if let p = byID[id]?.4, !p.isEmpty { return p }
             var parts: [String] = [], cur: Int? = id, steps = 0
             while let c = cur, let f = byID[c], steps < 60 { parts.insert(f.2, at: 0); cur = f.1; steps += 1 }
             return "/" + parts.joined(separator: "/")

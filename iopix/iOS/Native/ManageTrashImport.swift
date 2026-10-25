@@ -49,7 +49,7 @@ struct ManageTrashScreen: View {
                                             .font(.title3).foregroundStyle(.white).shadow(radius: 2).padding(5)
                                     }
                                 Text(x.name).font(.caption2).lineLimit(1)
-                                Text(Self.when(x.when)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                Text(x.exists ? Self.when(x.when) : "File missing").font(.caption2).foregroundStyle(x.exists ? .secondary : Hue.rose).lineLimit(1)
                             }
                         }
                         .buttonStyle(.plain)
@@ -179,6 +179,7 @@ struct ManageImportScreen: View {
     @State private var importDuplicates = false
     @State private var skip: Set<String> = []
     @State private var working: String?
+    @State private var confirmDiscard = false
     @State private var notice: Notice?
     @State private var done: (added: Int, skipped: [String])?
 
@@ -235,7 +236,7 @@ struct ManageImportScreen: View {
                 Section {
                     Button { Task { await run() } } label: { Label("Import", systemImage: "square.and.arrow.down") }
                         .disabled(working != nil || plan.allSatisfy { $0.error != nil || ($0.duplicate != nil && !importDuplicates) || skip.contains($0.name) })
-                    Button("Discard", role: .destructive) { Task { await discard() } }.disabled(working != nil)
+                    Button("Discard", role: .destructive) { confirmDiscard = true }.disabled(working != nil)
                 }
             }
         }
@@ -248,6 +249,9 @@ struct ManageImportScreen: View {
             Task { await stage(items) }
         }
         .onChange(of: layout) { _, _ in Task { await replan() } }
+        .confirmationDialog("Discard the staged photos?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { Task { await discard() } }
+        } message: { Text("They are removed from the server; nothing has reached the library.") }
         .notice($notice)
     }
 

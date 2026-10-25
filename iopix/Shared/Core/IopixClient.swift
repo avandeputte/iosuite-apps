@@ -173,6 +173,8 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         var r = request(path)
         if !query.isEmpty, var c = URLComponents(url: r.url!, resolvingAgainstBaseURL: false) {
             c.queryItems = query
+            // URLComponents leaves "+" as it is, and the server reads a bare "+" as a space
+            c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             r.url = c.url
         }
         let (data, resp) = try await session.data(for: r)
@@ -224,6 +226,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
     /// When this app last changed something on the server (any request that was not a plain read).
     private var lastWrite = Date.distantPast
+
+    /// A change made outside `request` (a background upload that finished later): reads skip the cache for a while.
+    func noteWrite() { lastWrite = Date() }
 
     /// Whether this server takes a whole upload in one request and can say which files it already has
     /// (iopix 1.78 and later), learnt once per server address.

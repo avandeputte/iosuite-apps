@@ -79,13 +79,13 @@ struct PhotoEditSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else {
-                        Button("Save") { Task { await save() } }.disabled(changes.isEmpty)
+                        Button("Save") { Task { await save() } }.disabled(changes.isEmpty || !rights.canWrite)
                     }
                 }
             }
             .editToast($toast)
         }
-        .task { await rights.refresh(); await catalog.load(); await load() }
+        .task { await rights.refresh(); await load(); await catalog.load() }  // the photo first: the library summary can take a moment
         .sheet(isPresented: $tagPicker) {
             EditTagPicker(chosen: Set(draft.keywords.map(\.id))) { entry in
                 if !draft.tags.contains(where: { $0.id == entry.id }) {
@@ -240,7 +240,7 @@ struct PhotoEditSheet: View {
                 Section { HStack { ProgressView(); Text(busy).foregroundStyle(.secondary) } }
             }
         }
-        .disabled(saving)
+        .disabled(saving || !rights.canWrite)
     }
 
     private func tool(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
@@ -298,7 +298,8 @@ struct PhotoEditSheet: View {
 
     private func transform(_ op: String) async {
         await run("Turning…") {
-            try await EditAPI.post("api/photos/transform", ["ids": [photo], "op": op])
+            let r = try await EditAPI.post("api/photos/transform", ["ids": [photo], "op": op])
+            if let f = (r["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "The photo was not turned.") }
             onOutcome(.pictureChanged)
             await load(keepDraft: true)
             return "Done. Undo is in the edit log."
@@ -339,9 +340,12 @@ struct PhotoEditSheet: View {
 
     private func revert() async {
         await run("Undoing…") {
-            try await EditAPI.post("api/edit/revert", ["ids": [photo]])
+            let r = try await EditAPI.post("api/edit/revert", ["ids": [photo]])
+            if let f = (r["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "The edits were not undone.") }
             onOutcome(.changed)
             await load()
+            // nothing reverted: the edits were already written into digiKam's database (undo them in the edit log)
+            guard ((r["reverted"] as? NSNumber)?.intValue ?? 0) > 0 else { return "Nothing to undo here: these edits are already in digiKam. Each one can be undone in the edit log." }
             return "Edits undone; the sidecar is back as it was."
         }
     }
@@ -428,9 +432,14 @@ struct EditTagPicker: View {
             var op: [String: Any] = ["op": "add", "name": name]
             op["parent"] = parent ?? 0
             let r = try await EditAPI.post("api/tags/op", op)
-            await catalog.load(force: true)
             let id = (r["id"] as? NSNumber)?.intValue
-            // the library summary may take a moment to list the new tag: its id is enough to add it
+            // the library summary lists the new tag once the index has caught up (a few seconds at most); saving a
+            // photo with it before then is refused, so wait a little for it. Its id is enough to add it after that.
+            for _ in 0..<8 {
+                await catalog.load(force: true)
+                if let id, catalog.tag(id) != nil { break }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
             if let e = (id.flatMap { catalog.tag($0) }) ?? id.map({ EditCatalog.Entry(id: $0, name: name, full: name, parent: parent, count: 0) }) {
                 pick(e)
                 dismiss()

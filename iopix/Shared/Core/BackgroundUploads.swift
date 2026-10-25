@@ -28,6 +28,18 @@ final class BackgroundUploads: NSObject, URLSessionDataDelegate {
         return u
     }
 
+    /// Bodies whose process died before their upload finished (the share sheet swiped away) are never removed by the
+    /// delegate: anything older than the session's own time limit cannot still be on its way, and goes.
+    static func sweepOutbox() {
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: outbox.path)) ?? [] {
+            let u = outbox.appendingPathComponent(name)
+            if let made = (try? u.resourceValues(forKeys: [.creationDateKey]))?.creationDate, Date().timeIntervalSince(made) > 25 * 3600 {
+                try? fm.removeItem(at: u)
+            }
+        }
+    }
+
     /// A finished upload: what it was (the task's description: the queue item's id, or the file name for the share
     /// sheet) and what came of it. Set by the app; without it (the share sheet) results go to `log`.
     static var onFinish: ((_ tag: String, _ result: Result<UploadOutcome, Error>) -> Void)?

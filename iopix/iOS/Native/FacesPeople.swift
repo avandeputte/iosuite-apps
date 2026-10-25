@@ -23,6 +23,7 @@ struct FacesPeopleScreen: View {
     @State private var askText = ""
     @State private var deleting: PeopleGroup?
     @State private var note: String?
+    @State private var problem: String?
 
     private enum Ask: Identifiable {
         case newGroup(with: Int?), rename(PeopleGroup)
@@ -34,8 +35,9 @@ struct FacesPeopleScreen: View {
         }
     }
 
-    /// People with photos: person tags, not the People root and not a family that has people under it.
-    private var people: [FacesTag] { tags.filter { $0.isPerson && $0.own > 0 && !$0.hasKids } }
+    /// People with photos: person tags, not the People root and not a family that has people under it. Most photos
+    /// first, as the web app lists them (the order of "Everyone else" when a section is shown as arranged).
+    private var people: [FacesTag] { tags.filter { $0.isPerson && $0.own > 0 && !$0.hasKids }.sorted(by: byCount) }
 
     private var shown: [FacesTag] {
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -52,7 +54,9 @@ struct FacesPeopleScreen: View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 todo
                 sections
-                if people.isEmpty && !tags.isEmpty {
+                if let problem, tags.isEmpty {
+                    Text(problem).foregroundStyle(.secondary).padding(.top, 40)
+                } else if people.isEmpty && !tags.isEmpty {
                     Text("No people named yet. Name faces and they show here.").foregroundStyle(.secondary).padding(.top, 40)
                 }
             }
@@ -65,6 +69,11 @@ struct FacesPeopleScreen: View {
         .task { await load() }
         .navigationDestination(item: $openPerson) { FacesPersonScreen(tag: $0) }
         .navigationDestination(item: $openFaces) { FacesReviewScreen(tab: $0) }
+        // back from the faces: the counts and the people named there are read again (and once more when the
+        // library summary catches up with the server's reindexing)
+        .onChange(of: openFaces) { _, now in if now == nil { Task { await load() } } }
+        .onChange(of: store.people) { _, _ in Task { await load() } }
+        .onChange(of: sort) { _, now in if now != "group" { arranging = false } }  // arranging is for the group view only
         .alert(askTitle, isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
             TextField("Name", text: $askText)
             Button("Cancel", role: .cancel) {}
@@ -309,10 +318,13 @@ struct FacesPeopleScreen: View {
     // MARK: loading
 
     private func load() async {
-        async let t = try? FacesAPI.tags()
+        async let t: Result<[FacesTag], Error> = { do { return .success(try await FacesAPI.tags()) } catch { return .failure(error) } }()
         async let s = FacesAPI.summary()
         async let g: Void = reloadGroups()
-        tags = await t ?? tags
+        switch await t {
+        case .success(let list): tags = list; problem = nil
+        case .failure(let e): problem = e.localizedDescription
+        }
         summary = await s
         _ = await g
     }
@@ -397,7 +409,7 @@ struct FacesPersonScreen: View {
             async let l = try? PhotoList.load([URLQueryItem(name: "tag", value: "\(tag.id)"), URLQueryItem(name: "sort", value: "new")])
             async let a = try? IopixClient.shared.account()
             pair = await p
-            list = await l ?? PhotoList()
+            if let l = await l { list = l } else { list = PhotoList(); note = "The photos couldn't be loaded." }
             me = await a?.person
         }
         .fullScreenCover(item: $viewer) { PhotoPager(start: $0).environmentObject(store).environmentObject(router) }
@@ -427,7 +439,11 @@ struct FacesPersonScreen: View {
 
     private func toggleMe() async {
         let target: Int? = me == tag.id ? nil : tag.id
-        do { try await FacesAPI.setMe(target); me = target; note = target == nil ? "Your account is no longer linked to \(tag.name)." : "Your account is now linked to \(tag.name)." }
-        catch { note = error.localizedDescription }
+        do {
+            try await FacesAPI.setMe(target)
+            me = target
+            note = target == nil ? "Your account is no longer linked to \(tag.name)." : "Your account is now linked to \(tag.name)."
+            await queue.refreshAccount()  // Explore's "Photos of me" follows
+        } catch { note = error.localizedDescription }
     }
 }

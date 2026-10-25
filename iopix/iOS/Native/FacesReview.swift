@@ -100,7 +100,9 @@ struct FacesPersonPicker: View {
                         Task {
                             defer { busy = false }
                             do {
-                                let id = try await FacesAPI.createPerson(name, family: family == 0 ? nil : family)
+                                // no family: under the People root itself, as the web app does (0 would make a top-level tag)
+                                let root = tags.first { $0.full == "People" }?.id
+                                let id = try await FacesAPI.createPerson(name, parent: family == 0 ? root : family)
                                 creating = false
                                 dismiss()
                                 pick(id, name)
@@ -180,19 +182,20 @@ struct FacesReviewScreen: View {
 
     @ViewBuilder private func content(_ d: FacesAPI.Queue) -> some View {
         let faces = d.faces.filter { !decided.contains($0.id) }
+        let total = max(0, d.total - (d.faces.count - faces.count))  // the ones decided here a moment ago are gone
         if faces.isEmpty {
             Text(tab == "suggested" ? "No suggestions waiting. digiKam makes suggestions when you run face recognition there."
                  : tab == "unknown" ? "No unnamed faces." : "No ignored faces.")
                 .foregroundStyle(.secondary).padding(.top, 40)
         } else if tab == "suggested" {
-            Text("\(d.total.formatted()) faces digiKam thinks it recognized, grouped by person. Confirm a whole group, or decide face by face.")
+            Text("\(total.formatted()) faces digiKam thinks it recognized, grouped by person. Confirm a whole group, or decide face by face.")
                 .font(.footnote).foregroundStyle(.secondary)
             ForEach(d.groups, id: \.tag) { g in
                 let list = faces.filter { $0.tag == g.tag }
                 if !list.isEmpty { suggestionGroup(g.tag, g.name, list) }
             }
         } else if tab == "unknown", showingGroups, let a = alikes {
-            Text("\(d.total.formatted()) faces digiKam found but couldn't name. Look-alikes are shown together so one decision covers the group; untick a face to leave it out.")
+            Text("\(total.formatted()) faces digiKam found but couldn't name. Look-alikes are shown together so one decision covers the group; untick a face to leave it out.")
                 .font(.footnote).foregroundStyle(.secondary)
             Button("Show as a plain grid") { grouped = false }.font(.footnote)
             if a.running { Text("Grouping… \(a.done.formatted()) of \(a.total.formatted()) faces compared.").font(.footnote).foregroundStyle(.orange) }
@@ -207,8 +210,8 @@ struct FacesReviewScreen: View {
             let mis = a.missing.filter { !decided.contains($0.id) }
             if !mis.isEmpty { block("\(mis.count.formatted()) faces not compared yet", mis, suggest: nil, grouped: false) }
         } else {
-            Text(tab == "unknown" ? "\(d.total.formatted()) faces digiKam found but couldn't name. Pick the ones that are the same person and name them together; ignore the ones that aren't faces to name."
-                 : "\(d.total.formatted()) faces marked as not to be named.")
+            Text(tab == "unknown" ? "\(total.formatted()) faces digiKam found but couldn't name. Pick the ones that are the same person and name them together; ignore the ones that aren't faces to name."
+                 : "\(total.formatted()) faces marked as not to be named.")
                 .font(.footnote).foregroundStyle(.secondary)
             if tab == "unknown", alikes?.usable == true { Button("Group look-alikes") { grouped = true }.font(.footnote) }
             if canManage {
@@ -219,8 +222,8 @@ struct FacesReviewScreen: View {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(faces) { f in cell(f, selectable: canManage) }
             }
-            if d.total > d.faces.count {
-                Text("Showing the first \(d.faces.count.formatted()); decide these and the next ones appear.").font(.footnote).foregroundStyle(.secondary)
+            if total > faces.count {
+                Text("Showing the first \(faces.count.formatted()); decide these and the next ones appear.").font(.footnote).foregroundStyle(.secondary)
             }
         }
     }
@@ -331,7 +334,7 @@ struct FacesReviewScreen: View {
     private func chosen(_ faces: [FaceItem], _ sel: Binding<Set<String>>) -> [FaceItem] { faces.filter { sel.wrappedValue.contains($0.id) } }
 
     private func name(_ faces: [FaceItem]) {
-        guard !faces.isEmpty else { return }
+        guard !faces.isEmpty else { note = "Nothing is selected."; return }
         pickPhoto = faces.first?.photo
         picking = { id, name in Task { await apply(faces.map { $0.op("name", tag: id) }, "Named \(name)") } }
     }
@@ -340,7 +343,7 @@ struct FacesReviewScreen: View {
 
     /// Sends the changes; the faces leave the list at once and come back if the server refuses them.
     private func apply(_ ops: [[String: Any]], _ what: String) async {
-        guard !ops.isEmpty else { return }
+        guard !ops.isEmpty else { note = "Nothing is selected."; return }
         let keys = Set(ops.compactMap { o -> String? in
             guard let img = o["image"] as? Int, let r = o["rect"] as? [Int], r.count == 4 else { return nil }
             return "\(img):\(r[0]):\(r[1]):\(r[2]):\(r[3])"
@@ -348,12 +351,17 @@ struct FacesReviewScreen: View {
         decided.formUnion(keys)
         selected.subtract(keys)
         do {
+            let seen = await FacesAPI.indexVersion()
             let r = try await FacesAPI.batch(ops)
             if r.failed > 0 {
                 note = "\(r.failed) of those couldn't be changed\(r.why.map { " (\($0))" } ?? "")."
-                await load()
             }
-            Task { await store.load() }
+            // the people's counts and faces follow once the server has reindexed
+            Task {
+                await FacesAPI.awaitReindex(after: seen)
+                if r.failed > 0 { await load() }
+                await store.load()
+            }
         } catch {
             decided.subtract(keys)
             note = "\(what) didn't go through: \(error.localizedDescription)"
@@ -392,5 +400,8 @@ private struct GroupBlock<Header: View, Cell: View>: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.secondary.opacity(0.08)))
+        // other faces in this block (a reload, or the block's place taken by the next group): all ticked again,
+        // not the old block's choice
+        .onChange(of: faces.map(\.id)) { _, _ in sel = nil }
     }
 }
