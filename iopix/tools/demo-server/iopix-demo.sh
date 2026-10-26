@@ -8,13 +8,15 @@
 #   bash iopix-demo.sh --rebuild
 # Add --new-passwords for fresh passwords, --yes to skip the question before the old container is deleted.
 #
-# The library: by default about 48 Unsplash sample photos. With DEMO_LIBRARY it is the documentation's demo
-# library instead (the photos and the digiKam database behind iopix.net's screenshots, with its named people and
-# faces). Make the archive on the Mac and copy it to the Proxmox host once:
-#   tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md
-#   scp iopix-demo-library.tgz root@<proxmox>:/root/
-#   DEMO_LIBRARY=/root/iopix-demo-library.tgz CF_TUNNEL_TOKEN=eyJ... bash iopix-demo.sh
-# The archive's path is remembered like the token, so --rebuild uses it again.
+# The library: the documentation's demo library (the photos and the digiKam database behind iopix.net's
+# screenshots, with its named people and faces). The script asks where its archive is, and takes either
+#   - a .tgz on this host, made on the Mac with
+#       tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md
+#     and copied here (scp iopix-demo-library.tgz root@<proxmox>:/root/), or
+#   - the folder on the Mac itself, as user@mac:folder (alex@192.168.1.20:iopix-demo): the script makes the
+#     archive there over SSH and copies it here (the Mac needs Remote Login on, in General › Sharing).
+# Answer "samples" to use about 48 Unsplash sample photos instead. DEMO_LIBRARY=... skips the question.
+# The answer is remembered like the token, so --rebuild uses the same archive again without asking.
 #
 # It creates an unprivileged Debian 13 container, installs iopix inside it without digiKam (iopix keeps the
 # library itself), fills it with freely licensed sample photos (Unsplash, via picsum.photos) given dates and
@@ -59,6 +61,28 @@ SAVED_CTID=""; SAVED_TOKEN=""; SAVED_LIBRARY=""; ADMIN_PW=""; REVIEW_PW=""
 CTID="${ENV_CTID:-$SAVED_CTID}"
 CF_TUNNEL_TOKEN="${ENV_TOKEN:-$SAVED_TOKEN}"
 DEMO_LIBRARY="${ENV_LIB:-$SAVED_LIBRARY}"
+if [ -z "$DEMO_LIBRARY" ]; then
+  [ -t 0 ] || die "Set DEMO_LIBRARY (an archive path, user@mac:folder, or samples): there is no terminal to ask on."
+  DEF=/root/iopix-demo-library.tgz
+  echo
+  echo "Where is the demo library? Either the archive on this host (made on the Mac with"
+  echo "  tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md),"
+  echo "or the folder on the Mac as user@mac:folder (Remote Login on), or samples for Unsplash sample photos."
+  read -r -p "Demo library [$DEF]: " DEMO_LIBRARY
+  DEMO_LIBRARY="${DEMO_LIBRARY:-$DEF}"
+fi
+if [ "$DEMO_LIBRARY" = samples ]; then
+  DEMO_LIBRARY=""
+elif [[ "$DEMO_LIBRARY" == *@*:* ]]; then
+  # the folder on the Mac: the archive is made there and streamed here, once
+  SRC="$DEMO_LIBRARY"; DEMO_LIBRARY=/root/iopix-demo-library.tgz
+  say "Fetching the demo library from $SRC"
+  ssh -o StrictHostKeyChecking=accept-new "${SRC%%:*}" \
+    "tar --exclude .DS_Store -czf - -C ${SRC#*:} photos db CREDITS.md" > "$DEMO_LIBRARY.part" \
+    || { rm -f "$DEMO_LIBRARY.part"; die "Could not fetch the library from $SRC (is Remote Login on, and the folder right?)."; }
+  mv "$DEMO_LIBRARY.part" "$DEMO_LIBRARY"
+  echo "  $(du -h "$DEMO_LIBRARY" | cut -f1) at $DEMO_LIBRARY"
+fi
 if [ -n "$DEMO_LIBRARY" ]; then
   [ -f "$DEMO_LIBRARY" ] || die "DEMO_LIBRARY: no archive at $DEMO_LIBRARY"
   tar -tzf "$DEMO_LIBRARY" | grep -q '^db/digikam4.db$' || die "DEMO_LIBRARY: the archive has no db/digikam4.db"
@@ -90,7 +114,7 @@ fi
 
 ( umask 077
   { echo "# kept by iopix-demo.sh: the demo's container, Cloudflare tunnel token and passwords (root only)"
-    printf 'SAVED_CTID=%q\nSAVED_TOKEN=%q\nSAVED_LIBRARY=%q\nADMIN_PW=%q\nREVIEW_PW=%q\n' "$CTID" "$CF_TUNNEL_TOKEN" "$DEMO_LIBRARY" "$ADMIN_PW" "$REVIEW_PW"
+    printf 'SAVED_CTID=%q\nSAVED_TOKEN=%q\nSAVED_LIBRARY=%q\nADMIN_PW=%q\nREVIEW_PW=%q\n' "$CTID" "$CF_TUNNEL_TOKEN" "${DEMO_LIBRARY:-samples}" "$ADMIN_PW" "$REVIEW_PW"
   } > "$CONF" )
 chmod 600 "$CONF"
 
