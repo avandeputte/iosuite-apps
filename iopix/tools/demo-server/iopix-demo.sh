@@ -8,6 +8,14 @@
 #   bash iopix-demo.sh --rebuild
 # Add --new-passwords for fresh passwords, --yes to skip the question before the old container is deleted.
 #
+# The library: by default about 48 Unsplash sample photos. With DEMO_LIBRARY it is the documentation's demo
+# library instead (the photos and the digiKam database behind iopix.net's screenshots, with its named people and
+# faces). Make the archive on the Mac and copy it to the Proxmox host once:
+#   tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md
+#   scp iopix-demo-library.tgz root@<proxmox>:/root/
+#   DEMO_LIBRARY=/root/iopix-demo-library.tgz CF_TUNNEL_TOKEN=eyJ... bash iopix-demo.sh
+# The archive's path is remembered like the token, so --rebuild uses it again.
+#
 # It creates an unprivileged Debian 13 container, installs iopix inside it without digiKam (iopix keeps the
 # library itself), fills it with freely licensed sample photos (Unsplash, via picsum.photos) given dates and
 # places, creates two accounts with passwords (no passwordless account), makes visitors sign in before seeing
@@ -24,7 +32,8 @@
 #   CT_STORAGE        storage for the container's disk (default: local-lvm)
 #   CT_BRIDGE         network bridge (default: vmbr0)
 #   CT_HOSTNAME       (default: iopix-demo)
-#   PHOTO_COUNT       how many sample photos (default: 48)
+#   PHOTO_COUNT       how many sample photos when there is no DEMO_LIBRARY (default: 48)
+#   DEMO_LIBRARY      an archive with photos/ and db/digikam4.db (see above)
 set -euo pipefail
 
 REBUILD=0; NEWPW=0; YES=0
@@ -43,12 +52,17 @@ command -v pct >/dev/null || die "Run this on the Proxmox host (pct not found)."
 
 # what earlier runs remember; the environment wins over it
 CONF=/root/iopix-demo.conf
-ENV_CTID="${CTID:-}"; ENV_TOKEN="${CF_TUNNEL_TOKEN:-}"
-SAVED_CTID=""; SAVED_TOKEN=""; ADMIN_PW=""; REVIEW_PW=""
+ENV_CTID="${CTID:-}"; ENV_TOKEN="${CF_TUNNEL_TOKEN:-}"; ENV_LIB="${DEMO_LIBRARY:-}"
+SAVED_CTID=""; SAVED_TOKEN=""; SAVED_LIBRARY=""; ADMIN_PW=""; REVIEW_PW=""
 # shellcheck disable=SC1090
 [ -f "$CONF" ] && . "$CONF"
 CTID="${ENV_CTID:-$SAVED_CTID}"
 CF_TUNNEL_TOKEN="${ENV_TOKEN:-$SAVED_TOKEN}"
+DEMO_LIBRARY="${ENV_LIB:-$SAVED_LIBRARY}"
+if [ -n "$DEMO_LIBRARY" ]; then
+  [ -f "$DEMO_LIBRARY" ] || die "DEMO_LIBRARY: no archive at $DEMO_LIBRARY"
+  tar -tzf "$DEMO_LIBRARY" | grep -q '^db/digikam4.db$' || die "DEMO_LIBRARY: the archive has no db/digikam4.db"
+fi
 CT_STORAGE="${CT_STORAGE:-local-lvm}"
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
 CT_HOSTNAME="${CT_HOSTNAME:-iopix-demo}"
@@ -76,7 +90,7 @@ fi
 
 ( umask 077
   { echo "# kept by iopix-demo.sh: the demo's container, Cloudflare tunnel token and passwords (root only)"
-    printf 'SAVED_CTID=%q\nSAVED_TOKEN=%q\nADMIN_PW=%q\nREVIEW_PW=%q\n' "$CTID" "$CF_TUNNEL_TOKEN" "$ADMIN_PW" "$REVIEW_PW"
+    printf 'SAVED_CTID=%q\nSAVED_TOKEN=%q\nSAVED_LIBRARY=%q\nADMIN_PW=%q\nREVIEW_PW=%q\n' "$CTID" "$CF_TUNNEL_TOKEN" "$DEMO_LIBRARY" "$ADMIN_PW" "$REVIEW_PW"
   } > "$CONF" )
 chmod 600 "$CONF"
 
@@ -90,7 +104,7 @@ pveam list "$TSTORE" | grep -q "$TEMPLATE" || pveam download "$TSTORE" "$TEMPLAT
 say "Container $CTID ($CT_HOSTNAME)"
 pct create "$CTID" "$TSTORE:vztmpl/$TEMPLATE" \
   --hostname "$CT_HOSTNAME" --unprivileged 1 --features nesting=1 \
-  --cores 2 --memory 2048 --swap 512 --rootfs "$CT_STORAGE:12" \
+  --cores 2 --memory 2048 --swap 512 --rootfs "$CT_STORAGE:$([ -n "$DEMO_LIBRARY" ] && echo 24 || echo 12)" \
   --net0 "name=eth0,bridge=$CT_BRIDGE,ip=dhcp" --onboot 1 \
   --tags iopix-demo --description "iopix demo for the App Store review (sample photos only)"
 pct start "$CTID"
@@ -101,6 +115,10 @@ SECF="$(mktemp)"; chmod 600 "$SECF"
 printf 'ADMIN_PW=%q\nREVIEW_PW=%q\nCF_TUNNEL_TOKEN=%q\nPHOTO_COUNT=%q\n' "$ADMIN_PW" "$REVIEW_PW" "$CF_TUNNEL_TOKEN" "$PHOTO_COUNT" > "$SECF"
 pct push "$CTID" "$SECF" /root/demo.env --perms 0600
 rm -f "$SECF"
+if [ -n "$DEMO_LIBRARY" ]; then
+  say "Copying the demo library into the container"
+  pct push "$CTID" "$DEMO_LIBRARY" /root/library.tgz
+fi
 INSIDE="$(mktemp)"
 sed -n '/^# ---- INSIDE ----$/,$p' "$0" | tail -n +2 > "$INSIDE"
 pct push "$CTID" "$INSIDE" /root/demo-inside.sh --perms 0700
@@ -143,6 +161,15 @@ mkdir -p /opt/iopix /library/photos
 [ -d /opt/iopix/app ] || git clone --depth 1 https://github.com/avandeputte/iopix /opt/iopix/app
 git -C /opt/iopix/app rev-parse HEAD > /opt/iopix/app/COMMIT 2>/dev/null || true
 
+if [ -f /root/library.tgz ]; then
+  echo "== the demo library (photos and digiKam database, with its people and faces)"
+  mkdir -p /library
+  tar -xzf /root/library.tgz -C /library
+  rm -f /root/library.tgz
+  echo "  $(find /library/photos -type f ! -name '*.xmp' | wc -l) files"
+  DBARG="--sqlite /library/db"
+else
+DBARG="--no-digikam"
 echo "== sample photos (Unsplash, free to use, via picsum.photos)"
 # dates spread over the years, and well-known places, so Explore, Places and the map have something to show
 PLACES=("48.8584 2.2945 Paris" "40.7580 -73.9855 New York" "35.6595 139.7005 Tokyo" "51.5007 -0.1246 London"
@@ -167,11 +194,14 @@ while [ "$n" -lt "$PHOTO_COUNT" ] && [ "$id" -lt 400 ]; do
   n=$((n + 1))
 done
 echo "  $n photos"
+fi
 
-echo "== iopix setup (no digiKam, offline place names, service on port 8600)"
+echo "== iopix setup ($DBARG, offline place names, service on port 8600)"
 cd /opt/iopix/app
-IOPIX_ADMIN="admin:$ADMIN_PW" sh ./setup.sh --yes --photos /library/photos --no-digikam --data /opt/iopix/data \
+IOPIX_ADMIN="admin:$ADMIN_PW" sh ./setup.sh --yes --photos /library/photos $DBARG --data /opt/iopix/data \
   --features places --service --no-system-deps --port 8600
+# no digiKam runs in here to wait for before writing its database
+grep -q '^DIGIKAM_CHECK=' /opt/iopix/app/iopix.env || echo DIGIKAM_CHECK=none >> /opt/iopix/app/iopix.env
 
 echo "== accounts and sign-in"
 VPY=/opt/iopix/app/.venv/bin/python
