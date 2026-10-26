@@ -81,6 +81,11 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
             r.cachePolicy = .reloadIgnoringLocalCacheData
         }
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        // the server's own address, as a browser on the web app would send it: iopix hands it on to Google, whose
+        // map key is usually restricted to that address (without it, place searches are refused as "referer <empty>")
+        if let host = server.host, let scheme = server.scheme {
+            r.setValue("\(scheme)://\(host)\(server.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
+        }
         if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
             r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
             r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")

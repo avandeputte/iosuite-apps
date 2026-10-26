@@ -7,7 +7,20 @@ struct EditLocationSheet: View {
     let photo: Int
     let lat: Double?
     let lon: Double?
-    let done: (Double, Double, Double?) -> Void
+    var accuracy: Double? = nil
+    /// latitude, longitude, altitude, and how far off it may be (metres) when only the town is known
+    let done: (Double, Double, Double?, Double?) -> Void
+
+    /// How far off an approximate position may be, as the web app offers it: round numbers in the units of the
+    /// region (miles in the US), in metres.
+    static var accuracyChoices: [Double] {
+        let mile = 1609.344
+        return [1, 2, 5, 10, 25].map { Locale.current.measurementSystem == .us ? ($0 * mile).rounded() : $0 * 1000 }
+    }
+
+    static func distance(_ m: Double) -> String {
+        Measurement(value: m, unit: UnitLength.meters).formatted(.measurement(width: .abbreviated, usage: .road))
+    }
 
     struct Hit: Identifiable {
         let name: String, detail: String, lat: Double, lon: Double, alt: Double?, thumb: Int?
@@ -24,13 +37,20 @@ struct EditLocationSheet: View {
     @State private var landmarks = false
     @State private var note: String?
     @State private var looking = false
+    @State private var townOnly = false
+    @State private var radius = EditLocationSheet.accuracyChoices[1]
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 MapReader { proxy in
                     Map(position: $camera) {
-                        if let pin { Marker("Here", coordinate: pin).tint(Hue.green) }
+                        if let pin {
+                            if townOnly {
+                                MapCircle(center: pin, radius: radius).foregroundStyle(.orange.opacity(0.15)).stroke(.orange, lineWidth: 1)
+                            }
+                            Marker("Here", coordinate: pin).tint(townOnly ? .orange : Hue.green)
+                        }
                     }
                     .onTapGesture { p in
                         if let c = proxy.convert(p, from: .local) { pin = c; alt = nil }
@@ -38,6 +58,16 @@ struct EditLocationSheet: View {
                 }
                 .frame(height: mapHeight)  // a fixed share: the found places and suggestions below need room too
                 List {
+                    Section {
+                        Toggle("Only the town is known", isOn: $townOnly)
+                        if townOnly {
+                            Picker("Within about", selection: $radius) {
+                                ForEach(Self.accuracyChoices, id: \.self) { Text(Self.distance($0)).tag($0) }
+                            }
+                        }
+                    } footer: {
+                        if townOnly { Text("Find the town and put the pin on its center. The photo is saved as approximate, without altitude.") }
+                    }
                     if !hits.isEmpty {
                         Section("Found") { ForEach(hits) { row($0) } }
                     }
@@ -60,6 +90,8 @@ struct EditLocationSheet: View {
             }
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search an address or place")
             .onSubmit(of: .search) { Task { await find() } }
+            .onChange(of: townOnly) { _, _ in fitCircle() }
+            .onChange(of: radius) { _, _ in fitCircle() }
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -67,11 +99,18 @@ struct EditLocationSheet: View {
                     Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use") { if let p = pin { done(p.latitude, p.longitude, alt) }; dismiss() }.disabled(pin == nil)
+                    Button("Use") {
+                        if let p = pin { done(p.latitude, p.longitude, townOnly ? nil : alt, townOnly ? radius : nil) }
+                        dismiss()
+                    }.disabled(pin == nil)
                 }
             }
             .onAppear {
                 Task { await suggest() }  // the likely places, from photos taken around then, are offered at once
+                if let accuracy {
+                    townOnly = true
+                    radius = Self.accuracyChoices.min { abs($0 - accuracy) < abs($1 - accuracy) } ?? accuracy
+                }
                 if let lat, let lon {
                     let c = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     pin = c
@@ -81,6 +120,12 @@ struct EditLocationSheet: View {
         }
     }
 
+    /// The whole of an approximate position's circle in view.
+    private func fitCircle() {
+        guard townOnly, let pin else { return }
+        withAnimation { camera = .region(MKCoordinateRegion(center: pin, latitudinalMeters: radius * 2.6, longitudinalMeters: radius * 2.6)) }
+    }
+
     @Environment(\.horizontalSizeClass) private var width
     private var mapHeight: CGFloat { width == .regular ? 320 : 260 }
 
@@ -88,7 +133,8 @@ struct EditLocationSheet: View {
         Button {
             let c = CLLocationCoordinate2D(latitude: h.lat, longitude: h.lon)
             pin = c; alt = h.alt
-            withAnimation { camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: 1500, longitudinalMeters: 1500)) }
+            let span = townOnly ? radius * 2.6 : 1500
+            withAnimation { camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: span, longitudinalMeters: span)) }
         } label: {
             HStack(spacing: 10) {
                 if let t = h.thumb { RemoteImage(path: "thumb/\(t)").frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6)) }

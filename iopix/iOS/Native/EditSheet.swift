@@ -50,8 +50,12 @@ struct PhotoEditSheet: View {
         let before = Set(o.keywords.map(\.id)), after = Set(draft.keywords.map(\.id))
         if !after.subtracting(before).isEmpty { c["add_tags"] = Array(after.subtracting(before)) }
         if !before.subtracting(after).isEmpty { c["remove_tags"] = Array(before.subtracting(after)) }
-        if draft.lat != o.lat || draft.lon != o.lon {
-            if let la = draft.lat, let lo = draft.lon { c["gps"] = ["lat": la, "lon": lo, "alt": draft.alt as Any? ?? NSNull()] }
+        if draft.lat != o.lat || draft.lon != o.lon || draft.accuracy != o.accuracy {
+            if let la = draft.lat, let lo = draft.lon {
+                // approximate (only the town is known): no altitude, and how far off it may be, as the web app saves it
+                c["gps"] = draft.accuracy.map { ["lat": la, "lon": lo, "alt": NSNull(), "accuracy": $0] as [String: Any] }
+                    ?? ["lat": la, "lon": lo, "alt": draft.alt as Any? ?? NSNull()]
+            }
             else { c["gps"] = NSNull() }
         }
         return c
@@ -94,8 +98,8 @@ struct PhotoEditSheet: View {
             }
         }
         .sheet(isPresented: $location) {
-            EditLocationSheet(photo: photo, lat: draft.lat, lon: draft.lon) { la, lo, alt in
-                draft.lat = la; draft.lon = lo; draft.alt = alt
+            EditLocationSheet(photo: photo, lat: draft.lat, lon: draft.lon, accuracy: draft.accuracy) { la, lo, alt, acc in
+                draft.lat = la; draft.lon = lo; draft.alt = acc == nil ? alt : nil; draft.accuracy = acc
             }
             .roomySheet()
         }
@@ -202,12 +206,16 @@ struct PhotoEditSheet: View {
                 if let la = draft.lat, let lo = draft.lon {
                     LabeledContent("Position", value: String(format: "%.5f, %.5f", la, lo))
                     if let p = original?.place, draft.lat == original?.lat { Text(p).font(.footnote).foregroundStyle(.secondary) }
+                    if let acc = draft.accuracy {
+                        Label("Approximate · within about \(EditLocationSheet.distance(acc))", systemImage: "mappin.circle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                 } else {
                     Text("No location").foregroundStyle(.secondary)
                 }
                 Button { location = true } label: { Label(draft.lat == nil ? "Set the location…" : "Change the location…", systemImage: "mappin.and.ellipse") }
                 if draft.lat != nil {
-                    Button(role: .destructive) { draft.lat = nil; draft.lon = nil; draft.alt = nil } label: { Label("Remove the location", systemImage: "mappin.slash") }
+                    Button(role: .destructive) { draft.lat = nil; draft.lon = nil; draft.alt = nil; draft.accuracy = nil } label: { Label("Remove the location", systemImage: "mappin.slash") }
                 }
             }
             Section("Tools") {

@@ -35,6 +35,8 @@ struct EditDetail: Equatable {
     var caption = ""
     var taken: Date?
     var lat: Double?, lon: Double?, alt: Double?
+    /// Only the town is known: how far off the position may be, in metres (the web app's "approximate").
+    var accuracy: Double?
     var place: String?
     var tags: [Tag] = []
     var faces: [Face] = []
@@ -73,6 +75,7 @@ struct EditDetail: Equatable {
         caption = str("caption") ?? ""   // never caption_ai
         taken = str("taken").flatMap { Self.takenFormat.date(from: String($0.prefix(19))) }
         lat = num("lat"); lon = num("lon"); alt = num("alt")
+        accuracy = ((d["extra"] as? [String: Any])?["gpsAccuracy"] as? NSNumber)?.doubleValue
         place = [str("place"), str("region"), str("country")].compactMap { $0 }.joined(separator: ", ")
         if place?.isEmpty == true { place = nil }
         tags = (d["tags"] as? [[String: Any]] ?? []).compactMap { t in
