@@ -92,6 +92,7 @@ struct SidebarLayout: View {
                  Row(title: "Bursts & best shots", symbol: "square.stack.3d.down.right", hue: Hue.amber, screen: .bursts),
                  Row(title: "Detected content", symbol: "sparkles", hue: Hue.purple, screen: .detected)]
         if editor { rows.append(Row(title: "Metadata quality", symbol: "checkmark.seal", hue: Hue.teal, screen: .quality)) }
+        if editor { rows.append(Row(title: "Date suggestions", symbol: "calendar.badge.clock", hue: Hue.amber, screen: .dateSuggest)) }
         rows.append(Row(title: "History", symbol: "clock.arrow.circlepath", hue: Hue.slate, screen: .history(photo: nil)))
         return rows
     }
@@ -184,6 +185,7 @@ struct ScreenView: View {
         case .bursts: ManageBurstsScreen()
         case .detected: ManageDetectedScreen()
         case .quality: ManageQualityScreen()
+        case .dateSuggest: ManageDateSuggestScreen()
         case .history(let photo): ManageHistoryScreen(photo: photo)
         case .faces(let tab): FacesReviewScreen(tab: tab)
         case .settings: AdminSettingsScreen()

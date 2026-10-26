@@ -10,7 +10,7 @@ private struct PagerHost: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func pager(_ start: Binding<PagerStart?>) -> some View { modifier(PagerHost(start: start)) }
 }
 

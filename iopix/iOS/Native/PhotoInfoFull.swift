@@ -46,6 +46,8 @@ struct PhotoDetail {
     struct Quality { var focusRank: Double?, aestheticRank: Double?, aesthetic: Double?, eyesChecked = 0, eyesClosed = 0, rejectLabels: [String] = [] }
     var quality: Quality?
     var focusMeasured = false
+    /// A year for a "Date unknown" photo from how old its people look (iopix 1.82, editors only).
+    var suggestion: DateSuggestion?
     var pick = 0
     var burst: (id: Int, size: Int, best: Bool)?
     var similar = false
@@ -151,6 +153,7 @@ struct PhotoDetail {
         }
         p.sharpness = num(d["sharpn"]); p.faceQuality = num(d["faceq"])
         p.pick = int(d["pick"]) ?? 0
+        p.suggestion = (d["dateSuggestion"] as? [String: Any]).flatMap(DateSuggestion.init(json:))
         p.focusMeasured = d["focusn"] is NSNumber
         if let q = d["quality"] as? [String: Any] {
             p.quality = Quality(focusRank: num(q["focusRank"]), aestheticRank: num(q["aestheticRank"]), aesthetic: num(q["aesthetic"]),
@@ -191,7 +194,8 @@ struct PhotoInfoFull: View {
     let open: (String) -> Void
     @State private var d: PhotoDetail?
     @State private var failed = false
-    @State private var rejected: Int?  // marked rejected from here (the panel's copy is not reloaded)
+    @State private var rejected: Int?
+    @State private var used: Int?   // a suggested year saved from here  // marked rejected from here (the panel's copy is not reloaded)
 
     var body: some View {
         ScrollView {
@@ -234,6 +238,7 @@ struct PhotoInfoFull: View {
                 link(date.formatted(PhotoDetail.utc(.dateTime.weekday(.wide).month(.wide).day().year())), d.day.map { "#/photos?from=\($0)&to=\($0)&sort=old" })
             } sub: { Text(date.formatted(PhotoDetail.utc(.dateTime.hour().minute()))) }
         }
+        if let g = d.suggestion, used != d.id { suggestionRow(g) }
         row(d.video ? "video" : "photo") { Text(d.name).textSelection(.enabled) } sub: { Text(fileLine(d)) }
         if let f = d.folder { row("folder") { link(f.path, "#/photos?album=\(f.id)&sort=old") } sub: { Text("Folder") } }
         if d.versions.count > 1 {
@@ -410,6 +415,25 @@ struct PhotoInfoFull: View {
                         .buttonStyle(.plain).foregroundStyle(Color.accentColor)
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder private func suggestionRow(_ g: DateSuggestion) -> some View {
+        row("sparkles") {
+            Text("Looks like about \(String(g.year))") + Text(g.range.isEmpty ? "" : " (\(g.range))").foregroundStyle(.secondary)
+        } sub: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(g.why)
+                HStack(spacing: 12) {
+                    if EditRights.shared.canWrite {
+                        Button("Use \(String(g.year))") {
+                            Task { if (try? await DateSuggestion.use([g])) != nil { used = g.id; NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil) } }
+                        }
+                    }
+                    Button("All suggestions") { open("#/datesuggest") }
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor)
             }
         }
     }
