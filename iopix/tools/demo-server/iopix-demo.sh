@@ -11,7 +11,7 @@
 # The library: the documentation's demo library (the photos and the digiKam database behind iopix.net's
 # screenshots, with its named people and faces). The script asks where its archive is, and takes either
 #   - a .tgz on this host, made on the Mac with
-#       tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md
+#       COPYFILE_DISABLE=1 tar --no-xattrs --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md
 #     and copied here (scp iopix-demo-library.tgz root@<proxmox>:/root/), or
 #   - the folder on the Mac itself, as user@mac:folder (alex@192.168.1.20:iopix-demo): the script makes the
 #     archive there over SSH and copies it here (the Mac needs Remote Login on, in General › Sharing).
@@ -66,7 +66,7 @@ if [ -z "$DEMO_LIBRARY" ]; then
   DEF=/root/iopix-demo-library.tgz
   echo
   echo "Where is the demo library? Either the archive on this host (made on the Mac with"
-  echo "  tar --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md),"
+  echo "  COPYFILE_DISABLE=1 tar --no-xattrs --exclude .DS_Store -czf iopix-demo-library.tgz -C ~/iopix-demo photos db CREDITS.md),"
   echo "or the folder on the Mac as user@mac:folder (Remote Login on), or samples for Unsplash sample photos."
   read -r -p "Demo library [$DEF]: " DEMO_LIBRARY
   DEMO_LIBRARY="${DEMO_LIBRARY:-$DEF}"
@@ -78,14 +78,18 @@ elif [[ "$DEMO_LIBRARY" == *@*:* ]]; then
   SRC="$DEMO_LIBRARY"; DEMO_LIBRARY=/root/iopix-demo-library.tgz
   say "Fetching the demo library from $SRC"
   ssh -o StrictHostKeyChecking=accept-new "${SRC%%:*}" \
-    "tar --exclude .DS_Store -czf - -C ${SRC#*:} photos db CREDITS.md" > "$DEMO_LIBRARY.part" \
+    "COPYFILE_DISABLE=1 tar --no-xattrs --exclude .DS_Store -czf - -C ${SRC#*:} photos db CREDITS.md" > "$DEMO_LIBRARY.part" \
     || { rm -f "$DEMO_LIBRARY.part"; die "Could not fetch the library from $SRC (is Remote Login on, and the folder right?)."; }
   mv "$DEMO_LIBRARY.part" "$DEMO_LIBRARY"
   echo "  $(du -h "$DEMO_LIBRARY" | cut -f1) at $DEMO_LIBRARY"
 fi
 if [ -n "$DEMO_LIBRARY" ]; then
   [ -f "$DEMO_LIBRARY" ] || die "DEMO_LIBRARY: no archive at $DEMO_LIBRARY"
-  tar -tzf "$DEMO_LIBRARY" | grep -q '^db/digikam4.db$' || die "DEMO_LIBRARY: the archive has no db/digikam4.db"
+  # the whole listing, then the check: grep -q stopping early would kill tar mid-list, and pipefail would call that
+  # a missing file. Archives made on a Mac carry Apple's extended attributes; GNU tar only warns about them.
+  LIST="$(tar --warning=no-unknown-keyword -tzf "$DEMO_LIBRARY")" || die "DEMO_LIBRARY: $DEMO_LIBRARY is not a readable .tgz"
+  grep -Eq '^(\./)?db/digikam4\.db$' <<<"$LIST" || die "DEMO_LIBRARY: the archive has no db/digikam4.db (it should hold photos/, db/ and CREDITS.md at its top)"
+  unset LIST
 fi
 CT_STORAGE="${CT_STORAGE:-local-lvm}"
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
@@ -188,7 +192,7 @@ git -C /opt/iopix/app rev-parse HEAD > /opt/iopix/app/COMMIT 2>/dev/null || true
 if [ -f /root/library.tgz ]; then
   echo "== the demo library (photos and digiKam database, with its people and faces)"
   mkdir -p /library
-  tar -xzf /root/library.tgz -C /library
+  tar --warning=no-unknown-keyword -xzf /root/library.tgz -C /library
   rm -f /root/library.tgz
   echo "  $(find /library/photos -type f ! -name '*.xmp' | wc -l) files"
   DBARG="--sqlite /library/db"
