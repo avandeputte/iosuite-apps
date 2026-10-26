@@ -70,7 +70,7 @@ struct PhotoGridScreen: View {
         }
         .navigationTitle(title ?? filters.title(store))
         .navigationBarTitleDisplayMode(isRoot ? .large : .inline)
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search people, tags, places, captions")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search people, tags, places, captions")
         .searchSuggestions { SearchSuggestionRows(text: $search, query: $filters) }
         .onSubmit(of: .search) {
             // the text becomes a chip (as the web app does); its cross takes it away again

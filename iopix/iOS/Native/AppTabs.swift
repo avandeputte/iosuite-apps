@@ -7,11 +7,14 @@ struct AppTabs: View {
     var showUploads: () -> Void
 
     var body: some View {
-        if width == .regular {
-            SidebarLayout(showUploads: showUploads)  // iPad and Mac: every page listed in the sidebar
-        } else {
-            tabs
+        Group {
+            if width == .regular {
+                SidebarLayout(showUploads: showUploads)  // iPad and Mac: every page listed in the sidebar
+            } else {
+                tabs
+            }
         }
+        .hardTopEdge()
     }
 
     private var tabs: some View {
@@ -270,6 +273,18 @@ struct MoreView: View {
         case "detected": return "Detected content"
         case "photos": return "Edit in iopix"
         default: return "iopix"
+        }
+    }
+}
+
+extension View {
+    /// A plain edge under the bar at the top instead of the soft blur that smears the page's first row (the
+    /// filter chips, a heading) while it sits under the bar.
+    @ViewBuilder func hardTopEdge() -> some View {
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            self
         }
     }
 }
