@@ -403,10 +403,13 @@ struct PhotoInfoPane: View {
 
     var body: some View {
         PhotoInfoFull(photo: photo, open: open)
-            .background(.regularMaterial)
-            .overlay(alignment: .topLeading) {
-                Text("Info").font(.headline).padding(.horizontal, 20).padding(.top, 14)
+            // the heading stays put above the details as they scroll, on its own strip
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Text("Info").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 8)
+                    .background(.regularMaterial)
             }
+            .background(.regularMaterial)
             .ignoresSafeArea(edges: .bottom)
     }
 }

@@ -207,7 +207,10 @@ struct ManageNearDuplicatesScreen: View {
 /// Photos taken in quick succession, newest first, with the best frame picked by sharpness and faces. Editors move
 /// the other frames to the trash.
 struct ManageBurstsScreen: View {
-    struct Frame: Hashable { let id: Int, best: Bool, ratio: Double, ts: Double, sharp: Double?, faces: Double? }
+    struct Frame: Hashable {
+        let id: Int, best: Bool, ratio: Double, ts: Double, sharp: Double?, faces: Double?
+        var focus: Double? = nil, looks: Double? = nil, eyesClosed = false, pick = 0
+    }
     struct Burst: Identifiable, Hashable { let id: Int, frames: [Frame] }
     @EnvironmentObject private var store: LibraryStore
     @StateObject private var rights = ManageRights()
@@ -235,7 +238,9 @@ struct ManageBurstsScreen: View {
                 Section {
                     ManageThumbStrip(items: b.frames.map { f in
                         .init(id: f.id, ratio: f.ratio,
-                              caption: [f.sharp.map { "sharpness \(Int(($0 * 100).rounded()))%" }, f.faces.map { "faces \(Int(($0 * 100).rounded()))%" }].compactMap { $0 }.joined(separator: " · "),
+                              caption: [f.focus.map { "focus \(Int(($0 * 100).rounded()))%" } ?? f.sharp.map { "sharpness \(Int(($0 * 100).rounded()))%" },
+                                        f.faces.map { "faces \(Int(($0 * 100).rounded()))%" }, f.looks.map { "looks \(String(format: "%.1f", $0))" },
+                                        f.eyesClosed ? "eyes closed" : nil, f.pick == 1 ? "rejected" : nil].compactMap { $0 }.joined(separator: " · "),
                               badge: f.best ? "Best" : nil)
                     }, height: 96) { i in
                         viewer = PagerStart(list: PhotoList(ids: b.frames.map(\.id), times: b.frames.map(\.ts)), index: i)
@@ -244,6 +249,13 @@ struct ManageBurstsScreen: View {
                         PhotoGridScreen(query: PhotoQuery([("burst", "\(b.id)"), ("sort", "old")]), title: "Burst")
                     }
                     if rights.canWrite, b.frames.count > 1 {
+                        // the gentler choice: a "Rejected" pick label on the others (undo from the edit log)
+                        let rest = b.frames.filter { !$0.best && $0.pick != 1 }.map(\.id)
+                        if !rest.isEmpty {
+                            Button { Task { await reject(rest) } } label: {
+                                Label("Mark the other \(rest.count == 1 ? "frame" : "\(rest.count) frames") as rejected", systemImage: "hand.thumbsdown")
+                            }
+                        }
                         Button(role: .destructive) { keeping = b } label: { Label("Keep the best, trash the rest", systemImage: "trash") }
                     }
                 } header: {
@@ -274,6 +286,18 @@ struct ManageBurstsScreen: View {
         .notice($notice)
     }
 
+    private func reject(_ ids: [Int]) async {
+        do {
+            _ = try await ManageAPI.post("api/edit", ["ids": ids, "changes": ["pick": 1]])
+            notice = Notice(text: ids.count == 1 ? "The other frame is marked rejected." : "The other \(ids.count) frames are marked rejected.")
+            bursts = bursts.map { b in
+                Burst(id: b.id, frames: b.frames.map { f in var f = f; if ids.contains(f.id) { f.pick = 1 }; return f })
+            }
+        } catch {
+            notice = Notice(text: error.localizedDescription, failed: true)
+        }
+    }
+
     private func load(more: Bool) async {
         loading = true
         defer { loading = false }
@@ -292,7 +316,9 @@ struct ManageBurstsScreen: View {
                 let w = (x["w"] as? NSNumber)?.doubleValue ?? 0, h = (x["h"] as? NSNumber)?.doubleValue ?? 0
                 return Frame(id: pid, best: (x["best"] as? NSNumber)?.boolValue ?? false, ratio: h > 0 ? w / h : 1.4,
                              ts: (x["ts"] as? NSNumber)?.doubleValue ?? 0, sharp: (x["sharpn"] as? NSNumber)?.doubleValue,
-                             faces: (x["faceq"] as? NSNumber)?.doubleValue)
+                             faces: (x["faceq"] as? NSNumber)?.doubleValue, focus: (x["focusn"] as? NSNumber)?.doubleValue,
+                             looks: (x["aesthetic"] as? NSNumber)?.doubleValue, eyesClosed: ((x["eyesClosed"] as? NSNumber)?.intValue ?? 0) > 0,
+                             pick: (x["pick"] as? NSNumber)?.intValue ?? 0)
             })
         }
         bursts = more ? bursts + page : page

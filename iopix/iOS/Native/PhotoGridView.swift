@@ -220,6 +220,7 @@ struct PhotoGridScreen: View {
                         if list?.ranked == true { Text("Best match").tag("rel") }
                         Text("Newest first").tag("new"); Text("Oldest first").tag("old")
                         Text("Recently changed").tag("added"); Text("Top rated").tag("rating")
+                        Text("Best looking first").tag("looks")
                         Text("Sharpest first").tag("sharp"); Text("Blurriest first").tag("blur")
                         Text("File name").tag("name"); Text("Largest files").tag("size")
                     }
@@ -369,6 +370,9 @@ extension PhotoQuery {
         if value("geo") == "0" { return "No location" }
         if value("hastext") != nil { return "Contains text" }
         if value("blurry") != nil { return "Blurry" }
+        if value("looks") != nil { return "Best looking" }
+        if value("eyes") != nil { return "Eyes closed" }
+        if value("rejects") != nil || value("reject") != nil { return "Likely rejects" }
         if value("bbox") != nil { return "This area" }
         if let q = value("q") { return "“\(q)”" }
         return "Photos"

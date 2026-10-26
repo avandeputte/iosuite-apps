@@ -193,6 +193,16 @@ struct FilterSheet: View {
         add("dark", "Very dark", "exposure", "dark")
         add("bright", "Very bright", "exposure", "bright")
         add("hastext", "Contains text", "hastext", "1")
+        // photo quality (iopix 1.81): suggestions only, nothing is marked until someone marks it
+        add("looks", "Best looking tenth", "looks", "top")
+        add("eyes", "Someone's eyes closed", "eyes", "closed")
+        add("rejects", "Likely rejects", "rejects", "1")
+        if (f.extras["rejects"] ?? 0) > 0 {
+            for (k, l) in [("blur", "Blurry all over"), ("eyes", "Eyes closed"), ("burst", "Worse frame of a burst"), ("exposure", "Nearly black or blown out")] {
+                guard let n = f.extras["reject_" + k], n > 0 else { continue }
+                out.append(Row(id: "qr\(k)", label: "↳ " + l, count: n, on: query.has("reject", k)) { query = query.toggling("reject", k) })
+            }
+        }
         return out
     }
 

@@ -41,11 +41,17 @@ struct PhotoDetail {
     var objects: [(name: String, n: Int)] = []
     var ocr: String?
     var sharpness: Double?, faceQuality: Double?, dark = false, bright = false
+    /// Photo quality (iopix 1.81): ranks in the library (0...1), the aesthetic score (about 1-10), closed eyes, and
+    /// why it looks like a reject. Suggestions only: nothing is marked until someone marks it.
+    struct Quality { var focusRank: Double?, aestheticRank: Double?, aesthetic: Double?, eyesChecked = 0, eyesClosed = 0, rejectLabels: [String] = [] }
+    var quality: Quality?
+    var focusMeasured = false
+    var pick = 0
     var burst: (id: Int, size: Int, best: Bool)?
     var similar = false
 
     var hasAI: Bool {
-        captionAI != nil || !concepts.isEmpty || !objects.isEmpty || ocr != nil || sharpness != nil || burst != nil || (similar && !video)
+        captionAI != nil || !concepts.isEmpty || !objects.isEmpty || ocr != nil || sharpness != nil || quality != nil || burst != nil || (similar && !video)
     }
 
     static func load(_ id: Int) async -> PhotoDetail? {
@@ -87,7 +93,8 @@ struct PhotoDetail {
         for t in allTags where (int(t["person"]) ?? 0) != 0 {
             if let tid = int(t["id"]), !faced.contains(tid) { p.faces.append(Face(kind: .tagOnly, tag: tid, name: str(t["name"]), rect: [])) }
         }
-        p.tags = allTags.filter { (int($0["person"]) ?? 0) == 0 }.compactMap { t in
+        // the "Date approximate" tag is said by the date row already
+        p.tags = allTags.filter { (int($0["person"]) ?? 0) == 0 && !((str($0["full"]) ?? "").hasPrefix("Date approximate")) }.compactMap { t in
             guard let tid = int(t["id"]), let n = str(t["name"]) else { return nil }
             return (tid, n)
         }
@@ -143,6 +150,13 @@ struct PhotoDetail {
             p.ocr = String(o.prefix(600)).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
         p.sharpness = num(d["sharpn"]); p.faceQuality = num(d["faceq"])
+        p.pick = int(d["pick"]) ?? 0
+        p.focusMeasured = d["focusn"] is NSNumber
+        if let q = d["quality"] as? [String: Any] {
+            p.quality = Quality(focusRank: num(q["focusRank"]), aestheticRank: num(q["aestheticRank"]), aesthetic: num(q["aesthetic"]),
+                                eyesChecked: int(q["eyesChecked"]) ?? 0, eyesClosed: int(q["eyesClosed"]) ?? 0,
+                                rejectLabels: (q["rejectLabels"] as? [Any] ?? []).compactMap { $0 as? String })
+        }
         if let b = num(d["bright"]) {
             p.dark = b < 0.2 || (num(d["clip_lo"]) ?? 0) > 0.5
             p.bright = b > 0.8 || (num(d["clip_hi"]) ?? 0) > 0.3
@@ -177,6 +191,7 @@ struct PhotoInfoFull: View {
     let open: (String) -> Void
     @State private var d: PhotoDetail?
     @State private var failed = false
+    @State private var rejected: Int?  // marked rejected from here (the panel's copy is not reloaded)
 
     var body: some View {
         ScrollView {
@@ -188,7 +203,7 @@ struct PhotoInfoFull: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, 48)
+            .padding(.top, 8)
             .padding(.bottom, 30)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -348,7 +363,9 @@ struct PhotoInfoFull: View {
         if let t = d.ocr {
             row("text.viewfinder") { Text(t).font(.callout).textSelection(.enabled) } sub: { Text("Text in the picture") }
         }
-        if let s = d.sharpness {
+        if let q = d.quality {
+            qualityRow(d, q)
+        } else if let s = d.sharpness {
             row("sparkles") { Text("Sharper than \(Int((s * 100).rounded()))% of your photos") } sub: {
                 Text([d.faceQuality.map { "Face quality \(Int(($0 * 100).rounded())) / 100" }, d.dark ? "Very dark" : nil, d.bright ? "Very bright" : nil]
                     .compactMap { $0 }.joined(separator: " · "))
@@ -361,6 +378,39 @@ struct PhotoInfoFull: View {
         }
         if d.similar && !d.video {
             row("sparkles") { link("More photos like this", "#/photos?like=\(d.id)") } sub: { EmptyView() }
+        }
+    }
+
+    /// Focus and look as ranks in the library, closed eyes, and why it looks like a reject, as the web app's panel.
+    @ViewBuilder private func qualityRow(_ d: PhotoDetail, _ q: PhotoDetail.Quality) -> some View {
+        let pct = { (v: Double) in Int((v * 100).rounded()) }
+        row("sparkles") {
+            VStack(alignment: .leading, spacing: 2) {
+                if let f = q.focusRank { Text("\(d.focusMeasured ? "In focus more than" : "Sharper than") \(pct(f))% of your photos") }
+                if let a = q.aestheticRank, let s = q.aesthetic { Text("Looks better than \(pct(a))% of them (aesthetic score \(String(format: "%.1f", s)) / 10)") }
+            }
+        } sub: {
+            VStack(alignment: .leading, spacing: 4) {
+                let small = [
+                    q.eyesChecked > 0 ? (q.eyesClosed > 0 ? "Eyes closed on \(q.eyesClosed) of \(q.eyesChecked) \(q.eyesChecked == 1 ? "face" : "faces") checked"
+                                                        : "Eyes open on \(q.eyesChecked == 1 ? "the face" : "all \(q.eyesChecked) faces") checked") : nil,
+                    d.faceQuality.map { "Face sharpness \(pct($0)) / 100" }, d.dark ? "Very dark" : nil, d.bright ? "Very bright" : nil,
+                ].compactMap { $0 }
+                if !small.isEmpty { Text(small.joined(separator: " · ")) }
+                if !q.rejectLabels.isEmpty {
+                    (Text("Likely reject: ").bold() + Text(q.rejectLabels.joined(separator: ", ").lowercased())).foregroundStyle(.orange)
+                    if d.pick == 1 || rejected == d.id {
+                        Text("Marked rejected")
+                    } else if EditRights.shared.canWrite {
+                        Button("Mark as rejected") {
+                            Task {
+                                if (try? await EditAPI.post("api/edit", ["ids": [d.id], "changes": ["pick": 1]])) != nil { rejected = d.id }
+                            }
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
         }
     }
 
