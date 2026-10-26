@@ -50,6 +50,12 @@ struct PhotoPager: View {
         return start.list.isVideo(original)
     }
 
+    /// The date of page `i` as far as it is known ("May 1992", "1992", "Date unknown" for an approximate one).
+    private func dateText(_ i: Int) -> String? {
+        guard i < ids.count, let original = start.list.ids.firstIndex(of: ids[i]) else { return nil }
+        return start.list.dateText(original)
+    }
+
     private func takenAt(_ i: Int) -> Double? {
         guard i < ids.count, let original = start.list.ids.firstIndex(of: ids[i]), original < start.list.times.count,
               start.list.times[original] > 0 else { return nil }
@@ -121,8 +127,8 @@ struct PhotoPager: View {
             Button { dismiss() } label: { ViewerIcon(symbol: "xmark") }
                 .accessibilityLabel("Close")
             VStack(alignment: .leading, spacing: 2) {
-                if let t = takenAt(index) {
-                    Text(Self.day(t)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                if let t = dateText(index) {
+                    Text(t).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 if ids.count > 1 { Text("\(index + 1) of \(ids.count)").font(.caption).foregroundStyle(.white.opacity(0.7)) }
             }

@@ -335,7 +335,7 @@ struct ExploreView: View {
         let i = favs.first ?? (0..<r.ids.count).max { r.ratio($0) < r.ratio($1) } ?? 0
         let ts = i < r.times.count ? r.times[i] : 0
         return Hero(list: r, index: i, title: favs.isEmpty ? "Rediscover" : "From your favorites",
-                    subtitle: ts > 0 ? PhotoPager.day(ts) : "")
+                    subtitle: ts > 0 ? (r.dateText(i) ?? "") : "")
     }
 
     /// The banner's photo, blurred, behind the top of the page: a little colour from the library itself.
@@ -423,7 +423,7 @@ struct ExploreView: View {
         }
         .buttonStyle(.plain)
         .contextMenu { photoMenu(list.ids[i]) }
-        .accessibilityLabel(i < list.times.count && list.times[i] > 0 ? PhotoPager.day(list.times[i]) : "Photo")
+        .accessibilityLabel(list.dateText(i) ?? "Photo")
     }
 
     /// Right-click (Mac) or long-press on a photo, as in the Photos grid.
@@ -446,7 +446,7 @@ struct ExploreView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu { photoMenu(list.ids[i]) }
-                .accessibilityLabel(i < list.times.count && list.times[i] > 0 ? PhotoPager.day(list.times[i]) : "Photo")
+                .accessibilityLabel(list.dateText(i) ?? "Photo")
             }
         }
     }

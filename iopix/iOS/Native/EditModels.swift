@@ -34,6 +34,8 @@ struct EditDetail: Equatable {
     var title = ""
     var caption = ""
     var taken: Date?
+    /// How much of the date is known (iopix 1.80): nil exact, 1 month and year, 2 year only, 3 unknown.
+    var precision: Int?
     var lat: Double?, lon: Double?, alt: Double?
     /// Only the town is known: how far off the position may be, in metres (the web app's "approximate").
     var accuracy: Double?
@@ -74,6 +76,7 @@ struct EditDetail: Equatable {
         title = str("title") ?? ""
         caption = str("caption") ?? ""   // never caption_ai
         taken = str("taken").flatMap { Self.takenFormat.date(from: String($0.prefix(19))) }
+        precision = PhotoDates.level(str("datePrecision"))
         lat = num("lat"); lon = num("lon"); alt = num("alt")
         accuracy = ((d["extra"] as? [String: Any])?["gpsAccuracy"] as? NSNumber)?.doubleValue
         place = [str("place"), str("region"), str("country")].compactMap { $0 }.joined(separator: ", ")

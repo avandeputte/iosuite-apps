@@ -17,6 +17,8 @@ struct PhotoDetail {
     var id = 0
     var title: String?, caption: String?
     var date: Date?
+    /// How much of the date is known: nil exact, 1 month and year, 2 year only, 3 unknown (iopix 1.80).
+    var precision: Int?
     var day: String?
     var name = "", path = ""
     var w = 0, h = 0, size = 0
@@ -55,6 +57,7 @@ struct PhotoDetail {
         p.id = id
         p.title = str(d["title"]); p.caption = str(d["caption"])
         if let ts = num(d["ts"]) { p.date = Date(timeIntervalSince1970: ts) }
+        p.precision = PhotoDates.level(str(d["datePrecision"]))
         p.day = str(d["day"])
         p.name = str(d["name"]) ?? ""; p.path = str(d["path"]) ?? ""
         p.w = int(d["w"]) ?? 0; p.h = int(d["h"]) ?? 0; p.size = int(d["size"]) ?? 0
@@ -199,7 +202,19 @@ struct PhotoInfoFull: View {
     @ViewBuilder private func content(_ d: PhotoDetail) -> some View {
         if let t = d.title { Text(t).font(.title3.bold()).textSelection(.enabled) }
         if let c = d.caption { Text(c).foregroundStyle(.secondary).textSelection(.enabled) }
-        if let date = d.date {
+        if let date = d.date, let n = d.precision {
+            // an approximate date: only what is known, never the placeholder day
+            let y = String((d.day ?? "").prefix(4)), ym = String((d.day ?? "").prefix(7))
+            let last = Calendar(identifier: .gregorian).range(of: .day, in: .month, for: date).map { $0.count } ?? 31
+            let span: String? = n == 2 ? "from=\(y)-01-01&to=\(y)-12-31" : n == 1 ? "from=\(ym)-01&to=\(ym)-\(String(format: "%02d", last))" : nil
+            row("calendar") {
+                link(PhotoDates.text(date.timeIntervalSince1970, precision: n), span.map { "#/photos?\($0)&sort=old" })
+            } sub: {
+                Text(n == 1 ? "Approximate date · the day is not known" : n == 2 ? "Approximate date · only the year is known"
+                     : "Sorted under \(PhotoDates.text(date.timeIntervalSince1970, precision: nil, time: false)), a placeholder")
+                    .foregroundStyle(.orange)
+            }
+        } else if let date = d.date {
             row("calendar") {
                 link(date.formatted(PhotoDetail.utc(.dateTime.weekday(.wide).month(.wide).day().year())), d.day.map { "#/photos?from=\($0)&to=\($0)&sort=old" })
             } sub: { Text(date.formatted(PhotoDetail.utc(.dateTime.hour().minute()))) }

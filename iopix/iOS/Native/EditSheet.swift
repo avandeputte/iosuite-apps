@@ -38,6 +38,16 @@ struct PhotoEditSheet: View {
     @State private var confirmRevert = false
     @State private var busy: String?
 
+    /// The year and month of an approximate date, kept in the draft's date as its placeholder (the 1st of the month).
+    private var approxYear: Binding<Int> {
+        Binding(get: { DateKnown.utc.component(.year, from: draft.taken ?? Date()) },
+                set: { y in draft.taken = DateKnown.utc.date(from: DateComponents(year: y, month: approxMonth.wrappedValue, day: 1)) })
+    }
+    private var approxMonth: Binding<Int> {
+        Binding(get: { DateKnown.utc.component(.month, from: draft.taken ?? Date()) },
+                set: { m in draft.taken = DateKnown.utc.date(from: DateComponents(year: approxYear.wrappedValue, month: m, day: 1)) })
+    }
+
     private var changes: [String: Any] {
         guard let o = original else { return [:] }
         var c: [String: Any] = [:]
@@ -46,7 +56,25 @@ struct PhotoEditSheet: View {
         if draft.rating != o.rating { c["rating"] = draft.rating }
         if draft.pick != o.pick { c["pick"] = draft.pick }
         if draft.color != o.color { c["color"] = draft.color }
-        if let t = draft.taken, t != o.taken { c["taken"] = EditAPI.takenString(t) }
+        // the date, and how much of it is known (an approximate one goes as "YYYY" or "YYYY-MM")
+        let known = DateKnown(level: draft.precision), was = DateKnown(level: o.precision)
+        let cal = DateKnown.utc
+        func ym(_ d: Date?) -> String? { d.map { String(format: "%04d-%02d", cal.component(.year, from: $0), cal.component(.month, from: $0)) } }
+        switch known {
+        case .exact:
+            if was != .exact {
+                c["date_precision"] = "exact"
+                if let t = draft.taken { c["taken"] = EditAPI.takenString(t) }
+            } else if let t = draft.taken, t != o.taken { c["taken"] = EditAPI.takenString(t) }
+        case .month:
+            if was != .month || ym(draft.taken) != ym(o.taken), let s = ym(draft.taken) { c["date_precision"] = "month"; c["taken"] = s }
+        case .year:
+            if was != .year || ym(draft.taken)?.prefix(4) != ym(o.taken)?.prefix(4), let s = ym(draft.taken) {
+                c["date_precision"] = "year"; c["taken"] = String(s.prefix(4))
+            }
+        case .unknown:
+            if was != .unknown { c["date_precision"] = "unknown" }
+        }
         let before = Set(o.keywords.map(\.id)), after = Set(draft.keywords.map(\.id))
         if !after.subtracting(before).isEmpty { c["add_tags"] = Array(after.subtracting(before)) }
         if !before.subtracting(after).isEmpty { c["remove_tags"] = Array(before.subtracting(after)) }
@@ -167,14 +195,27 @@ struct PhotoEditSheet: View {
                     }
                 }
             }
-            Section("Date taken") {
-                DatePicker("Taken", selection: Binding(get: { draft.taken ?? Date() }, set: { draft.taken = $0 }),
-                           displayedComponents: [.date, .hourAndMinute])
-                    .environment(\.timeZone, TimeZone(identifier: "UTC")!)
-                if draft.taken == nil { Text("No date yet: pick one to set it.").font(.footnote).foregroundStyle(.secondary) }
+            Section {
+                Picker("Date known", selection: Binding(get: { DateKnown(level: draft.precision) }, set: { draft.precision = $0.level })) {
+                    ForEach(DateKnown.allCases) { Text($0.label).tag($0) }
+                }
+                switch DateKnown(level: draft.precision) {
+                case .exact:
+                    DatePicker("Taken", selection: Binding(get: { draft.taken ?? Date() }, set: { draft.taken = $0 }),
+                               displayedComponents: [.date, .hourAndMinute])
+                        .environment(\.timeZone, TimeZone(identifier: "UTC")!)
+                    if draft.taken == nil { Text("No date yet: pick one to set it.").font(.footnote).foregroundStyle(.secondary) }
+                case .month, .year:
+                    ApproxDateFields(known: DateKnown(level: draft.precision), year: approxYear, month: approxMonth)
+                case .unknown:
+                    EmptyView()
+                }
+            } header: { Text("Date taken") } footer: {
+                if let n = DateKnown(level: draft.precision).note(many: false) { Text(n) }
             }
             Section {
-                ForEach(draft.keywords) { t in
+                // the "Date approximate" tag is set by "Date known" above, not by hand
+                ForEach(draft.keywords.filter { !$0.full.hasPrefix("Date approximate/") }) { t in
                     HStack {
                         Label(t.name, systemImage: "tag")
                         Spacer()

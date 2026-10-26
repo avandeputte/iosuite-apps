@@ -310,21 +310,24 @@ struct PhotoGridScreen: View {
             out.append(GridRow(id: "p\(list.ids[pending[0]])", kind: .photos(pending, h)))
             pending = []; sum = 0
         }
-        var lastDay: DateComponents?
+        var lastDay: String?
         var dayStart = 0
         for i in list.ids.indices {
             if byDay {
                 let t = i < list.times.count ? list.times[i] : 0
                 let d = calendar.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: t))
-                if d != lastDay {
+                // an approximate date has its own heading ("May 1992", "1992", "Date unknown"), not its placeholder day
+                let p = list.precision[i]
+                let key = p.map { "p\($0)|\(PhotoDates.text(t, precision: $0))" } ?? "\(d.year ?? 0)-\(d.month ?? 0)-\(d.day ?? 0)"
+                if key != lastDay {
                     flush(full: false)
                     if let headerIndex = out.lastIndex(where: { if case .day = $0.kind { return true } else { return false } }),
                        case .day(let label, _, let y) = out[headerIndex].kind {
                         out[headerIndex] = GridRow(id: out[headerIndex].id, kind: .day(label, i - dayStart, year: y))
                     }
-                    let label = t > 0 ? dayFormat.string(from: Date(timeIntervalSince1970: t)) : "Date unknown"
+                    let label = p != nil ? PhotoDates.text(t, precision: p) : t > 0 ? dayFormat.string(from: Date(timeIntervalSince1970: t)) : "Date unknown"
                     out.append(GridRow(id: "d\(list.ids[i])", kind: .day(label, 0, year: d.year ?? 0)))
-                    lastDay = d
+                    lastDay = key
                     dayStart = i
                 }
             }

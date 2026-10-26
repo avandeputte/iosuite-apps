@@ -2,6 +2,30 @@ import SwiftUI
 import UIKit
 
 /// A list of photos from iopix, as the web app gets it: ids in order, and which of them are videos.
+/// A photo's date as people should read it. Times are the camera's clock kept as UTC. An approximate date has a
+/// placeholder day (1 January, or the 1st of the month) that is never shown: only the part that is known.
+enum PhotoDates {
+    /// iopix's names ("month", "year", "unknown") as levels 1, 2, 3; nil for an exact date.
+    static func level(_ name: String?) -> Int? { ["month": 1, "year": 2, "unknown": 3][name ?? ""] }
+    static func name(_ level: Int?) -> String { [1: "month", 2: "year", 3: "unknown"][level ?? 0] ?? "exact" }
+
+    static func text(_ ts: Double, precision: Int?, time: Bool = true) -> String {
+        let d = Date(timeIntervalSince1970: ts)
+        switch precision {
+        case 3: return "Date unknown"
+        case 2: return d.formatted(utc(.dateTime.year()))
+        case 1: return d.formatted(utc(.dateTime.month(.wide).year()))
+        default: return time ? d.formatted(utc(.dateTime.month(.abbreviated).day().year().hour().minute())) : d.formatted(utc(.dateTime.month(.abbreviated).day().year()))
+        }
+    }
+
+    static func utc(_ f: Date.FormatStyle) -> Date.FormatStyle {
+        var f = f
+        f.timeZone = TimeZone(identifier: "UTC")!
+        return f
+    }
+}
+
 struct PhotoList: Equatable {
     var ids: [Int] = []
     var videos: Set<Int> = []  // positions in ids
@@ -11,6 +35,15 @@ struct PhotoList: Equatable {
     var geo: Set<Int> = []     // positions with a location
     var faces: Set<Int> = []   // positions with a named face
     var durations: [Int: Int] = [:]  // position of a video -> its length in seconds, when known
+    /// Positions whose date is only partly known (iopix 1.80): 1 month and year, 2 year only, 3 unknown.
+    var precision: [Int: Int] = [:]
+
+    /// The date of the photo at `i` as far as it is known ("May 1992", "1992", "Date unknown"), nil when its time is
+    /// not in the list.
+    func dateText(_ i: Int) -> String? {
+        guard i < times.count, times[i] > 0 || precision[i] == 3 else { return nil }
+        return PhotoDates.text(times[i], precision: precision[i])
+    }
 
     func hasLocation(_ i: Int) -> Bool { geo.contains(i) }
     func hasFaces(_ i: Int) -> Bool { faces.contains(i) }
@@ -33,6 +66,9 @@ struct PhotoList: Equatable {
         faces = Set((j["faces"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue })
         for (k, v) in j["video"] as? [String: Any] ?? [:] {
             if let i = Int(k), let d = (v as? NSNumber)?.intValue, d > 0 { durations[i] = d }
+        }
+        for (k, v) in j["dp"] as? [String: Any] ?? [:] {
+            if let i = Int(k), let p = (v as? NSNumber)?.intValue, p > 0 { precision[i] = p }
         }
         let w = (j["w"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
         let h = (j["h"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }

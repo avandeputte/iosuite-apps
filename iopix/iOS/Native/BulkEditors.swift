@@ -156,6 +156,9 @@ struct BulkEditSheet: View {
     @State private var title = ""
     @State private var caption = ""
     @State private var taken = Date()
+    @State private var known = DateKnown.exact
+    @State private var knownYear = 0   // 0: each photo's own
+    @State private var knownMonth = 1
     @State private var amount = 1
     @State private var unit = 3600
 
@@ -193,9 +196,25 @@ struct BulkEditSheet: View {
                     Button("Apply caption") { save(["caption": caption.trimmingCharacters(in: .whitespaces)], done: caption.isEmpty ? "Caption cleared." : "Caption set.") }
                 }
                 Section {
-                    DatePicker("Set all to", selection: $taken, displayedComponents: [.date, .hourAndMinute])
-                        .environment(\.timeZone, TimeZone(identifier: "UTC")!)
-                    Button("Set date") { save(["taken": Self.stamp(taken)]) }
+                    Picker("Date known", selection: $known) { ForEach(DateKnown.allCases) { Text($0.label).tag($0) } }
+                    switch known {
+                    case .exact:
+                        DatePicker("Set all to", selection: $taken, displayedComponents: [.date, .hourAndMinute])
+                            .environment(\.timeZone, TimeZone(identifier: "UTC")!)
+                        Button("Set date") { save(["taken": Self.stamp(taken)]) }
+                    case .month, .year:
+                        ApproxDateFields(known: known, year: $knownYear, month: $knownMonth, allowOwn: true)
+                        Button("Set date") { saveApprox() }
+                    case .unknown:
+                        Button("Mark as unknown") { save(["date_precision": "unknown"], done: "Marked as date unknown.") }
+                    }
+                } header: { Text("Date") } footer: {
+                    if let n = known.note(many: true) {
+                        Text(n + (known == .exact ? "" : " With “Each photo's own”, each keeps its own \(known == .year ? "year" : "month and year")."))
+                    }
+                }
+                if known == .exact {
+                Section {
                     Stepper("Shift by \(amount)", value: $amount, in: 1...999)
                     Picker("Unit", selection: $unit) {
                         Text("hours").tag(3600); Text("minutes").tag(60); Text("days").tag(86400); Text("seconds").tag(1)
@@ -204,8 +223,9 @@ struct BulkEditSheet: View {
                         Button("Later") { save(["shift": amount * unit]) }.buttonStyle(.bordered)
                         Button("Earlier") { save(["shift": -amount * unit]) }.buttonStyle(.bordered)
                     }
-                } header: { Text("Date") } footer: {
+                } footer: {
                     Text("Shifting keeps each photo's own time and moves it by the same amount, for a camera clock that was wrong.")
+                }
                 }
             }
             .navigationTitle("Edit \(BulkEdit.plural(ids.count, "photo"))")
@@ -215,6 +235,16 @@ struct BulkEditSheet: View {
     }
 
     /// The camera's clock, written as the server takes it (YYYY-MM-DDTHH:MM:SS, no zone).
+    /// Month and year, or year only, for all of them: the known part goes as "YYYY-MM" or "YYYY"; with "each photo's
+    /// own" nothing goes, and each keeps its own year (and month).
+    private func saveApprox() {
+        var ch: [String: Any] = ["date_precision": known.apiName]
+        if knownYear > 0 {
+            ch["taken"] = known == .year ? String(format: "%04d", knownYear) : String(format: "%04d-%02d", knownYear, max(1, knownMonth))
+        }
+        save(ch, done: known == .year ? "Marked as year only." : "Marked as month and year.")
+    }
+
     static func stamp(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

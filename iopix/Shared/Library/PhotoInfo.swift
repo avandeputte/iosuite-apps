@@ -19,7 +19,9 @@ struct PhotoInfo {
         func num(_ k: String) -> Double? { (d[k] as? NSNumber)?.doubleValue }
         var i = PhotoInfo()
         i.title = str("title") ?? str("caption")  // never the AI-written description: only what a person wrote
-        if let taken = str("taken") {
+        if let n = PhotoDates.level(str("datePrecision")), let ts = num("ts") {
+            i.when = PhotoDates.text(ts, precision: n) + (n < 3 ? " (approximate)" : "")
+        } else if let taken = str("taken") {
             let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             if let date = f.date(from: taken) {
                 i.when = date.formatted(date: .complete, time: .shortened)
