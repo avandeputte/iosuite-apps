@@ -17,8 +17,10 @@ struct PlacesScreen: View {
                 placeList
             }
         }
+        .hardTopEdge()
         .navigationTitle("Places")
         .navigationBarTitleDisplayMode(.inline)
+        .globalSearch()
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Show", selection: $router.placesShowsMap) {

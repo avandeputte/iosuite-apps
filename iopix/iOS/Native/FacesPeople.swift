@@ -62,8 +62,10 @@ struct FacesPeopleScreen: View {
             }
             .padding(16)
         }
+        .hardTopEdge()
         .navigationTitle("People")
-        .searchable(text: $search, prompt: "Find a person")
+        // the library search: typing narrows the people here too; Return or a suggestion opens the photos
+        .globalSearch(text: $search)
         .toolbar { toolbar }
         .refreshable { await load() }
         .task { await load() }

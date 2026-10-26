@@ -148,9 +148,6 @@ struct ExploreView: View {
     @AppStorage("explore.size") private var size = "m"
     @State private var viewer: PagerStart?
     @State private var signingIn = false
-    /// The search at the top: what it finds opens in Photos, as a search there would.
-    @State private var search = ""
-    @State private var searchQuery = PhotoQuery()
     var showUploads: () -> Void = {}
 
     private var wide: Bool { width == .regular }
@@ -176,18 +173,9 @@ struct ExploreView: View {
                 }
             }
             .background(alignment: .top) { wash }
+            .hardTopEdge()
             .navigationTitle("Explore")
-            .librarySearch(text: $search, query: $searchQuery) {
-                let q = search.trimmingCharacters(in: .whitespaces)
-                if !q.isEmpty { showInPhotos(PhotoQuery([("q", q)])) }
-                search = ""
-            }
-            .onChange(of: searchQuery) { _, q in
-                guard !q.filters.isEmpty else { return }
-                showInPhotos(q)
-                searchQuery = PhotoQuery()
-            }
-            .task { await BulkCatalog.shared.load() }
+            .globalSearch()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { sizePicker }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -206,11 +194,6 @@ struct ExploreView: View {
             }
             .fullScreenCover(item: $viewer) { PhotoPager(start: $0).environmentObject(store).environmentObject(router) }
         }
-    }
-
-    private func showInPhotos(_ q: PhotoQuery) {
-        router.photosPath = [.photos(q)]
-        router.tab = .photos
     }
 
     private func reload() async {

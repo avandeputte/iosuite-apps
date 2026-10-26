@@ -192,6 +192,7 @@ struct ScreenView: View {
         case .map:
             PhotoMap { bbox in Router.shared.morePath.append(.photos(PhotoQuery([("bbox", bbox)]), title: "This area")) }
                 .navigationTitle("Map").navigationBarTitleDisplayMode(.inline).ignoresSafeArea(edges: .bottom)
+                .globalSearch()
         case .web(let route):
             WebTabView(tab: .more, route: route, changeServer: showUploads)
                 .navigationTitle(MoreView.title(of: route))

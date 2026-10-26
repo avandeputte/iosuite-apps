@@ -10,6 +10,43 @@ extension View {
     }
 }
 
+extension View {
+    /// The library search on a page that is not Photos (Explore, People, Places): what it finds opens in Photos.
+    /// `text`, when given, is the page's own filter too (People narrows its list as you type).
+    func globalSearch(text: Binding<String>? = nil) -> some View {
+        modifier(GlobalSearch(external: text))
+    }
+}
+
+private struct GlobalSearch: ViewModifier {
+    var external: Binding<String>?
+    @EnvironmentObject private var router: Router
+    @State private var own = ""
+    @State private var query = PhotoQuery()
+
+    func body(content: Content) -> some View {
+        let text = external ?? $own
+        content
+            .librarySearch(text: text, query: $query) {
+                let q = text.wrappedValue.trimmingCharacters(in: .whitespaces)
+                if !q.isEmpty { show(PhotoQuery([("q", q)])) }
+                text.wrappedValue = ""
+            }
+            .onChange(of: query) { _, q in
+                guard !q.filters.isEmpty else { return }
+                show(q)
+                query = PhotoQuery()
+                text.wrappedValue = ""
+            }
+            .task { await BulkCatalog.shared.load() }
+    }
+
+    private func show(_ q: PhotoQuery) {
+        router.photosPath = [.photos(q)]
+        router.tab = .photos
+    }
+}
+
 private let searchPrompt = "Search people, tags, places, captions"
 
 private struct LibrarySearch: ViewModifier {

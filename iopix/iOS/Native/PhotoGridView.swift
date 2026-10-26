@@ -65,6 +65,7 @@ struct PhotoGridScreen: View {
                     content(width: geo.size.width - (wide ? 32 : 8), proxy: proxy)
                 }
                 .refreshable { await load(force: true) }
+                .hardTopEdge()
                 .toolbar { toolbar(proxy) }
             }
         }
