@@ -72,13 +72,20 @@ struct CoverCard: View {
     var body: some View {
         VStack(spacing: 14) {
             Group {
-                if let image { RemoteImage(path: image) } else { Color.white.opacity(0.08) }
+                if let image {
+                    RemoteImage(path: image)
+                } else {
+                    // a picture all the same: the focus effect lifts the card's first image, and a card without
+                    // one shows no focus at all (the remote seemed to skip it)
+                    Image(systemName: badge ?? "photo").resizable().scaledToFit().frame(width: 90, height: 90)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white.opacity(0.08))
+                }
             }
             .frame(width: round ? 220 : 340, height: round ? 220 : 230)
             // as Text, not Image: the focus effect lifts the card's first picture, which must stay the photo
-            .overlay(alignment: image == nil ? .center : .topTrailing) {
-                if let badge {
-                    Text(Image(systemName: badge)).font(image == nil ? .system(size: 70) : .title3).padding(14).shadow(radius: 4)
+            .overlay(alignment: .topTrailing) {
+                if let badge, image != nil {
+                    Text(Image(systemName: badge)).font(.title3).padding(14).shadow(radius: 4)
                 }
             }
             .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 12)))
@@ -130,8 +137,10 @@ struct AlbumsView: View {
             if store.favorites > 0 || !store.albums.isEmpty {
             LazyVGrid(columns: gridColumns, spacing: 60) {
                 if store.favorites > 0 {
-                    NavigationLink(value: Album(id: -1, name: "Favorites", count: store.favorites, cover: nil)) {
-                        CoverCard(title: "Favorites", subtitle: "\(store.favorites)", image: nil, badge: "heart.fill")
+                    // the newest favorite as its cover, like the other albums
+                    let cover = store.favoriteIDs.max()
+                    NavigationLink(value: Album(id: -1, name: "Favorites", count: store.favorites, cover: cover)) {
+                        CoverCard(title: "Favorites", subtitle: "\(store.favorites)", image: cover.map { "thumb/\($0)" }, badge: "heart.fill")
                     }
                     .buttonStyle(.borderless)
                 }
