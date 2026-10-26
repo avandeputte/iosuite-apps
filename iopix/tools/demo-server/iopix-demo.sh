@@ -1,42 +1,84 @@
 #!/usr/bin/env bash
-# iopix demo server for the App Store review, as one self-contained Proxmox LXC.
+# iopix demo server for the App Store review, as one self-contained Proxmox LXC, built (and rebuilt) from scratch.
 #
-# Run on the Proxmox host as root:
+# Run on the Proxmox host as root. The first time, with the Cloudflare tunnel's token:
 #   CF_TUNNEL_TOKEN=eyJ... bash iopix-demo.sh
+# Any time later, to throw the demo away and build it again from nothing (same container id, same tunnel, same
+# passwords, so demo.iopix.net and the sign-in given to App Review keep working):
+#   bash iopix-demo.sh --rebuild
+# Add --new-passwords for fresh passwords, --yes to skip the question before the old container is deleted.
 #
 # It creates an unprivileged Debian 13 container, installs iopix inside it without digiKam (iopix keeps the
 # library itself), fills it with freely licensed sample photos (Unsplash, via picsum.photos) given dates and
-# places, creates two accounts with generated passwords (no passwordless account), makes visitors sign in
-# before seeing anything, and connects it to Cloudflare with the tunnel token, so it answers at the public
-# hostname set on that tunnel (demo.iopix.net) with no Cloudflare Access in front.
+# places, creates two accounts with passwords (no passwordless account), makes visitors sign in before seeing
+# anything, and connects it to Cloudflare with the tunnel token, so it answers at the public hostname set on
+# that tunnel (demo.iopix.net) with no Cloudflare Access in front.
 #
-# Nothing on the host is shared with the container: no bind mounts, its own disk, its own data.
+# Nothing on the host is shared with the container: no bind mounts, its own disk, its own data. The only thing
+# kept on the host is /root/iopix-demo.conf (root only): the container id, the tunnel token and the passwords.
 #
-# Settings (environment, all optional):
+# Settings (environment, all optional; they win over what /root/iopix-demo.conf remembers):
 #   CF_TUNNEL_TOKEN   the token of a Cloudflare tunnel (Zero Trust › Networks › Tunnels); without it the demo
-#                     runs on the local network only, and the end of the output says how to add it later
-#   CTID              container id (default: the next free one)
+#                     runs on the local network only
+#   CTID              container id (default: the remembered one, else the next free one)
 #   CT_STORAGE        storage for the container's disk (default: local-lvm)
 #   CT_BRIDGE         network bridge (default: vmbr0)
 #   CT_HOSTNAME       (default: iopix-demo)
 #   PHOTO_COUNT       how many sample photos (default: 48)
 set -euo pipefail
 
-CTID="${CTID:-$(pvesh get /cluster/nextid)}"
-CT_STORAGE="${CT_STORAGE:-local-lvm}"
-CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
-CT_HOSTNAME="${CT_HOSTNAME:-iopix-demo}"
-PHOTO_COUNT="${PHOTO_COUNT:-48}"
-CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
+REBUILD=0; NEWPW=0; YES=0
+for a in "$@"; do
+  case "$a" in
+    --rebuild) REBUILD=1;; --new-passwords) NEWPW=1;; --yes|-y) YES=1;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0;;
+    *) echo "Unknown option: $a (try --help)" >&2; exit 1;;
+  esac
+done
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 command -v pct >/dev/null || die "Run this on the Proxmox host (pct not found)."
 [ "$(id -u)" = 0 ] || die "Run as root."
 
-# passwords: generated here, shown once at the end, kept in the container at /root/demo-accounts.txt
-gen() { tr -dc 'A-HJ-NP-Za-km-z2-9' </dev/urandom | head -c 16; }
-ADMIN_PW="$(gen)"; REVIEW_PW="$(gen)"
+# what earlier runs remember; the environment wins over it
+CONF=/root/iopix-demo.conf
+ENV_CTID="${CTID:-}"; ENV_TOKEN="${CF_TUNNEL_TOKEN:-}"
+SAVED_CTID=""; SAVED_TOKEN=""; ADMIN_PW=""; REVIEW_PW=""
+# shellcheck disable=SC1090
+[ -f "$CONF" ] && . "$CONF"
+CTID="${ENV_CTID:-$SAVED_CTID}"
+CF_TUNNEL_TOKEN="${ENV_TOKEN:-$SAVED_TOKEN}"
+CT_STORAGE="${CT_STORAGE:-local-lvm}"
+CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
+CT_HOSTNAME="${CT_HOSTNAME:-iopix-demo}"
+PHOTO_COUNT="${PHOTO_COUNT:-48}"
+
+# passwords: made once, then kept, so a rebuild does not break the sign-in given to Apple
+# (tr stops with SIGPIPE once head has its 16 characters: not a failure, so pipefail must not see it)
+gen() { (set +o pipefail; LC_ALL=C tr -dc 'A-HJ-NP-Za-km-z2-9' </dev/urandom 2>/dev/null | head -c 16); }
+if [ "$NEWPW" = 1 ] || [ -z "$ADMIN_PW" ]; then ADMIN_PW="$(gen)"; fi
+if [ "$NEWPW" = 1 ] || [ -z "$REVIEW_PW" ]; then REVIEW_PW="$(gen)"; fi
+
+# the old demo goes first; only a container this script made (tagged iopix-demo) is ever deleted
+if [ -n "$CTID" ] && pct status "$CTID" >/dev/null 2>&1; then
+  pct config "$CTID" | grep -Eq '^tags:.*iopix-demo' || die "Container $CTID exists and is not the iopix demo; set CTID to another id."
+  [ "$REBUILD" = 1 ] || die "The demo already exists as container $CTID. Run with --rebuild to replace it with a fresh one."
+  if [ "$YES" != 1 ]; then
+    read -r -p "Delete container $CTID and build the demo again from scratch? [y/N] " ok
+    case "$ok" in y|Y) ;; *) die "Nothing changed.";; esac
+  fi
+  say "Removing the old demo (container $CTID)"
+  pct stop "$CTID" >/dev/null 2>&1 || true
+  pct destroy "$CTID" --purge 1
+fi
+[ -n "$CTID" ] || CTID="$(pvesh get /cluster/nextid)"
+
+( umask 077
+  { echo "# kept by iopix-demo.sh: the demo's container, Cloudflare tunnel token and passwords (root only)"
+    printf 'SAVED_CTID=%q\nSAVED_TOKEN=%q\nADMIN_PW=%q\nREVIEW_PW=%q\n' "$CTID" "$CF_TUNNEL_TOKEN" "$ADMIN_PW" "$REVIEW_PW"
+  } > "$CONF" )
+chmod 600 "$CONF"
 
 say "Debian 13 template"
 pveam update >/dev/null
@@ -50,7 +92,7 @@ pct create "$CTID" "$TSTORE:vztmpl/$TEMPLATE" \
   --hostname "$CT_HOSTNAME" --unprivileged 1 --features nesting=1 \
   --cores 2 --memory 2048 --swap 512 --rootfs "$CT_STORAGE:12" \
   --net0 "name=eth0,bridge=$CT_BRIDGE,ip=dhcp" --onboot 1 \
-  --description "iopix demo for the App Store review (sample photos only)"
+  --tags iopix-demo --description "iopix demo for the App Store review (sample photos only)"
 pct start "$CTID"
 for _ in $(seq 1 30); do pct exec "$CTID" -- sh -c 'getent hosts deb.debian.org >/dev/null' && break; sleep 2; done
 
@@ -71,16 +113,17 @@ say "Done"
 cat <<EOF
 Demo iopix: http://$IP:8600 on your network$( [ -n "$CF_TUNNEL_TOKEN" ] && echo ", and at the tunnel's public hostname (demo.iopix.net)" )
 
-Accounts (also in the container at /root/demo-accounts.txt):
+Accounts (also in $CONF on this host, and /root/demo-accounts.txt in the container):
   appreview   $REVIEW_PW   editor: for Apple's reviewer
   admin       $ADMIN_PW   admin: for you
 
 Visitors see only the sign-in screen until they sign in.
+To start again from scratch at any time:  bash $0 --rebuild
 EOF
 [ -n "$CF_TUNNEL_TOKEN" ] || cat <<EOF
 
-No tunnel yet. Once you have the token, connect it with:
-  pct exec $CTID -- cloudflared service install <TOKEN>
+No tunnel yet. Once you have the token, rebuild with it (it is remembered from then on):
+  CF_TUNNEL_TOKEN=<TOKEN> bash $0 --rebuild
 EOF
 exit 0
 
