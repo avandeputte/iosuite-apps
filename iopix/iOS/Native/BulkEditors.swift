@@ -508,13 +508,9 @@ struct BulkLocationSheet: View {
         let q = search.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2 else { return }
         do {
-            let r = try await IopixClient.shared.json("api/geocode", query: [URLQueryItem(name: "q", value: q)])
-            results = (r["results"] as? [[String: Any]] ?? []).compactMap { x in
-                guard let la = (x["lat"] as? NSNumber)?.doubleValue, let lo = (x["lon"] as? NSNumber)?.doubleValue else { return nil }
-                return (x["name"] as? String ?? "", x["detail"] as? String, la, lo)
-            }
-            resultNote = r["note"] as? String ?? (results.isEmpty ? (r["source"] as? String == "offline" ? "No town by that name in the offline place list." : "Nothing found.") : nil)
-        } catch { resultNote = error.localizedDescription }
+            results = try await AppleSearch.places(q).map { ($0.name, $0.detail.isEmpty ? nil : $0.detail, $0.lat, $0.lon) }
+            resultNote = results.isEmpty ? "Nothing found." : nil
+        } catch { results = []; resultNote = AppleSearch.message(error) }
     }
 
     private func suggest() async {

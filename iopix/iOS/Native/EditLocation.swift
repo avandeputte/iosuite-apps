@@ -152,15 +152,11 @@ struct EditLocationSheet: View {
         guard q.count >= 2 else { return }
         note = nil
         do {
-            let r = try await EditAPI.get("api/geocode", [URLQueryItem(name: "q", value: q)])
-            hits = (r["results"] as? [[String: Any]] ?? []).compactMap { x in
-                guard let la = (x["lat"] as? NSNumber)?.doubleValue, let lo = (x["lon"] as? NSNumber)?.doubleValue else { return nil }
-                return Hit(name: x["name"] as? String ?? q, detail: x["detail"] as? String ?? "", lat: la, lon: lo, alt: nil, thumb: nil)
-            }
-            if hits.isEmpty { note = r["source"] as? String == "offline" ? "No town by that name in the offline list." : "Nothing found." }
-            if let n = r["note"] as? String { note = n }
+            hits = try await AppleSearch.places(q).map { Hit(name: $0.name, detail: $0.detail, lat: $0.lat, lon: $0.lon, alt: nil, thumb: nil) }
+            if hits.isEmpty { note = "Nothing found." }
         } catch {
-            note = error.localizedDescription
+            hits = []
+            note = AppleSearch.message(error)
         }
     }
 
