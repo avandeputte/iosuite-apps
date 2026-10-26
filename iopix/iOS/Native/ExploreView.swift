@@ -177,9 +177,7 @@ struct ExploreView: View {
             }
             .background(alignment: .top) { wash }
             .navigationTitle("Explore")
-            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search people, tags, places, captions")
-            .searchSuggestions { SearchSuggestionRows(text: $search, query: $searchQuery) }
-            .onSubmit(of: .search) {
+            .librarySearch(text: $search, query: $searchQuery) {
                 let q = search.trimmingCharacters(in: .whitespaces)
                 if !q.isEmpty { showInPhotos(PhotoQuery([("q", q)])) }
                 search = ""
