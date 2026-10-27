@@ -59,7 +59,7 @@ struct EditHistoryView: View {
             }
             .navigationTitle("Edit log")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } } }
             .refreshable { await load() }
             .editToast($toast)
         }
@@ -170,10 +170,10 @@ struct EditMetadataView: View {
             .navigationTitle("All metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Close") } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else if !changed.isEmpty {
-                        Button("Save \(changed.count)") { Task { await save() } }
+                        Button { Task { await save() } } label: { BarText("Save \(changed.count)") }
                     }
                 }
             }

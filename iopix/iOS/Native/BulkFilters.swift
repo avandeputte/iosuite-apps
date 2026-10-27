@@ -73,10 +73,10 @@ struct FilterSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if !query.filters.isEmpty {
-                        Button("Clear all") { query = PhotoQuery(query.items.filter { $0.name == "sort" }) }
+                        Button { query = PhotoQuery(query.items.filter { $0.name == "sort" }) } label: { BarText("Clear all") }
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } }
             }
             .task(id: query.key) { await load() }
             .task { await catalog.load() }

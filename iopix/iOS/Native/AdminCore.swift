@@ -233,7 +233,7 @@ struct AdminPersonPicker: View {
             .searchable(text: $search, prompt: "Find a person")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
         }
     }
 }

@@ -250,7 +250,7 @@ struct AdminApplyEditsSheet: View {
             }
             .navigationTitle("Apply edits to digiKam")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } } }
             .task {
                 do { st = try await AdminAPI.get("api/edits/db") } catch { problem = error.localizedDescription; st = [:] }
             }

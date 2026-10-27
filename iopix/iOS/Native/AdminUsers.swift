@@ -222,9 +222,9 @@ struct AdminAddUserSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: noPassword) { _, on in if on { role = "viewer"; password = "" } }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button {
                         let n = name.trimmingCharacters(in: .whitespaces)
                         Task {
                             do {
@@ -233,7 +233,7 @@ struct AdminAddUserSheet: View {
                                 added(n); dismiss()
                             } catch { problem = error.localizedDescription }
                         }
-                    }
+                    } label: { BarText("Add") }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || (!noPassword && password.isEmpty))
                 }
             }

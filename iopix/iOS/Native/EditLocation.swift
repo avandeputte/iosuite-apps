@@ -99,10 +99,10 @@ struct EditLocationSheet: View {
                     Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use") {
+                    Button {
                         if let p = pin { done(p.latitude, p.longitude, townOnly ? nil : alt, townOnly ? radius : nil) }
                         dismiss()
-                    }.disabled(pin == nil)
+                    } label: { BarText("Use") }.disabled(pin == nil)
                 }
             }
             .onAppear {

@@ -36,7 +36,7 @@ struct EditFacesView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Done") } }
                 ToolbarItem(placement: .primaryAction) {
                     Button(drawing ? "Cancel" : "Add a face") { drawing.toggle(); drawRect = nil }
                 }
@@ -256,7 +256,7 @@ struct EditPersonPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find or add a person")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
             .task {
                 await catalog.load()
                 if let r = try? await EditAPI.get("api/faces/nearby", [URLQueryItem(name: "photo", value: "\(photo)")]) {

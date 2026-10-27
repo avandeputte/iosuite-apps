@@ -117,3 +117,11 @@ private struct InlineSearchBar: View {
     }
 }
 #endif
+
+/// The words of a toolbar button (Close, Cancel, Done): kept at their full width, so the glass capsule around them
+/// on iPad and Mac grows to fit instead of cutting the word off.
+struct BarText: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text).lineLimit(1).fixedSize() }
+}

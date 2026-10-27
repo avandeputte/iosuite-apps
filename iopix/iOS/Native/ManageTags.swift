@@ -233,7 +233,7 @@ struct TagPicker: View {
             .searchable(text: $filter, prompt: "Find a tag")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
         }
     }
 

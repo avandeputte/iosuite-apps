@@ -258,16 +258,16 @@ struct AdminSetupSheet: View {
             .navigationTitle("Create the admin account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button {
                         Task {
                             do {
                                 _ = try await AdminAPI.post("api/auth/setup", ["name": name.trimmingCharacters(in: .whitespaces), "password": password])
                                 done(); dismiss()
                             } catch { problem = error.localizedDescription }
                         }
-                    }
+                    } label: { BarText("Create") }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || password.count < 8)
                 }
             }
@@ -755,14 +755,14 @@ struct AdminTemplateSheet: View {
             .navigationTitle(template.name.isEmpty ? "New template" : template.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         template.name = template.name.trimmingCharacters(in: .whitespaces)
                         template.fields = template.fields.mapValues { $0.trimmingCharacters(in: .whitespaces) }
                         save(template)
                         dismiss()
-                    }
+                    } label: { BarText("Save") }
                     .disabled(template.name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }

@@ -264,7 +264,7 @@ struct FolderPicker: View {
             .searchable(text: $filter, prompt: "Find a folder")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
         }
     }
 
@@ -311,12 +311,12 @@ struct FolderPropertiesSheet: View {
             .navigationTitle(folder.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         save(caption, Self.format.string(from: date), category)
                         dismiss()
-                    }
+                    } label: { BarText("Save") }
                 }
             }
             .onAppear {

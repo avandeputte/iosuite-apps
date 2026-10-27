@@ -108,10 +108,10 @@ struct PhotoEditSheet: View {
             .navigationTitle(original?.name ?? "Edit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Close") } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else {
-                        Button("Save") { Task { await save() } }.disabled(changes.isEmpty || !rights.canWrite)
+                        Button { Task { await save() } } label: { BarText("Save") }.disabled(changes.isEmpty || !rights.canWrite)
                     }
                 }
             }
@@ -472,7 +472,7 @@ struct EditTagPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find or make a tag")
             .navigationTitle("Add a tag")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
             .task { await catalog.load() }
         }
     }
@@ -529,7 +529,7 @@ struct EditFolderPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a folder")
             .navigationTitle("Move to")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
             .task { await catalog.load() }
         }
     }

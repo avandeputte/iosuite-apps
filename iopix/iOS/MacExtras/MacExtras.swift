@@ -479,7 +479,7 @@ struct MacCardImportSheet: View {
             }
             .navigationTitle("Import from a card")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cards.offer = nil; dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { cards.offer = nil; dismiss() } label: { BarText("Cancel") } } }
         }
         .frame(minWidth: 560, minHeight: 420)
     }

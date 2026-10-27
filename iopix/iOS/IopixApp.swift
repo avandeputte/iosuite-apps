@@ -292,7 +292,7 @@ struct UploadsView: View {
             .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { saveServer(); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button { saveServer(); dismiss() } label: { BarText("Done") } }
             }
             .onChange(of: picked) { _, items in load(items) }
             .task { await queue.refreshAccount() }

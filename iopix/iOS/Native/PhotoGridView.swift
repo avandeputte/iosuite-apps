@@ -207,7 +207,7 @@ struct PhotoGridScreen: View {
     @ToolbarContentBuilder private func toolbar(_ proxy: ScrollViewProxy) -> some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if selecting {
-                Button("Done") { selecting = false; selected = [] }
+                Button { selecting = false; selected = [] } label: { BarText("Done") }
             } else {
                 Button { showFilters = true } label: {
                     Image(systemName: filters.filters.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")

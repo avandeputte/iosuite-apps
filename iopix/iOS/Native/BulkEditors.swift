@@ -141,7 +141,7 @@ struct BulkTagSheet: View {
             }
             .navigationTitle("Tag \(BulkEdit.plural(ids.count, "photo"))")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } } }
         }
     }
 }
@@ -230,7 +230,7 @@ struct BulkEditSheet: View {
             }
             .navigationTitle("Edit \(BulkEdit.plural(ids.count, "photo"))")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } } }
         }
     }
 
@@ -301,7 +301,7 @@ struct BulkTemplateSheet: View {
             }
             .navigationTitle("Apply a template")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
             .task { await load() }
         }
     }
@@ -361,8 +361,8 @@ struct BulkCopySheet: View {
             .navigationTitle("Copy to \(BulkEdit.plural(ids.count - 1, "photo"))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Copy") { Task { await copy() } } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .confirmationAction) { Button { Task { await copy() } } label: { BarText("Copy") } }
             }
             .onAppear { if source == 0 { source = ids.first ?? 0 } }
         }
@@ -505,8 +505,8 @@ struct BulkLocationSheet: View {
             .navigationTitle(ids.count > 1 ? "Location for \(ids.count.formatted()) photos" : "Set location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(pin == nil) }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .confirmationAction) { Button { Task { await save() } } label: { BarText("Save") }.disabled(pin == nil) }
             }
             .confirmationDialog("Remove the location from \(BulkEdit.plural(ids.count, "photo"))?", isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button("Remove", role: .destructive) { Task { if await BulkEdit.apply(ids, ["gps": NSNull()]) { changed(); dismiss() } } }
@@ -639,9 +639,9 @@ struct BulkGPXSheet: View {
             .navigationTitle("Match with a GPS track")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") { Task { await apply() } }.disabled(((result?["matched"] as? NSNumber)?.intValue ?? 0) == 0 || busy)
+                    Button { Task { await apply() } } label: { BarText("Apply") }.disabled(((result?["matched"] as? NSNumber)?.intValue ?? 0) == 0 || busy)
                 }
             }
             .fileImporter(isPresented: $picking, allowedContentTypes: [UTType(filenameExtension: "gpx") ?? .xml, .xml]) { r in
@@ -770,7 +770,7 @@ struct BulkDownloadSheet: View {
             }
             .navigationTitle("Download")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Close") } } }
             .task(id: partMB) { await makePlan() }
             .sheet(isPresented: Binding(get: { !saved.isEmpty }, set: { if !$0 { clean() } })) { ShareSheet(items: saved) }
         }

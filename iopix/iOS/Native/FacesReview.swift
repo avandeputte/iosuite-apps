@@ -54,7 +54,7 @@ struct FacesPersonPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Type a name")
             .navigationTitle("Who is this?")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
             .task {
                 tags = (try? await FacesAPI.tags()) ?? []
                 if let photo { near = await FacesAPI.nearby(photo) }
@@ -92,9 +92,9 @@ struct FacesPersonPicker: View {
             .navigationTitle("New person")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { creating = false } }
+                ToolbarItem(placement: .cancellationAction) { Button { creating = false } label: { BarText("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button {
                         let name = search.trimmingCharacters(in: .whitespaces)
                         busy = true
                         Task {
@@ -111,7 +111,7 @@ struct FacesPersonPicker: View {
                                 problem = error.localizedDescription
                             }
                         }
-                    }
+                    } label: { BarText("Add") }
                     .disabled(busy)
                 }
             }

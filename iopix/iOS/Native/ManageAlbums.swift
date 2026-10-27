@@ -82,13 +82,13 @@ struct ManageAlbumsScreen: View {
                 .navigationTitle("New album")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { creating = false } }
+                    ToolbarItem(placement: .cancellationAction) { Button { creating = false } label: { BarText("Cancel") } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Create") {
+                        Button {
                             let n = newName.trimmingCharacters(in: .whitespaces)
                             creating = false
                             Task { await act("api/ualbums", ["name": n, "shared": list.canShare ? newShared : false], "Album “\(n)” made.") }
-                        }
+                        } label: { BarText("Create") }
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
