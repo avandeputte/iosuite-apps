@@ -270,8 +270,9 @@ struct AdminModelsScreen: View {
     @State private var poll: Task<Void, Never>?
     @State private var gone = false
 
-    /// A job's model: fixed (text reading uses RapidOCR) or the one chosen for its feature.
-    private static let jobModel = ["vision": "ocr"]
+    /// A job's models: fixed ones (text reading: RapidOCR; photo quality: the aesthetic and eye models; ages for date
+    /// suggestions: MiVOLO) or the one chosen for its feature, as the web app's Maintenance lists them (iopix 1.83.1).
+    private static let jobModel = ["vision": ["ocr"], "looks": ["aesthetic", "eyes"], "ages": ["mivolo"]]
     private static let jobChoice = ["embeddings": "search_model", "objects": "object_model", "faces": "face_vectors", "facedetect": "face_detector", "captions": "caption_model"]
 
     private var models: [String: [String: Any]] { Dictionary(md.list("models").compactMap { m in m.str("key").map { ($0, m) } }, uniquingKeysWith: { x, _ in x }) }
@@ -296,14 +297,13 @@ struct AdminModelsScreen: View {
             ForEach(Array(a.list("jobs").enumerated()), id: \.offset) { _, j in
                 let key = j.str("key") ?? ""
                 let group = Self.jobChoice[key].flatMap { choices[$0] != nil ? $0 : nil }
-                let modelKey = group.flatMap { (choices[$0] as? [String: Any])?.str("chosen") } ?? Self.jobModel[key]
-                jobSection(j, model: modelKey.flatMap { models[$0] }, group: group)
+                let keys = group.flatMap { (choices[$0] as? [String: Any])?.str("chosen") }.map { [$0] } ?? Self.jobModel[key] ?? []
+                jobSection(j, models: keys.compactMap { models[$0] }, group: group)
             }
-            let inMenus = Set(choices.values.compactMap { ($0 as? [String: Any])?.strings("options") }.flatMap { $0 })
-            ForEach(md.list("models").filter { !inMenus.contains($0.str("key") ?? "") && $0.str("key") != "ocr" }.indices, id: \.self) { i in
-                let extra = md.list("models").filter { !inMenus.contains($0.str("key") ?? "") && $0.str("key") != "ocr" }
-                if i < extra.count { modelOnlySection(extra[i]) }
-            }
+            // a model shown on its job's row is not listed again; the rest (place names) get a section each
+            let inRows = Set(choices.values.compactMap { ($0 as? [String: Any])?.strings("options") }.flatMap { $0 } + Self.jobModel.values.flatMap { $0 })
+            let extra = md.list("models").filter { !inRows.contains($0.str("key") ?? "") }
+            ForEach(extra.indices, id: \.self) { i in modelOnlySection(extra[i]) }
         }
         .navigationTitle("AI analysis and models")
         .task { await load() }
@@ -320,9 +320,9 @@ struct AdminModelsScreen: View {
         return "Background work: \(running.map { "running \($0)" } ?? "idle"). Jobs run one at a time, in the order below, each with up to \(q.int("threads") ?? 1) of \(q.int("cores").map(String.init) ?? "?") cores (change that in Settings › AI and search).\((q["queued"] as? [Any])?.isEmpty == false ? " Waiting: \((q["queued"] as? [Any])?.count ?? 0)." : "")"
     }
 
-    private func jobSection(_ j: [String: Any], model: [String: Any]?, group: String?) -> some View {
+    private func jobSection(_ j: [String: Any], models jobModels: [[String: Any]], group: String?) -> some View {
         let done = j.int("done") ?? 0, total = j.int("total") ?? 0
-        let state = !j.bool("enabled") ? (model.map { !$0.bool("installed") } == true ? "needs its model" : "off")
+        let state = !j.bool("enabled") ? (jobModels.contains { !$0.bool("installed") } ? "needs its model" : "off")
             : j.bool("running") ? "running…" : j.bool("queued") ? "queued" : done >= total ? "up to date" : j.str("key") == "facedetect" ? "on request" : "waiting"
         return Section {
             VStack(alignment: .leading, spacing: 6) {
@@ -335,7 +335,11 @@ struct AdminModelsScreen: View {
                 AdminProgress(done: done, total: total)
                 if j.bool("running"), let since = j.dbl("since") { Text(runningText(j, since)).font(.caption).foregroundStyle(stuck(j, since) ? .orange : .secondary) }
             }
-            if let model { modelRows(model, group: group) } else { Text("Built in").font(.footnote).foregroundStyle(.secondary) }
+            if jobModels.isEmpty {
+                Text("Built in").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(jobModels.enumerated()), id: \.offset) { _, m in modelRows(m, group: group) }
+            }
             if j.str("key") == "facedetect" && j.bool("enabled") && !j.bool("running") && done < total {
                 Button("Look for faces now") {
                     confirm = AdminConfirm(title: "Look for faces in the \(AdminFormat.n(total - done)) photos not checked yet?", message: "New faces are added to digiKam's database as unnamed faces; faces already marked stay as they are.", button: "Look for faces") {
