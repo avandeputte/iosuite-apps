@@ -9,6 +9,7 @@ struct AdminMaintenanceScreen: View {
     @State private var status: [String: Any] = [:]
     @State private var consistency: String?
     @State private var quality: String?
+    @State private var damaged: String?  // the file check in one line; nil when the server has none
     @State private var applying = false
     @State private var confirm: AdminConfirm?
     @State private var problem: String?
@@ -104,6 +105,11 @@ struct AdminMaintenanceScreen: View {
                 AdminRow(title: "Metadata quality", detail: (quality ?? "Checking…") + " Duplicate faces, the same person twice, and boxes outside the photo.")
             }
             .foregroundStyle(.primary)
+            if damaged != nil {  // iopix 1.86 and later
+                NavigationLink { AdminDamagedScreen(canEdit: status.bool("editing")) } label: {
+                    AdminRow(title: "Damaged files", detail: (damaged ?? "") + "Every file read and checked: JPEGs that stop early or lack their end marker, damaged PNGs, pictures that cannot be decoded; a safe repair where there is one.")
+                }
+            }
             if status.bool("editing") {
                 let pending = m.int("pendingEdits") ?? 0
                 VStack(alignment: .leading, spacing: 6) {
@@ -199,6 +205,13 @@ struct AdminMaintenanceScreen: View {
             if let n = q.dict("untagged").int("count"), n > 0 { t += "\(AdminFormat.plural(n, "photo shows", "photos show")) people but nobody is tagged. " }
             if let n = q.dict("invalid").int("count"), n > 0 { t += "\(AdminFormat.plural(n, "box is", "boxes are")) outside the photo or empty." }
             quality = t
+        }
+        if let f = try? await AdminAPI.get("api/filecheck") {
+            let p = f.dict("progress"), found = f.list("found")
+            damaged = p.bool("running") ? "Checking… \(AdminFormat.n(p.int("done"))) / \(AdminFormat.n(p.int("total"))) files. "
+                : (f.int("checked") ?? 0) == 0 ? "Not checked yet. "
+                : !found.isEmpty ? "\(AdminFormat.plural(found.count, "damaged file")) found (\(found.filter { $0.bool("fixable") }.count) repairable). "
+                : "Nothing damaged found. "
         }
     }
 }
