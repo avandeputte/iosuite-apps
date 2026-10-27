@@ -24,11 +24,11 @@ struct SignInView: View {
             Form {
                 if gate != nil {
                     Section {
-                        Button("Sign in with Cloudflare…") { showGate = true }
+                        Button("Sign in to \(gate?.host ?? "the sign-in page")…") { showGate = true }
                     } header: {
-                        Text("First, Cloudflare")
+                        Text("First, this network's sign-in")
                     } footer: {
-                        Text("From outside your home network, iopix is reached through Cloudflare Access, which asks you to sign in before iopix itself does.")
+                        Text("From here, iopix sits behind a sign-in page (your reverse proxy's, for example). Sign in there first, then to iopix.")
                     }
                 }
                 Section {

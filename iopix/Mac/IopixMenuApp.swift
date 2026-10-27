@@ -295,7 +295,7 @@ struct SettingsView: View {
                 TextField("Client ID", text: $tokenID)
                 SecureField("Client secret", text: $tokenSecret)
             } header: {
-                Text("Cloudflare service token (optional)")
+                Text("Cloudflare Access service token (only if you use Cloudflare Access)")
             } footer: {
                 Text("Cloudflare's sign-in runs out after a while. With a service token, photos keep going through Cloudflare without it; you still sign in to iopix once. You can also use the server's address on your home network instead.")
                     .font(.caption).foregroundStyle(.secondary)

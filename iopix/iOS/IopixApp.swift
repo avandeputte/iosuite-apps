@@ -262,7 +262,7 @@ struct UploadsView: View {
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .onSubmit(saveServer)
-                    DisclosureGroup("Cloudflare service token") {
+                    DisclosureGroup("Cloudflare Access service token") {
                         TextField("Client ID", text: $tokenID).textInputAutocapitalization(.never).autocorrectionDisabled()
                         SecureField("Client secret", text: $tokenSecret)
                         Button("Save token") {
@@ -285,7 +285,7 @@ struct UploadsView: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("Optional. With a service token, uploads get through Cloudflare even when its sign-in has run out.")
+                    Text("Only if your server is behind Cloudflare Access; leave it empty otherwise. With a service token, uploads get through even when Cloudflare's sign-in has run out.")
                 }
             }
             .navigationTitle("Send to iopix")
