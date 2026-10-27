@@ -168,6 +168,10 @@ final class LibraryStore: ObservableObject {
     }
 
     func load() async {
+        await load(retries: 3)
+    }
+
+    private func load(retries: Int) async {
         do {
             let meta = try await IopixClient.shared.json("api/meta")
             folders = (meta["albums"] as? [[String: Any]] ?? []).compactMap { a in
@@ -205,9 +209,21 @@ final class LibraryStore: ObservableObject {
             needsSignIn = false
             loaded = true
         } catch IopixError.needsSignIn {
+            // right after a network change a sign-in page can be the move still settling: ask again first, and keep
+            // what is on screen meanwhile
+            if IopixClient.shared.settling, retries > 0 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await load(retries: retries - 1)
+                return
+            }
             needsSignIn = true
             problem = IopixError.needsSignIn.localizedDescription
         } catch {
+            if IopixClient.shared.settling, retries > 0, loaded {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await load(retries: retries - 1)
+                return
+            }
             problem = error.localizedDescription
         }
     }

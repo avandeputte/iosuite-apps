@@ -156,8 +156,15 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
 
     /// Network changed (home Wi-Fi to cellular): the next requests open new connections, by the new route.
     func networkMoved() {
+        lastMove = Date()
         session.flush {}
     }
+
+    /// When the device last moved to another network. For a little while after, a sign-in page in front of iopix
+    /// can be the network still settling (old connections, a DNS answer from before), so it is checked again
+    /// before anyone is asked to sign in.
+    private(set) var lastMove = Date.distantPast
+    var settling: Bool { Date().timeIntervalSince(lastMove) < 20 }
 
     func account() async throws -> Account {
         let (data, resp) = try await session.data(for: request("api/auth/me"))

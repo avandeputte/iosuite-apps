@@ -177,11 +177,20 @@ final class UploadQueue: ObservableObject {
     // MARK: sending
 
     func refreshAccount() async {
+        await refreshAccount(retries: 3)
+    }
+
+    private func refreshAccount(retries: Int) async {
         do {
             account = try await IopixClient.shared.account()
             needsSignIn = !(account?.canWrite ?? false)
             offline = false
         } catch IopixError.needsSignIn {
+            if IopixClient.shared.settling, retries > 0 {  // a network change still settling: ask again before believing it
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await refreshAccount(retries: retries - 1)
+                return
+            }
             account = Account(name: nil, signedIn: false, canWrite: false)
             needsSignIn = true
         } catch {

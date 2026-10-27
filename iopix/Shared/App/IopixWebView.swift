@@ -153,7 +153,7 @@ struct IopixWebView: PlatformViewRepresentable {
         weak var web: WKWebView?
         private var pending: Task<Void, Never>?
         private var monitor: NWPathMonitor?
-        private var lastPath: (interfaces: Set<NWInterface.InterfaceType>, gateways: Set<String>)?
+        private var lastPath: NetworkIdentity?
         private var pendingReload: Task<Void, Never>?
 
         init(_ changed: @escaping () -> Void, status: WebStatus?) { self.changed = changed; self.status = status }
@@ -180,17 +180,16 @@ struct IopixWebView: PlatformViewRepresentable {
         }
 
         @MainActor private func pathChanged(_ path: NWPath) {
-            // the route matters (which gateway, Wi-Fi or cellular in use), not every interface that comes and goes
-            let kinds: [NWInterface.InterfaceType] = [.wifi, .cellular, .wiredEthernet, .other]
-            let used = kinds.filter { path.usesInterfaceType($0) }
-            let now = (interfaces: Set(used), gateways: Set(path.gateways.map { "\($0)" }))
-            defer { lastPath = now }
+            // another router or cellular, not Ethernet to Wi-Fi in the same house (NetworkIdentity)
             guard path.status == .satisfied, let web else { return }
-            let moved = lastPath.map { $0 != now } ?? false
+            let now = NetworkIdentity(path)
+            if now.gateways.isEmpty && !now.cellular && status?.failed == nil { return }  // still coming up
+            let moved = lastPath.map { now.isMove(from: $0) } ?? false
+            lastPath = now
             guard status?.failed != nil || moved else { return }
             pendingReload?.cancel()
             pendingReload = Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)  // let the new network settle
+                try? await Task.sleep(nanoseconds: 2_500_000_000)  // let the new network settle
                 guard !Task.isCancelled else { return }
                 #if os(iOS)
                 guard UIApplication.shared.applicationState == .active else { return }  // once the app is in front, it retries

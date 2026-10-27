@@ -12,7 +12,7 @@ final class NetworkRoute {
     static let shared = NetworkRoute()
 
     private let monitor = NWPathMonitor()
-    private var last: (kinds: Set<NWInterface.InterfaceType>, gateways: Set<String>)?
+    private var last: NetworkIdentity?
     private var settle: DispatchWorkItem?
     private let queue = DispatchQueue(label: "iopix.route")
 
@@ -22,17 +22,19 @@ final class NetworkRoute {
     }
 
     private func changed(_ path: NWPath) {
-        // the route matters (Wi-Fi or cellular in use, which gateway), not every interface that comes and goes
-        let kinds = Set([NWInterface.InterfaceType.wifi, .cellular, .wiredEthernet, .other].filter { path.usesInterfaceType($0) })
-        let now = (kinds: kinds, gateways: Set(path.gateways.map { "\($0)" }))
-        defer { last = now }
-        guard path.status == .satisfied, let last, last.kinds != now.kinds || last.gateways != now.gateways else { return }
+        // another router or cellular, not Ethernet to Wi-Fi in the same house (NetworkIdentity)
+        guard path.status == .satisfied else { return }
+        let now = NetworkIdentity(path)
+        guard let last else { last = now; return }
+        if now.gateways.isEmpty && !now.cellular { return }  // still coming up: wait for its router
+        self.last = now
+        guard now.isMove(from: last) else { return }
         settle?.cancel()
         let work = DispatchWorkItem {
-            IopixClient.shared.networkMoved()
+            IopixClient.shared.networkMoved()  // fresh connections, and a few seconds' grace before a sign-in is believed
             DispatchQueue.main.async { NotificationCenter.default.post(name: .iopixNetworkMoved, object: nil) }
         }
         settle = work
-        queue.asyncAfter(deadline: .now() + 1.5, execute: work)  // let the new network settle
+        queue.asyncAfter(deadline: .now() + 2.5, execute: work)  // let the new network settle
     }
 }
