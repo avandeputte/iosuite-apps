@@ -412,6 +412,17 @@ struct AdminServerScreen: View {
                 Text(model.m.bool("updateCheckLocked") ? "Switched off by UPDATE_CHECK=0 in the environment: \(model.appName) never contacts GitHub on its own."
                      : "Once a day \(model.appName) asks GitHub whether a newer version exists and, if so, tells admins. Only the public list of changes is fetched; nothing about this install or its photos is sent.")
             }
+            if model.m["mcpEnabled"] != nil {  // iopix 1.85 and later
+                Section {
+                    Toggle("MCP server", isOn: Binding(get: { model.m.bool("mcpEnabled") || model.m.bool("mcpLocked") }, set: { on in
+                        Task { await notice.run(on ? "The MCP server at /mcp is on." : "The MCP server is off: /mcp does not answer.") { try await AdminAPI.post("api/settings", ["mcp_enabled": on]); await model.load() } }
+                    }))
+                    .disabled(model.m.bool("mcpLocked"))
+                } header: { Text("MCP server") } footer: {
+                    Text(model.m.bool("mcpLocked") ? "Switched on by MCP=1 in the environment."
+                         : "The endpoint at /mcp that lets an AI assistant (Claude, for example) search and read this library. Off: /mcp does not answer at all. With Require sign-in on, an assistant must also send the admin token.")
+                }
+            }
             Section {
                 Toggle("Read-only", isOn: Binding(get: { model.m.bool("readOnly") }, set: { on in
                     Task { await notice.run(on ? "Read-only mode on." : "Read-only mode off.") { try await AdminAPI.post("api/settings", ["read_only": on]); await model.load() } }

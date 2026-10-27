@@ -671,7 +671,7 @@ struct AdminUpdateRow: View {
             }
             Button("Close", role: .cancel) {}
         } message: { t in
-            Text("\(t.str("token") ?? "")\n\nAn MCP client (e.g. Claude) can run the update with the update_viewer tool and this token; treat it like a password.\(t.bool("fromEnv") ? " Set by MCP_ADMIN_TOKEN in the environment." : "")")
+            Text("\(t["mcpEnabled"] != nil && !t.bool("mcpEnabled") ? "The MCP server is switched off (Settings › MCP server), so this token is not usable until it is turned on.\n\n" : "")\(t.str("token") ?? "")\n\nAn MCP client (e.g. Claude) can run the update with the update_viewer tool and this token; treat it like a password.\(t.bool("fromEnv") ? " Set by MCP_ADMIN_TOKEN in the environment." : "")")
         }
         .adminConfirm($confirm)
         .adminNotice(notice)
