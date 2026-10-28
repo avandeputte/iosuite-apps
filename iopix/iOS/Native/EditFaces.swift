@@ -44,6 +44,10 @@ struct EditFacesView: View {
             .editToast($toast)
         }
         .task { await load(); await catalog.load() }  // the photo first: the library summary can take a moment
+        // a change made here comes back from the server's index a moment later: the boxes are reloaded then too
+        .onReceive(NotificationCenter.default.publisher(for: .iopixPhotoChanged)) { n in
+            if (n.userInfo?["photo"] as? Int) == photo { Task { await load() } }
+        }
         .confirmationDialog(chosen?.label ?? "Face", isPresented: Binding(get: { chosen != nil }, set: { if !$0 { chosen = nil } }), titleVisibility: .visible) {
             if let f = chosen { menu(f) }
         }
