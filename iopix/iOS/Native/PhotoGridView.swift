@@ -132,7 +132,7 @@ struct PhotoGridScreen: View {
                     Text(filters.value("q").map { "Nothing matches “\($0)”." } ?? "No photos here.")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 80)
                 }
-                ForEach(rows) { row in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { n, row in
                     switch row.kind {
                     case .day(let label, let n, _):
                         HStack(spacing: 8) {
@@ -147,6 +147,7 @@ struct PhotoGridScreen: View {
                             ForEach(indices, id: \.self) { i in tile(list, i, h) }
                         }
                         .id(row.id)
+                        .onAppear { prefetch(list, rows, after: n) }
                     }
                 }
             }
@@ -167,6 +168,15 @@ struct PhotoGridScreen: View {
         } else {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 120)
         }
+    }
+
+    /// The thumbnails of the next screens or so of rows, either way of scrolling, fetched before they are needed.
+    private func prefetch(_ list: PhotoList, _ rows: [GridRow], after n: Int) {
+        var paths: [String] = []
+        for r in rows[max(0, n - 6)..<min(rows.count, n + 16)] {
+            if case .photos(let indices, _) = r.kind { paths += indices.map { "thumb/\(list.ids[$0])" } }
+        }
+        ImageCache.shared.prefetch(paths)
     }
 
     private func tile(_ list: PhotoList, _ i: Int, _ h: CGFloat) -> some View {

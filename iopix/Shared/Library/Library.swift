@@ -385,7 +385,7 @@ final class ImageCache {
     static let shared = ImageCache()
     private let cache = NSCache<NSString, UIImage>()
 
-    init() { cache.totalCostLimit = 160 << 20 }  // decoded pictures, counted by their real size in memory
+    init() { cache.totalCostLimit = 256 << 20 }  // decoded pictures, counted by their real size in memory
 
     func cached(_ path: String) -> UIImage? { cache.object(forKey: path as NSString) }
 
@@ -402,7 +402,51 @@ final class ImageCache {
 
     func image(_ path: String) async -> UIImage? {
         if let hit = cached(path) { return hit }
-        guard let (data, resp) = try? await IopixClient.shared.session.data(for: IopixClient.shared.request(path)),
+        lock.lock(); let ahead = inFlight[path]; lock.unlock()
+        if let ahead { return await ahead.value }  // already on its way from a prefetch
+        // the tile's own download: dropped if the tile scrolls away first
+        return await fetch(IopixClient.shared.request(path), path)
+    }
+
+    /// Pictures about to scroll into view, fetched ahead a few at a time so a tile has its picture when it arrives.
+    /// The newest asks go first and old ones are dropped, so a fast scroll does not leave a queue behind it.
+    func prefetch(_ paths: [String]) {
+        lock.lock()
+        for p in paths where cache.object(forKey: p as NSString) == nil && inFlight[p] == nil {
+            pending.removeAll { $0 == p }
+            pending.append(p)
+        }
+        if pending.count > 240 { pending.removeFirst(pending.count - 240) }
+        lock.unlock()
+        pump()
+    }
+
+    private let lock = NSLock()
+    private var inFlight: [String: Task<UIImage?, Never>] = [:]
+    private var pending: [String] = []
+    private var running = 0
+
+    private func pump() {
+        lock.lock(); defer { lock.unlock() }
+        while running < 8, let path = pending.popLast() {
+            running += 1
+            inFlight[path] = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
+                var req = IopixClient.shared.request(path)
+                req.networkServiceType = .responsiveData
+                let img = await self?.fetch(req, path)
+                self?.finished(path)
+                return img
+            }
+        }
+    }
+
+    private func finished(_ path: String) {
+        lock.lock(); inFlight[path] = nil; running -= 1; lock.unlock()
+        pump()
+    }
+
+    private func fetch(_ req: URLRequest, _ path: String) async -> UIImage? {
+        guard let (data, resp) = try? await IopixClient.shared.session.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: data) else { return nil }
         let decoded = img.preparingForDisplay() ?? img
         let px = decoded.size.width * decoded.size.height * decoded.scale * decoded.scale
