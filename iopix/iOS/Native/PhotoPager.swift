@@ -102,6 +102,11 @@ struct PhotoPager: View {
                     .transition(.move(edge: .trailing))
             } else if info && sidePane {
                 PhotoInfoPane(photo: current, edit: rights.canWrite ? { editing = true } : nil) { route in
+                    // one photo (the best frame of this burst): shown here, in place; it joins the list if it is not in it
+                    if let p = route.hasPrefix("#/photos?p=") ? Int(route.dropFirst("#/photos?p=".count)) : nil {
+                        if let i = ids.firstIndex(of: p) { index = i } else { ids.insert(p, at: index + 1); index += 1 }
+                        return
+                    }
                     // a date, person, tag or place in the panel: its photos, as the web app's panel does
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.open(route) }

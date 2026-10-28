@@ -49,7 +49,7 @@ struct PhotoDetail {
     /// A year for a "Date unknown" photo from how old its people look (iopix 1.82, editors only).
     var suggestion: DateSuggestion?
     var pick = 0
-    var burst: (id: Int, size: Int, best: Bool)?
+    var burst: (id: Int, size: Int, best: Bool, bestID: Int?)?
     var similar = false
 
     var hasAI: Bool {
@@ -164,7 +164,7 @@ struct PhotoDetail {
             p.dark = b < 0.2 || (num(d["clip_lo"]) ?? 0) > 0.5
             p.bright = b > 0.8 || (num(d["clip_hi"]) ?? 0) > 0.3
         }
-        if let b = int(d["burst"]) { p.burst = (b, int(d["burst_size"]) ?? 0, (int(d["burst_best"]) ?? 0) != 0) }
+        if let b = int(d["burst"]) { p.burst = (b, int(d["burst_size"]) ?? 0, (int(d["burst_best"]) ?? 0) != 0, int(d["burst_best_id"])) }
         p.similar = (d["similar"] as? Bool) ?? ((int(d["similar"]) ?? 0) != 0)
         return p
     }
@@ -378,7 +378,13 @@ struct PhotoInfoFull: View {
         }
         if let b = d.burst {
             row("square.stack.3d.up") { link("Part of a burst of \(b.size) frames", "#/photos?burst=\(b.id)&sort=old") } sub: {
-                Text(b.best ? "Picked as the best frame" : "Not the best frame")
+                HStack(spacing: 4) {
+                    Text(b.best ? "Picked as the best frame" : "Not the best frame")
+                    if !b.best, let best = b.bestID {  // as the web app's panel: straight to it
+                        Text("·")
+                        Button("open the best frame") { open("#/photos?p=\(best)") }.buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    }
+                }
             }
         }
         if d.similar && !d.video {
@@ -391,8 +397,8 @@ struct PhotoInfoFull: View {
         let pct = { (v: Double) in Int((v * 100).rounded()) }
         row("sparkles") {
             VStack(alignment: .leading, spacing: 2) {
-                if let f = q.focusRank { Text("\(d.focusMeasured ? "In focus more than" : "Sharper than") \(pct(f))% of your photos") }
-                if let a = q.aestheticRank, let s = q.aesthetic { Text("Looks better than \(pct(a))% of them (aesthetic score \(String(format: "%.1f", s)) / 10)") }
+                if let f = q.focusRank { SelectableText("\(d.focusMeasured ? "In focus more than" : "Sharper than") \(pct(f))% of your photos") }
+                if let a = q.aestheticRank, let s = q.aesthetic { SelectableText("Looks better than \(pct(a))% of them (aesthetic score \(String(format: "%.1f", s)) / 10)") }
             }
         } sub: {
             VStack(alignment: .leading, spacing: 4) {
@@ -401,7 +407,7 @@ struct PhotoInfoFull: View {
                                                         : "Eyes open on \(q.eyesChecked == 1 ? "the face" : "all \(q.eyesChecked) faces") checked") : nil,
                     d.faceQuality.map { "Face sharpness \(pct($0)) / 100" }, d.dark ? "Very dark" : nil, d.bright ? "Very bright" : nil,
                 ].compactMap { $0 }
-                if !small.isEmpty { Text(small.joined(separator: " · ")) }
+                if !small.isEmpty { SelectableText(small.joined(separator: " · "), style: .footnote, secondary: true) }
                 if !q.rejectLabels.isEmpty {
                     (Text("Likely reject: ").bold() + Text(q.rejectLabels.joined(separator: ", ").lowercased())).foregroundStyle(.orange)
                     if d.pick == 1 || rejected == d.id {
