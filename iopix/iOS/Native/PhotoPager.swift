@@ -469,6 +469,12 @@ struct ZoomablePhoto: UIViewRepresentable {
         wheel.maximumNumberOfTouches = 0
         scroll.addGestureRecognizer(wheel)
         scroll.panGestureRecognizer.allowedScrollTypesMask = .continuous
+        // a mouse drag moves the zoomed picture (the scroll view only follows a wheel or trackpad on the Mac);
+        // at the normal size the drag is left to the pager, which swipes to the next photo
+        let drag = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.drag(_:)))
+        drag.allowedScrollTypesMask = []
+        drag.delegate = context.coordinator
+        scroll.addGestureRecognizer(drag)
         #endif
         return scroll
     }
@@ -491,7 +497,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         weak var scroll: UIScrollView?
         weak var image: UIImageView?
         weak var faceLayer: FaceLayer?
@@ -513,6 +519,20 @@ struct ZoomablePhoto: UIViewRepresentable {
                       self?.loaded == id else { return }
                 self?.image?.image = img
             }
+        }
+
+        /// The mouse drag only once zoomed in; at the normal size the pager takes the drag.
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            guard let pan = g as? UIPanGestureRecognizer, pan.allowedScrollTypesMask.isEmpty else { return true }
+            return (scroll?.zoomScale ?? 1) > 1.01
+        }
+
+        @objc func drag(_ g: UIPanGestureRecognizer) {
+            guard let scroll, g.state == .changed else { return }
+            let t = g.translation(in: scroll)
+            g.setTranslation(.zero, in: scroll)
+            let maxX = max(0, scroll.contentSize.width - scroll.bounds.width), maxY = max(0, scroll.contentSize.height - scroll.bounds.height)
+            scroll.contentOffset = CGPoint(x: min(max(0, scroll.contentOffset.x - t.x), maxX), y: min(max(0, scroll.contentOffset.y - t.y), maxY))
         }
 
         @objc func wheel(_ g: UIPanGestureRecognizer) {
