@@ -133,3 +133,33 @@ struct CloseLabel: View {
     init(_ text: String) { self.text = text }
     var body: some View { Image(systemName: "xmark").accessibilityLabel(text) }
 }
+
+extension View {
+    /// The buttons of a full-screen editor (crop, adjust, faces): in the navigation bar on iPhone and iPad. On the
+    /// Mac the navigation bar of a full-screen cover lives in the window's toolbar, which the photo viewer hides, so
+    /// there they get a bar of their own at the top of the screen.
+    func coverBar<L: View, T: View>(_ title: String, @ViewBuilder leading: () -> L, @ViewBuilder trailing: () -> T) -> some View {
+        #if targetEnvironment(macCatalyst)
+        let l = leading(), t = trailing()
+        return self
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 12) {
+                    l.buttonStyle(.bordered).buttonBorderShape(.circle)
+                    Spacer(minLength: 0)
+                    t.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                }
+                .overlay { Text(title).font(.headline) }
+                .padding(.horizontal, 16).padding(.top, 34).padding(.bottom, 10)  // below the window's traffic lights
+                .background(.bar)
+                .environment(\.colorScheme, .dark)
+            }
+        #else
+        let l = leading(), t = trailing()
+        return self.toolbar {
+            ToolbarItem(placement: .cancellationAction) { l }
+            ToolbarItem(placement: .confirmationAction) { t }
+        }
+        #endif
+    }
+}

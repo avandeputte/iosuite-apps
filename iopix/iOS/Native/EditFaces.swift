@@ -35,11 +35,10 @@ struct EditFacesView: View {
             .navigationTitle("Faces")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Done") } }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(drawing ? "Cancel" : "Add a face") { drawing.toggle(); drawRect = nil }
-                }
+            .coverBar("Faces") {
+                Button { dismiss() } label: { CloseLabel("Done") }
+            } trailing: {
+                Button { drawing.toggle(); drawRect = nil } label: { BarText(drawing ? "Cancel" : "Add a face") }
             }
             .editToast($toast)
         }
