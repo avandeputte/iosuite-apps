@@ -461,6 +461,15 @@ struct ZoomablePhoto: UIViewRepresentable {
         let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTap(_:)))
         single.require(toFail: double)
         scroll.addGestureRecognizer(single)
+        #if targetEnvironment(macCatalyst)
+        // the mouse wheel zooms towards the pointer, as in the web app; a trackpad's two-finger scroll keeps panning
+        // the zoomed picture and its pinch keeps zooming
+        let wheel = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.wheel(_:)))
+        wheel.allowedScrollTypesMask = .discrete
+        wheel.maximumNumberOfTouches = 0
+        scroll.addGestureRecognizer(wheel)
+        scroll.panGestureRecognizer.allowedScrollTypesMask = .continuous
+        #endif
         return scroll
     }
 
@@ -504,6 +513,17 @@ struct ZoomablePhoto: UIViewRepresentable {
                       self?.loaded == id else { return }
                 self?.image?.image = img
             }
+        }
+
+        @objc func wheel(_ g: UIPanGestureRecognizer) {
+            guard let scroll, let image, g.state == .changed else { return }
+            let dy = g.translation(in: scroll).y
+            g.setTranslation(.zero, in: scroll)
+            guard abs(dy) > 0.01 else { return }
+            let target = min(max(scroll.zoomScale * exp(dy / 150), scroll.minimumZoomScale), scroll.maximumZoomScale)  // wheel up: in
+            let p = g.location(in: image)
+            let w = scroll.bounds.width / target, h = scroll.bounds.height / target
+            scroll.zoom(to: CGRect(x: p.x - w / 2, y: p.y - h / 2, width: w, height: h), animated: false)
         }
 
         @objc func singleTap(_ g: UITapGestureRecognizer) {
