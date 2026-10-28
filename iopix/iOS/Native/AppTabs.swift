@@ -78,23 +78,27 @@ struct SidebarLayout: View {
     }
 
     private var library: [Row] {
-        var rows = [Row(title: "Favorites", symbol: "heart.fill", hue: Hue.rose, screen: .photos(PhotoQuery([("fav", "1")]), title: "Favorites")),
+        let rows = [Row(title: "Favorites", symbol: "heart.fill", hue: Hue.rose, screen: .photos(PhotoQuery([("fav", "1")]), title: "Favorites")),
                     Row(title: "Folders", symbol: "folder.fill", hue: Hue.teal, screen: .folders(parent: nil)),
                     Row(title: "Albums", symbol: "rectangle.stack.fill", hue: Hue.indigo, screen: .albums),
                     Row(title: "Tags", symbol: "tag.fill", hue: Hue.orange, screen: .tags(parent: nil)),
                     Row(title: "Map", symbol: "map.fill", hue: Hue.cyan, screen: .map),
                     Row(title: "Events & trips", symbol: "calendar", hue: Hue.cyan, screen: .events)]
-        let editor = queue.account?.canWrite == true
-        if editor { rows.append(Row(title: "Import", symbol: "square.and.arrow.down.on.square", hue: Hue.blue, screen: .importPhotos)) }
-        if editor { rows.append(Row(title: "Trash", symbol: "trash", hue: Hue.rose, screen: .trash)) }
-        rows += [Row(title: "Duplicate files", symbol: "doc.on.doc", hue: Hue.orange, screen: .duplicates),
-                 Row(title: "Near-duplicates", symbol: "square.on.square", hue: Hue.orange, screen: .nearDuplicates),
-                 Row(title: "Bursts & best shots", symbol: "square.stack.3d.down.right", hue: Hue.amber, screen: .bursts),
-                 Row(title: "Detected content", symbol: "sparkles", hue: Hue.purple, screen: .detected)]
-        if editor { rows.append(Row(title: "Metadata quality", symbol: "checkmark.seal", hue: Hue.teal, screen: .quality)) }
-        if editor { rows.append(Row(title: "Date suggestions", symbol: "calendar.badge.clock", hue: Hue.amber, screen: .dateSuggest)) }
-        rows.append(Row(title: "History", symbol: "clock.arrow.circlepath", hue: Hue.slate, screen: .history(photo: nil)))
         return rows
+    }
+
+    /// Looking after the library: for admins only, in a group of its own under Library.
+    private var management: [Row] {
+        guard queue.account?.isAdmin == true else { return [] }
+        return [Row(title: "Import", symbol: "square.and.arrow.down.on.square", hue: Hue.blue, screen: .importPhotos),
+                Row(title: "Trash", symbol: "trash", hue: Hue.rose, screen: .trash),
+                Row(title: "Duplicate files", symbol: "doc.on.doc", hue: Hue.orange, screen: .duplicates),
+                Row(title: "Near-duplicates", symbol: "square.on.square", hue: Hue.orange, screen: .nearDuplicates),
+                Row(title: "Bursts & best shots", symbol: "square.stack.3d.down.right", hue: Hue.amber, screen: .bursts),
+                Row(title: "Detected content", symbol: "sparkles", hue: Hue.purple, screen: .detected),
+                Row(title: "Metadata quality", symbol: "checkmark.seal", hue: Hue.teal, screen: .quality),
+                Row(title: "Date suggestions", symbol: "calendar.badge.clock", hue: Hue.amber, screen: .dateSuggest),
+                Row(title: "History", symbol: "clock.arrow.circlepath", hue: Hue.slate, screen: .history(photo: nil))]
     }
 
     private var iopix: [Row] {
@@ -112,6 +116,7 @@ struct SidebarLayout: View {
                     }
                 }
                 Section("Library") { ForEach(library) { row($0) } }
+                if !management.isEmpty { Section("Library management") { ForEach(management) { row($0) } } }
                 Section("iopix") {
                     ForEach(iopix) { row($0) }
                     Button(action: showUploads) {
@@ -241,7 +246,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack(path: $router.morePath) {
             List {
-                Section { ForEach(library) { row($0) } }
+                Section("Library") { ForEach(library) { row($0) } }
                 ManageMoreSection()
                 Section("iopix") { ForEach(iopix) { row($0) } }
                 Section {
