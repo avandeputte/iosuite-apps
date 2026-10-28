@@ -380,6 +380,8 @@ struct ManageQualityScreen: View {
     struct Item: Identifiable, Hashable {
         let photo: Int, name: String, ts: Double, taken: String, reason: String, folder: String, folderID: Int?
         let folderDate: String?, suggestID: Int?, suggestPath: String?, expect: String
+        /// The face checks' line under the name ("3 unnamed faces", "2 people detected").
+        var line = ""
         var id: Int { photo }
     }
     struct Check: Identifiable {
@@ -412,6 +414,9 @@ struct ManageQualityScreen: View {
     @State private var movePick: Item?
     @State private var folderDating: [Item]?
     @State private var openFolder: Item?
+    /// How many rows each check shows; "Load the next 40" adds to it, as the web app's lists do.
+    @State private var shown: [String: Int] = [:]
+    private static let page = 40
 
     var body: some View {
         List {
@@ -427,17 +432,19 @@ struct ManageQualityScreen: View {
                         Spacer()
                         Text(c.count.formatted()).font(.headline).foregroundStyle(c.count == 0 ? Hue.green : Hue.amber)
                     }
-                    if Self.rowChecks.contains(c.key) {
-                        if rights.canWrite && c.count > 0 { actions(c) }
-                        ForEach(c.items.prefix(40)) { x in itemRow(c, x) }
-                        if c.items.count > 40 { Text("The first 40 of \(c.items.count.formatted()).").font(.footnote).foregroundStyle(.secondary) }
-                    } else {
-                        if !c.photos.isEmpty {
-                            ManageThumbStrip(items: c.photos.prefix(40).map { .init(id: $0) }, height: 72) { i in
-                                viewer = PagerStart(list: PhotoList(ids: c.photos), index: i)
-                            }
+                    if rights.canWrite && c.count > 0 { actions(c) }
+                    // every check is a list of its photos with their fixes, as on the web, loaded a page at a time
+                    let limit = shown[c.key] ?? Self.page
+                    ForEach(c.items.prefix(limit)) { x in itemRow(c, x) }
+                    if c.items.count > limit {
+                        Button {
+                            shown[c.key] = limit + Self.page
+                        } label: {
+                            Text("Load the next \(min(Self.page, c.items.count - limit))") + Text(" · \((c.items.count - limit).formatted()) more").foregroundStyle(.secondary)
                         }
-                        if rights.canWrite && c.count > 0 { actions(c) }
+                        .font(.footnote)
+                    } else if c.count > c.items.count {
+                        Text("The first \(c.items.count.formatted()) of \(c.count.formatted()); check again after fixing these for the rest.").font(.footnote).foregroundStyle(.secondary)
                     }
                     if c.accepted > 0 {
                         Button("Show the \(ManageAPI.plural(c.accepted, "accepted photo")) again") { Task { await unaccept(c.key) } }.font(.footnote)
@@ -492,7 +499,8 @@ struct ManageQualityScreen: View {
             Button("Ignore these unnamed faces") { ignoring = c.photos; confirm = "ignore" }
             Button("Accept them as they are") { Task { await accept(c.key, c.photos) } }
         case "untagged":
-            Button("Accept these as they are") { Task { await accept(c.key, c.photos) } }
+            if catalog.canManage { Button("Find faces in all shown") { Task { await findFaces(c.photos) } } }
+            Button("Accept all shown") { Task { await accept(c.key, c.photos) } }
         case "nolocation":
             if catalog.editing {
                 Button(tickedCheck == c.key && ticked.count >= c.items.count ? "Untick all" : "Tick all shown") { tickAll(c, on: !(tickedCheck == c.key && ticked.count >= c.items.count)) }
@@ -546,9 +554,16 @@ struct ManageQualityScreen: View {
                             if let path = x.suggestPath { Button("Move to \(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))") { Task { await moveToDateFolder([x]) } } }
                             else { Button("Move to a folder…") { Task { if !tree.loaded { await tree.load() }; movePick = x } } }
                         }
+                    case "unnamed":
+                        Button("Name them") { nameThem(c, x) }
+                        if catalog.canManage { Button("Ignore") { ignoring = [x.photo]; confirm = "ignore" } }
+                    case "untagged":
+                        if catalog.canManage { Button("Find faces") { Task { await findFaces([x.photo]) } } }
                     default: EmptyView()
                     }
-                    Button("Accept as it is") { Task { await accept(c.key, [x.photo]) } }
+                    if ["nolocation", "baddate", "wrongfolder", "unnamed", "untagged"].contains(c.key) {
+                        Button("Accept as it is") { Task { await accept(c.key, [x.photo]) } }
+                    }
                 }
                 .buttonStyle(.borderless).font(.caption)
             }
@@ -556,7 +571,21 @@ struct ManageQualityScreen: View {
         .padding(.vertical, 2)
     }
 
+    /// The photo in the viewer with its face boxes shown, to name them there (the web app's "Name them").
+    private func nameThem(_ c: Check, _ x: Item) {
+        UserDefaults.standard.set(true, forKey: "iopix.viewer.faces")
+        viewer = PagerStart(list: PhotoList(ids: c.photos), index: c.photos.firstIndex(of: x.photo) ?? 0)
+    }
+
+    private func findFaces(_ ids: [Int]) async {
+        await act("api/faces/detect", ["ids": ids]) { r in
+            if r["done"] as? Bool == true { return "\(ManageAPI.plural((r["added"] as? NSNumber)?.intValue ?? 0, "face")) found; name them from the photo, or under Unnamed faces after checking again." }
+            return "Looking for faces in \(ManageAPI.plural((r["queued"] as? NSNumber)?.intValue ?? ids.count, "photo")) in the background."
+        }
+    }
+
     private func itemDetail(_ key: String, _ x: Item) -> String {
+        if !x.line.isEmpty { return x.line }
         let day = x.ts > 0 ? Date(timeIntervalSince1970: x.ts).formatted(date: .abbreviated, time: .omitted) : nil
         switch key {
         case "nolocation": return day ?? "no date"
@@ -658,8 +687,8 @@ struct ManageQualityScreen: View {
         ("near", "Face boxes stored twice", "The same face marked twice, a little apart."),
         ("separate", "One person, two names", "The same person in two places of the tag tree."),
         ("invalid", "Boxes outside the photo", "Face boxes that stick out of their photo or are empty."),
-        ("unnamed", "Unnamed faces", "Photos with faces found but not named."),
-        ("untagged", "No tags", "Photos with no tag at all."),
+        ("unnamed", "Faces without a name", "Photos with faces where none is named. Name them, mark them as not faces to name, or accept the photo as it is."),
+        ("untagged", "People, but nobody tagged", "Object detection sees people, but no face is marked and no person is tagged (crowds, people from behind, strangers)."),
         ("nolocation", "No location", "Photos and videos with no place."),
         ("wrongfolder", "In the wrong folder", "Photos whose date doesn't match their dated folder."),
         ("baddate", "Doubtful date", "Photos whose date looks wrong."),
@@ -677,17 +706,26 @@ struct ManageQualityScreen: View {
                 var seen = Set<Int>()
                 let photos = list.compactMap { ($0["photo"] as? NSNumber)?.intValue }.filter { seen.insert($0).inserted }
                 var c = Check(key: key, title: title, detail: detail, count: count, photos: photos, accepted: (s["accepted"] as? NSNumber)?.intValue ?? 0)
-                if Self.rowChecks.contains(key) {
-                    var seenRows = Set<Int>()
-                    c.items = list.compactMap { x in
-                        guard let id = (x["photo"] as? NSNumber)?.intValue, seenRows.insert(id).inserted else { return nil }
-                        let sug = x["suggest"] as? [String: Any]
-                        return Item(photo: id, name: x["name"] as? String ?? "", ts: (x["ts"] as? NSNumber)?.doubleValue ?? 0,
-                                    taken: x["taken"] as? String ?? "", reason: x["reason"] as? String ?? "",
-                                    folder: (x["folder"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
-                                    folderID: (x["folder_id"] as? NSNumber)?.intValue, folderDate: x["folder_date"] as? String,
-                                    suggestID: (sug?["id"] as? NSNumber)?.intValue, suggestPath: sug?["path"] as? String, expect: x["expect"] as? String ?? "")
+                var seenRows = Set<Int>()
+                c.items = list.compactMap { x -> Item? in
+                    guard let id = (x["photo"] as? NSNumber)?.intValue, seenRows.insert(id).inserted else { return nil }
+                    let sug = x["suggest"] as? [String: Any]
+                    let n = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+                    // the face checks' line, in the web app's words
+                    let line: String
+                    switch key {
+                    case "unnamed": line = ManageAPI.plural(n("faces"), "unnamed face")
+                    case "untagged": line = "\(n("people") == 1 ? "1 person" : "\(n("people")) people") detected"
+                    case "separate": line = "\((x["rects"] as? [Any])?.count ?? 0) boxes of the same person"
+                    case "near": line = (x["apart"] as? NSNumber).map { "two boxes \($0.intValue) px apart" } ?? "the same face marked twice"
+                    case "invalid": line = x["reason"] as? String ?? "a box outside the photo"
+                    default: line = ""
                     }
+                    return Item(photo: id, name: x["name"] as? String ?? "", ts: (x["ts"] as? NSNumber)?.doubleValue ?? 0,
+                                taken: x["taken"] as? String ?? "", reason: x["reason"] as? String ?? "",
+                                folder: (x["folder"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                                folderID: (x["folder_id"] as? NSNumber)?.intValue, folderDate: x["folder_date"] as? String,
+                                suggestID: (sug?["id"] as? NSNumber)?.intValue, suggestPath: sug?["path"] as? String, expect: x["expect"] as? String ?? "", line: line)
                 }
                 return c
             }
