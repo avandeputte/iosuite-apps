@@ -201,7 +201,7 @@ struct EditFacesView: View {
 
     private func op(_ o: [String: Any], _ said: String) async {
         do {
-            try await EditAPI.faceOp(o)
+            try await PhotoChange.faceOp(o)
             toast = said
             changed()
             await load()

@@ -385,7 +385,7 @@ struct PhotoPager: View {
     }
 
     private func faceOp(_ o: [String: Any], _ said: String) async {
-        do { try await EditAPI.faceOp(o); toast = said; reloadKey += 1 }
+        do { try await PhotoChange.faceOp(o); toast = said }
         catch { toast = "That face change did not go through: \(error.localizedDescription)" }
     }
 
@@ -549,6 +549,14 @@ struct MediaPage: View {
         .task(id: showFaces ? id : -id) {
             guard showFaces, boxes == nil, let d = await PhotoDetail.load(id), !d.video else { return }
             boxes = FaceBoxes(width: d.w, height: d.h, faces: d.faces.filter { $0.rect.count == 4 })
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixPhotoChanged)) { n in
+            // a face named or removed (here, in the pane or in the faces editor): the boxes follow at once
+            guard (n.userInfo?["photo"] as? Int) == id, (n.userInfo?["faces"] as? Bool) == true, showFaces else { return }
+            Task {
+                guard let d = await PhotoDetail.load(id), !d.video else { return }
+                boxes = FaceBoxes(width: d.w, height: d.h, faces: d.faces.filter { $0.rect.count == 4 })
+            }
         }
         .task(id: id) {
             guard !knownVideo, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
@@ -761,6 +769,34 @@ struct PageView: UIViewControllerRepresentable {
 extension Notification.Name {
     /// Photos were trashed, restored or added from the viewer or an editing sheet; lists reload. userInfo["removed"]: ids gone.
     static let iopixPhotosChanged = Notification.Name("iopixPhotosChanged")
+    /// One photo's details changed (a face named, a title saved): every view showing it reloads at once, as the web
+    /// app's screens do. userInfo["photo"]: its id; ["faces"]: true when its faces changed.
+    static let iopixPhotoChanged = Notification.Name("iopixPhotoChanged")
+}
+
+/// What a change to one photo does for the screens: tells them now (the photo's own details are fresh at once), and
+/// tells the lists once the server has reindexed (the grid's badges and counts come from the index).
+enum PhotoChange {
+    static func post(_ photo: Int, faces: Bool = false) {
+        NotificationCenter.default.post(name: .iopixPhotoChanged, object: nil, userInfo: ["photo": photo, "faces": faces])
+    }
+
+    /// A face operation, then the screens: the viewer's boxes, the info pane and the grid's badge right away, the
+    /// lists after the reindex.
+    static func faceOp(_ o: [String: Any]) async throws {
+        let photo = (o["image"] as? Int) ?? 0
+        let seen = await FacesAPI.indexVersion()
+        try await EditAPI.faceOp(o)
+        post(photo, faces: true)
+        Task { await FacesAPI.awaitReindex(after: seen); NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil) }
+    }
+
+    static func faceOps(_ ops: [[String: Any]], photo: Int) async throws {
+        let seen = await FacesAPI.indexVersion()
+        try await EditAPI.faceOps(ops)
+        post(photo, faces: true)
+        Task { await FacesAPI.awaitReindex(after: seen); NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil) }
+    }
 }
 
 /// A round button of the photo viewer: the same on iPhone, iPad and Mac (where buttons and menus otherwise get

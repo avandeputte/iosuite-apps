@@ -228,6 +228,10 @@ struct PhotoInfoFull: View {
             d = await PhotoDetail.load(photo)
             failed = d == nil
         }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixPhotoChanged)) { n in
+            // changed anywhere (the viewer's boxes, the faces editor, the edit pane): the details follow at once
+            if (n.userInfo?["photo"] as? Int) == photo { Task { await reload() } }
+        }
         .task {
             // the account's choice of sections, as the web app saved it
             if let me = try? await IopixClient.shared.json("api/auth/me"), let h = (me["settings"] as? [String: Any])?["info_hide"] as? String { hiddenList = h }
@@ -323,9 +327,8 @@ struct PhotoInfoFull: View {
 
     private func removeUnnamed(_ faces: [PhotoDetail.Face]) async {
         do {
-            try await EditAPI.faceOps(faces.map { ["op": "remove", "image": photo, "rect": $0.rect] })
+            try await PhotoChange.faceOps(faces.map { ["op": "remove", "image": photo, "rect": $0.rect] }, photo: photo)
             toast = "\(faces.count) unnamed face region\(faces.count == 1 ? "" : "s") removed."
-            await reload()
         } catch { toast = error.localizedDescription }
     }
 
@@ -364,7 +367,7 @@ struct PhotoInfoFull: View {
     }
 
     private func faceOp(_ o: [String: Any], _ said: String) async {
-        do { try await EditAPI.faceOp(o); toast = said; await reload() }
+        do { try await PhotoChange.faceOp(o); toast = said }
         catch { toast = "That face change did not go through: \(error.localizedDescription)" }
     }
 

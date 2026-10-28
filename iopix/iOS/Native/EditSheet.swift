@@ -386,7 +386,9 @@ struct PhotoEditSheet: View {
             if let added = c["add_tags"] as? [Int] { await catalog.noteRecent(added) }
             onOutcome(.changed)
             toast = "Saved."
+            PhotoChange.post(photo)  // the pane and the viewer show the new title, tags or date at once
             await FacesAPI.awaitReindex(after: seen)  // the server shows the change once it has reindexed
+            NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)  // the lists and their badges
             await load()
         } catch {
             toast = "Not saved: \(error.localizedDescription)"

@@ -90,6 +90,15 @@ struct PhotoGridScreen: View {
             if let gone = n.userInfo?["removed"] as? [Int], !gone.isEmpty { list?.ids.removeAll { gone.contains($0) } }
             Task { await load() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixPhotoChanged)) { n in
+            // a face named on a photo of this grid: its badge now, before the index catches up
+            guard (n.userInfo?["faces"] as? Bool) == true, let id = n.userInfo?["photo"] as? Int, let i = list?.ids.firstIndex(of: id) else { return }
+            Task {
+                if let d = await PhotoDetail.load(id) {
+                    if d.faces.contains(where: { $0.kind == .confirmed || $0.kind == .tagOnly }) { list?.faces.insert(i) } else { list?.faces.remove(i) }
+                }
+            }
+        }
         .modifier(Sheets(screen: self))
     }
 
