@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import CryptoKit
 
 /// Who this device is signed in as on iopix.
@@ -116,9 +117,18 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         case 502, 503, 504:  // iopix is restarting or out of reach behind Cloudflare: worth trying again later
             throw URLError(.cannotConnectToHost)
         default:
-            throw IopixError.server(detail ?? "The server answered with error \(http.statusCode).")
+            // a plain-text error (a crash in the server, or a proxy in front of it): its words and the request, so
+            // the cause can be found; the app's log (Console, subsystem net.iothing.iopix) gets the whole answer
+            let text = String(data: data.prefix(2000), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let what = "\(http.url.map { "\($0.path)" } ?? "the server") answered \(http.statusCode)"
+            Self.log.error("\(what, privacy: .public): \(text, privacy: .public)")
+            if let detail { throw IopixError.server(detail) }
+            let snippet = text.contains("<") ? "" : String(text.prefix(200))
+            throw IopixError.server("The server answered with error \(http.statusCode) for \(http.url?.path ?? "the request")\(snippet.isEmpty ? "." : ": \(snippet)")")
         }
     }
+
+    static let log = Logger(subsystem: "net.iothing.iopix", category: "network")
 
     /// Is there an iopix at this address? nil when there is (or a sign-in page in front of it, such as
     /// Cloudflare Access's), otherwise what went wrong, in plain words.
