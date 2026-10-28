@@ -389,7 +389,7 @@ struct AdminServerScreen: View {
         }
         init() {}
         init(_ d: [String: Any]) {
-            type = d.str("type") == "mysql" ? "mysql" : "sqlite"
+            type = ["mysql", "none"].contains(d.str("type") ?? "") ? d.str("type")! : "sqlite"
             sqliteDir = d.str("sqlite_dir") ?? ""; host = d.str("host") ?? ""; port = d.str("port") ?? ""
             database = d.str("database") ?? ""; user = d.str("user") ?? ""; backup = d.str("backup") == "skip" ? "skip" : "auto"
         }
@@ -453,16 +453,19 @@ struct AdminServerScreen: View {
         Section {
             Picker("Type", selection: $db.type) {
                 Text("SQLite (digikam4.db file)").tag("sqlite"); Text("MySQL / MariaDB").tag("mysql")
+                Text("None: I don’t use digiKam").tag("none")
             }
             if db.type == "sqlite" {
                 TextField("Folder with digikam4.db", text: $db.sqliteDir).autocorrectionDisabled().textInputAutocapitalization(.never)
-            } else {
+            } else if db.type == "mysql" {
                 TextField("Host", text: $db.host).autocorrectionDisabled().textInputAutocapitalization(.never)
                 TextField("Port", text: $db.port).keyboardType(.numberPad)
                 TextField("Database", text: $db.database).autocorrectionDisabled().textInputAutocapitalization(.never)
                 TextField("User", text: $db.user).autocorrectionDisabled().textInputAutocapitalization(.never)
                 SecureField(d.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $db.password)
             }
+            // without digiKam there is no database to back up or to test
+            if db.type != "none" {
             Picker("Backups", selection: $db.backup) {
                 Text("Before deleting photos or a tag, or a merge").tag("auto")
                 Text("Never (backed up elsewhere)").tag("skip")
@@ -477,13 +480,22 @@ struct AdminServerScreen: View {
                 }
             }
             if let dbResult { Text(dbResult).font(.footnote).foregroundStyle(.secondary) }
+            }
             Button("Save and switch") {
-                confirm = AdminConfirm(title: "Switch \(model.appName) to this digiKam database now?", message: "The index is rebuilt from it within seconds. \(model.appName)'s own data stays.", button: "Switch") {
-                    await notice.run("Database settings saved; the index is rebuilding.") { try await AdminAPI.post("api/settings", ["database": db.payload]); try? await Task.sleep(nanoseconds: 2_500_000_000); await model.load() }
-                }
+                confirm = db.type == "none"
+                    ? AdminConfirm(title: "Stop using digiKam’s database?", message: "\(model.appName) keeps working from its own copy of the library.", button: "Switch") {
+                        await notice.run("Database settings saved; the index is rebuilding.") { try await AdminAPI.post("api/settings", ["database": db.payload]); try? await Task.sleep(nanoseconds: 2_500_000_000); await model.load() }
+                    }
+                    : AdminConfirm(title: "Switch \(model.appName) to this digiKam database now?", message: "The index is rebuilt from it within seconds. \(model.appName)'s own data stays.", button: "Switch") {
+                        await notice.run("Database settings saved; the index is rebuilding.") { try await AdminAPI.post("api/settings", ["database": db.payload]); try? await Task.sleep(nanoseconds: 2_500_000_000); await model.load() }
+                    }
             }
         } header: { Text("digiKam database") } footer: {
-            Text("Currently \(d.str("type") == "mysql" ? "MySQL \(d.str("user") ?? "")@\(d.str("host") ?? ""):\(d.str("port") ?? "")/\(d.str("database") ?? "")" : "SQLite in \(d.str("sqlite_dir") ?? "?")"). Changing it rebuilds the index; \(model.appName)'s own data (favorites, albums, users, analysis) stays. Test first.")
+            if d.str("type") == "none" {
+                Text("None: \(model.appName) keeps the library itself, in its own database, and the file scanner finds the photos in the photo folder. Tags, people and faces, captions, places and dates are saved there and in XMP sidecars beside the photos, which digiKam can read if you ever start using it. If you start using digiKam later, let it read the folder first (it picks up the sidecars), then choose its database here: \(model.appName) asks before it replaces its own library with digiKam’s.")
+            } else {
+                Text("Currently \(d.str("type") == "mysql" ? "MySQL \(d.str("user") ?? "")@\(d.str("host") ?? ""):\(d.str("port") ?? "")/\(d.str("database") ?? "")" : "SQLite in \(d.str("sqlite_dir") ?? "?")"). Changing it rebuilds the index; \(model.appName)'s own data (favorites, albums, users, analysis) stays. Test first.")
+            }
         }
     }
 

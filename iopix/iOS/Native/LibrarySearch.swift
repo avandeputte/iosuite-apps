@@ -84,6 +84,7 @@ private struct InlineSearchBar: View {
                 .focused($focused)
                 .onSubmit { submit(); focused = false }
                 .onKeyPress(.escape) { text = ""; focused = false; return .handled }
+                .backspaceDropsLastFilter(text: $text, query: $query)
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain)

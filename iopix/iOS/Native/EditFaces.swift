@@ -16,6 +16,7 @@ struct EditFacesView: View {
     @State private var drawStart: CGPoint?
     @State private var drawRect: CGRect?
     @State private var newBox: [Int]?
+    @State private var adjusting: EditDetail.Face?  // its box is being drawn again
     @State private var toast: String?
     @State private var problem: String?
 
@@ -38,7 +39,7 @@ struct EditFacesView: View {
             .coverBar("Faces") {
                 Button { dismiss() } label: { CloseLabel("Done") }
             } trailing: {
-                Button { drawing.toggle(); drawRect = nil } label: { BarText(drawing ? "Cancel" : "Add a face") }
+                Button { drawing.toggle(); drawRect = nil; adjusting = nil } label: { BarText(drawing ? "Cancel" : "Add a face") }
             }
             .editToast($toast)
         }
@@ -98,7 +99,13 @@ struct EditFacesView: View {
             }.onEnded { _ in
                 guard let rect = drawRect, rect.width > 12, rect.height > 12 else { drawRect = nil; return }
                 let sx = d.width / fit.width, sy = d.height / fit.height
-                newBox = [Int((rect.minX - fit.minX) * sx), Int((rect.minY - fit.minY) * sy), Int(rect.width * sx), Int(rect.height * sy)]
+                let box = [Int((rect.minX - fit.minX) * sx), Int((rect.minY - fit.minY) * sy), Int(rect.width * sx), Int(rect.height * sy)]
+                if let f = adjusting {
+                    adjusting = nil
+                    Task { await op(["op": "move", "image": photo, "rect": f.rect, "new_rect": box], "Box adjusted.") }
+                } else {
+                    newBox = box
+                }
                 drawing = false
                 drawRect = nil
             }, including: drawing ? .all : .subviews)
@@ -106,7 +113,7 @@ struct EditFacesView: View {
         .frame(maxHeight: .infinity)
         .overlay(alignment: .top) {
             if drawing {
-                Text("Drag over the face to box it").font(.footnote).foregroundStyle(.white)
+                Text(adjusting != nil ? "Drag the new box over \(adjusting?.label ?? "the face")" : "Drag over the face to box it").font(.footnote).foregroundStyle(.white)
                     .padding(8).background(.black.opacity(0.6), in: Capsule()).padding(8)
             }
         }
@@ -139,6 +146,7 @@ struct EditFacesView: View {
         switch f.kind {
         case .confirmed:
             Button("Someone else…") { naming = f }
+            Button("Adjust the box…") { adjusting = f; drawing = true; drawRect = nil }
             if let t = f.tag {
                 Button("Use as \(f.name ?? "their") badge picture") { Task { await badge(t, f.name ?? "") } }
             }
@@ -152,6 +160,7 @@ struct EditFacesView: View {
             Button("Remove this box", role: .destructive) { Task { await op(["op": "remove", "image": photo, "rect": rect], "Removed.") } }
         case .unknown:
             Button("Who is this?…") { naming = f }
+            Button("Adjust the box…") { adjusting = f; drawing = true; drawRect = nil }
             Button("Not a face to name (ignore)") { Task { await op(["op": "ignore", "image": photo, "rect": rect], "Face ignored.") } }
             Button("Remove this box", role: .destructive) { Task { await op(["op": "remove", "image": photo, "rect": rect], "Removed.") } }
         case .ignored:

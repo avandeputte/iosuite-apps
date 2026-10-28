@@ -171,12 +171,18 @@ struct ManageImportScreen: View {
     struct Layout: Identifiable, Hashable { let key: String, example: String; var id: String { key } }
 
     @EnvironmentObject private var store: LibraryStore
+    @StateObject private var rights = ManageRights()
     @State private var picked: [PhotosPickerItem] = []
     @State private var token: String?
     @State private var plan: [Planned] = []
     @State private var layouts: [Layout] = []
     @State private var layout = ""
+    /// An admin's layout choice becomes the server's default (the web app's "Remember as the default layout").
+    @State private var remember = true
     @State private var importDuplicates = false
+    #if !targetEnvironment(macCatalyst)
+    @State private var camera = false
+    #endif
     @State private var skip: Set<String> = []
     @State private var working: String?
     @State private var confirmDiscard = false
@@ -190,6 +196,12 @@ struct ManageImportScreen: View {
                     Label(token == nil ? "Choose photos and videos" : "Add more", systemImage: "photo.on.rectangle.angled")
                 }
                 .disabled(working != nil)
+                #if !targetEnvironment(macCatalyst)
+                // the camera: on an iPhone or iPad (a Mac has none)
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { camera = true } label: { Label("Take a photo", systemImage: "camera") }.disabled(working != nil)
+                }
+                #endif
             } footer: {
                 Text("Nothing goes into the library until you choose Import. Files are kept aside on the server for two days.")
             }
@@ -206,6 +218,7 @@ struct ManageImportScreen: View {
                             ForEach(layouts) { Text($0.example).tag($0.key) }
                         }
                     }
+                    if rights.isAdmin && !layouts.isEmpty { Toggle("Remember as the default layout", isOn: $remember) }
                     Toggle("Import duplicates too", isOn: $importDuplicates)
                 }
                 let new = plan.filter { $0.duplicate == nil && $0.error == nil }.count
@@ -242,12 +255,21 @@ struct ManageImportScreen: View {
         }
         .overlay { if let w = working { ProgressView(w).padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .navigationTitle("Import")
-        .task { await loadLayouts() }
+        .task { await rights.load(); await loadLayouts() }
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             picked = []
-            Task { await stage(items) }
+            Task {
+                working = "Getting your photos…"
+                let files = await ManageAPI.files(from: items)
+                await stage(files: files)
+            }
         }
+        #if !targetEnvironment(macCatalyst)
+        .fullScreenCover(isPresented: $camera) {
+            CameraPicker { url in if let url { Task { await stage(files: [url]) } } }.ignoresSafeArea()
+        }
+        #endif
         .onChange(of: layout) { _, _ in Task { await replan() } }
         .confirmationDialog("Discard the staged photos?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { Task { await discard() } }
@@ -264,11 +286,10 @@ struct ManageImportScreen: View {
         if layout.isEmpty { layout = j["layout"] as? String ?? layouts.first?.key ?? "" }
     }
 
-    private func stage(_ items: [PhotosPickerItem]) async {
-        working = "Getting your photos…"
+    /// Sends files from this device (the photo library, or the camera) to the server's staging area.
+    private func stage(files: [URL]) async {
         defer { working = nil }
         done = nil
-        let files = await ManageAPI.files(from: items)
         defer { ManageAPI.cleanUp(files) }
         guard !files.isEmpty else { notice = Notice(text: "Couldn't read the photos picked.", failed: true); return }
         working = "Sending \(ManageAPI.plural(files.count, "file"))…"
@@ -302,7 +323,8 @@ struct ManageImportScreen: View {
         defer { working = nil }
         let include = plan.filter { $0.error == nil && ($0.duplicate == nil || importDuplicates) && !skip.contains($0.name) }.map(\.name)
         do {
-            let r = try await ManageAPI.post("api/import/\(token)/run", ["layout": layout, "include": include, "duplicates": importDuplicates ? "import" : "skip"])
+            let r = try await ManageAPI.post("api/import/\(token)/run", ["layout": layout, "include": include, "duplicates": importDuplicates ? "import" : "skip",
+                                                                          "remember": rights.isAdmin && remember])
             let added = (r["added"] as? [Any])?.count ?? 0
             let skipped = (r["skipped"] as? [[String: Any]] ?? []).map { "\($0["name"] as? String ?? ""): \($0["reason"] as? String ?? "skipped")" }
             done = (added, skipped)
@@ -322,3 +344,58 @@ struct ManageImportScreen: View {
         skip = []
     }
 }
+
+#if !targetEnvironment(macCatalyst)
+/// The camera, for one photo (or video) to import: the capture is written to its own temporary folder, which
+/// `ManageAPI.cleanUp` removes once sent. Nil when the person cancelled.
+struct CameraPicker: UIViewControllerRepresentable {
+    let taken: (URL?) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let c = UIImagePickerController()
+        c.sourceType = .camera
+        c.mediaTypes = ["public.image", "public.movie"]
+        c.delegate = context.coordinator
+        return c
+    }
+
+    func updateUIViewController(_ c: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let owner: CameraPicker
+        init(_ owner: CameraPicker) { self.owner = owner }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            owner.dismiss()
+            owner.taken(nil)
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            owner.dismiss()
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyyMMdd_HHmmss"
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                if let movie = info[.mediaURL] as? URL {
+                    let url = dir.appendingPathComponent("VID_\(f.string(from: Date())).\(movie.pathExtension.isEmpty ? "mov" : movie.pathExtension)")
+                    try FileManager.default.copyItem(at: movie, to: url)
+                    owner.taken(url)
+                } else if let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.92) {
+                    let url = dir.appendingPathComponent("IMG_\(f.string(from: Date())).jpg")
+                    try data.write(to: url)
+                    owner.taken(url)
+                } else {
+                    owner.taken(nil)
+                }
+            } catch {
+                owner.taken(nil)
+            }
+        }
+    }
+}
+#endif

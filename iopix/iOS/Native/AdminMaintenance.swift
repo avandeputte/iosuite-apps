@@ -282,6 +282,8 @@ struct AdminModelsScreen: View {
     @State private var confirm: AdminConfirm?
     @State private var poll: Task<Void, Never>?
     @State private var gone = false
+    /// The "Compare the N models" folds opened; they stay open while the list is redrawn.
+    @State private var openCompare: Set<String> = []
 
     /// A job's models: fixed ones (text reading: RapidOCR; photo quality: the aesthetic and eye models; ages for date
     /// suggestions: MiVOLO) or the one chosen for its feature, as the web app's Maintenance lists them (iopix 1.83.1).
@@ -393,6 +395,29 @@ struct AdminModelsScreen: View {
         if let label = modelButton(m) {
             Button(label) { download(m) }.disabled(progress.str("running") != nil)
         }
+        if let group, let c = choices[group] as? [String: Any], c.strings("options").count > 1 { compare(group, c) }
+    }
+
+    /// What each choice of a feature's model is: size, installed or in use, and the registry's own words on its
+    /// speed and accuracy, folded under "Compare the N models" as the web app has it.
+    private func compare(_ group: String, _ c: [String: Any]) -> some View {
+        let options = c.strings("options")
+        return DisclosureGroup(isExpanded: Binding(get: { openCompare.contains(group) }, set: { if $0 { openCompare.insert(group) } else { openCompare.remove(group) } })) {
+            ForEach(options, id: \.self) { k in
+                if let o = models[k] {
+                    let chosen = k == c.str("chosen")
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(o.str("label") ?? k).font(.subheadline.weight(chosen ? .semibold : .regular))
+                            Text("· \(o.str("size") ?? "")\(chosen ? " · in use" : o.bool("installed") ? " · installed" : " · not installed")").font(.caption).foregroundStyle(.secondary)
+                            if let page = o.str("page"), let url = URL(string: page) { Link("About", destination: url).font(.caption) }
+                        }
+                        if let what = o.str("what") { Text(what).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        } label: { Text("Compare the \(options.count) models").font(.subheadline) }
     }
 
     private func modelOnlySection(_ m: [String: Any]) -> some View {
@@ -763,6 +788,9 @@ struct AdminConsistencyScreen: View {
     @State private var wasRunning = false
     @State private var editing = true
     @State private var gone = false
+    /// The filters of a search to check on its own (this screen has no current search of its own, as the web app's
+    /// grid has when it offers "Check the current search only").
+    @State private var searchQuery = ""
 
     static let sources = [("db", "Database"), ("sidecar", "Sidecar"), ("file", "Image file")]
     static let fields: [String: String] = ["rating": "Rating", "title": "Title", "caption": "Caption", "tags": "Tags", "taken": "Date", "gps": "Location"]
@@ -780,6 +808,13 @@ struct AdminConsistencyScreen: View {
                 Button("Check every photo again") {
                     confirm = AdminConfirm(title: "Re-check every photo in the library?", message: "This reads every sidecar and image file and takes a while.", button: "Check") { await scan(all: true) }
                 }
+            }
+            Section {
+                TextField("year=2020&tag=12", text: $searchQuery).autocorrectionDisabled().textInputAutocapitalization(.never)
+                Button("Check this search only") { Task { await scan(all: true, query: searchQuery) } }
+                    .disabled(PhotoQuery(query: searchQuery.trimmingCharacters(in: .whitespaces)).filters.isEmpty)
+            } header: { Text("Check a search only") } footer: {
+                Text("The web app checks the photos of the search shown above its grid; this screen has no search of its own, so type the filters of one here, as they follow #/photos? in a link (Copy link under Albums gives them).")
             }
             if progress.bool("running") {
                 Section { AdminProgress(done: progress.int("done") ?? 0, total: progress.int("total") ?? 0, label: "Checking…") }
@@ -967,9 +1002,13 @@ struct AdminConsistencyScreen: View {
         }
     }
 
-    private func scan(all: Bool) async {
+    /// Starts a check: of new and changed photos, of every photo, or (with `query`, the filters of a search) of the
+    /// photos a search finds, all of them again.
+    private func scan(all: Bool, query: String? = nil) async {
         await notice.run(nil) {
-            let r = try await AdminAPI.postForm("api/consistency/scan", [URLQueryItem(name: "rescan_all", value: all ? "1" : "0")])
+            var items = query.map { PhotoQuery(query: $0.trimmingCharacters(in: .whitespaces)).filters } ?? []
+            items.append(URLQueryItem(name: "rescan_all", value: all ? "1" : "0"))
+            let r = try await AdminAPI.postForm("api/consistency/scan", items)
             notice.say("Checking \(AdminFormat.n(r.int("queued"))) photos in the background.")
             wasRunning = true
             await load()

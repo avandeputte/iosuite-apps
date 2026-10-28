@@ -37,6 +37,15 @@ struct PhotoPager: View {
     @State private var sharing: URL?
     @State private var preparing = false
     @State private var problem: String?
+    /// The slideshow: every few seconds the next photo, as the web app's play button and space bar.
+    @State private var slideshow = false
+    @State private var slideTask: Task<Void, Never>?
+    @State private var tappedFace: PhotoDetail.Face?   // a face box clicked on the picture: its menu
+    @State private var naming: PhotoDetail.Face?       // "Who is this?" for that face
+    @State private var album = false
+    @State private var confirmTrash = false
+    @State private var toast: String?
+    @FocusState private var focused: Bool
 
     init(start: PagerStart) {
         self.start = start
@@ -86,9 +95,9 @@ struct PhotoPager: View {
                 Color.black.ignoresSafeArea()
                 // pages are made as they come into view, so a list of the whole library swipes as well as a short one
                 PageView(count: ids.count, index: $index) { i in
-                    AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true, showFaces: showFaces) {
+                    AnyView(MediaPage(id: ids[i], knownVideo: isVideo(i), active: true, showFaces: showFaces, tapped: {
                         withAnimation(.easeInOut(duration: 0.2)) { chrome.toggle() }
-                    }
+                    }, faceTapped: { f in if rights.canWrite { tappedFace = f } })
                     .ignoresSafeArea())
                 }
                 .id("\(reloadKey)-\(showFaces)")
@@ -119,7 +128,15 @@ struct PhotoPager: View {
         .animation(.easeInOut(duration: 0.25), value: editInPane)
         .statusBarHidden(!chrome)
         .sheet(isPresented: Binding(get: { sheet && !sidePane }, set: { sheet = $0 })) {
-            PhotoInfoSheet(photo: current)
+            PhotoInfoSheet(photo: current, edit: rights.canWrite ? { sheet = false; editing = true } : nil) { route in
+                // a link in the sheet: the photos it points to (or, for one photo, that photo here)
+                if let p = route.hasPrefix("#/photos?p=") ? Int(route.dropFirst("#/photos?p=".count)) : nil {
+                    if let i = ids.firstIndex(of: p) { index = i } else { ids.insert(p, at: index + 1); index += 1 }
+                    return
+                }
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.open(route) }
+            }
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: Binding(get: { editing && !sidePane }, set: { editing = $0 })) {
@@ -130,6 +147,25 @@ struct PhotoPager: View {
         }
         .hidesMacToolbar()
         .task { await rights.refresh() }
+        // the web app's keys, for a Mac or an iPad with a keyboard
+        .focusable().focusEffectDisabled().focused($focused)
+        .onAppear { focused = true }
+        .onKeyPress(phases: .down) { press in key(press) }
+        .onChange(of: index) { _, _ in if slideshow { restartSlideshow() } }
+        .onDisappear { slideTask?.cancel() }
+        .confirmationDialog(tappedFace.map { faceTitle($0) } ?? "Face", isPresented: Binding(get: { tappedFace != nil }, set: { if !$0 { tappedFace = nil } }), titleVisibility: .visible) {
+            if let f = tappedFace { faceMenu(f) }
+        }
+        .sheet(item: $naming) { f in
+            EditPersonPicker(photo: current, title: f.kind == .confirmed ? "Who is this instead?" : "Who is this?") { person in
+                Task { await faceOp(["op": "name", "image": current, "rect": f.rect, "tag": person.id], "Named \(person.name).") }
+            }
+        }
+        .sheet(isPresented: $album) { BulkAlbumSheet(ids: [current]).environmentObject(store) }
+        .confirmationDialog("Move this photo to the trash?", isPresented: $confirmTrash, titleVisibility: .visible) {
+            Button("Move to Trash", role: .destructive) { Task { await trash() } }
+        } message: { Text("It can be restored from the trash in iopix.") }
+        .editToast($toast)
         .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { if $0 == nil { removeShared() } })) { f in
             ShareSheet(items: [f.url])
         }
@@ -151,9 +187,19 @@ struct PhotoPager: View {
             .shadow(color: .black.opacity(0.6), radius: 3)
             Spacer(minLength: 4)
             // share, favorite, info and more at the top right, all drawn the same way on iPhone, iPad and Mac
-            Button { Task { await share() } } label: { ViewerIcon(symbol: "square.and.arrow.up", busy: preparing) }
+            Menu {
+                Button { Task { await share() } } label: { Label("Share the original", systemImage: "photo") }
+                if !isVideo(index) { Button { Task { await share(preview: true) } } label: { Label("Share a smaller JPEG", systemImage: "photo.badge.arrow.down") } }
+                Button { UIPasteboard.general.string = webLink.absoluteString; toast = "Link copied." } label: { Label("Copy link", systemImage: "link") }
+                Button { emailLink() } label: { Label("Email a link", systemImage: "envelope") }
+            } label: { ViewerIcon(symbol: "square.and.arrow.up", busy: preparing) }
+                .menuStyle(.button).menuIndicator(.hidden)
                 .accessibilityLabel("Share")
                 .disabled(preparing)
+            if ids.count > 1 {
+                Button { toggleSlideshow() } label: { ViewerIcon(symbol: slideshow ? "pause.fill" : "play.fill") }
+                    .accessibilityLabel(slideshow ? "Pause the slideshow" : "Slideshow")
+            }
             let fav = store.favoriteIDs.contains(current)
             Button { Task { await store.setFavorite(current, !fav) } } label: {
                 ViewerIcon(symbol: fav ? "heart.fill" : "heart", tint: fav ? .pink : .white)
@@ -171,7 +217,23 @@ struct PhotoPager: View {
                 if rights.canWrite {
                     Button { editing = true } label: { Label("Edit", systemImage: "slider.horizontal.3") }
                     Button { faces = true } label: { Label("Edit faces…", systemImage: "person.crop.rectangle") }
+                    Divider()
+                    // the quick actions of the web app's viewer bar
+                    Menu {
+                        ForEach(0...5, id: \.self) { n in
+                            Button { Task { await rate(n) } } label: { Label(n == 0 ? "No stars" : String(repeating: "★", count: n), systemImage: n == 0 ? "star.slash" : "star") }
+                        }
+                    } label: { Label("Rate", systemImage: "star") }
+                    if !isVideo(index) {
+                        Button { Task { await transform("left") } } label: { Label("Rotate left", systemImage: "rotate.left") }
+                        Button { Task { await transform("right") } } label: { Label("Rotate right", systemImage: "rotate.right") }
+                    }
                 }
+                Button { album = true } label: { Label("Add to album…", systemImage: "rectangle.stack.badge.plus") }
+                if rights.canWrite {
+                    Button(role: .destructive) { confirmTrash = true } label: { Label("Move to Trash", systemImage: "trash") }
+                }
+                Divider()
                 Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
             } label: {
                 ViewerIcon(symbol: "ellipsis")
@@ -186,12 +248,12 @@ struct PhotoPager: View {
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
-    /// The original file, downloaded to a temporary place for the share sheet (removed after).
-    private func share() async {
+    /// The original file (or the screen-size JPEG), downloaded to a temporary place for the share sheet (removed after).
+    private func share(preview: Bool = false) async {
         preparing = true
         defer { preparing = false }
         do {
-            let (tmp, resp) = try await IopixClient.shared.session.download(for: IopixClient.shared.request("orig/\(current)"))
+            let (tmp, resp) = try await IopixClient.shared.session.download(for: IopixClient.shared.request(preview ? "preview/\(current)?dl=1" : "orig/\(current)"))
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
             let name = (resp as? HTTPURLResponse).flatMap(Self.filename) ?? "iopix-\(current).jpg"
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)", isDirectory: true)
@@ -212,6 +274,119 @@ struct PhotoPager: View {
     private func openInWeb() {
         dismiss()
         router.open("#/photos?p=\(current)")
+    }
+
+    /// The link to this photo in the web app, as the web's Copy link gives it.
+    private var webLink: URL { URL(string: IopixClient.shared.server.absoluteString.hasSuffix("/") ? "\(IopixClient.shared.server.absoluteString)#/photos?p=\(current)" : "\(IopixClient.shared.server.absoluteString)/#/photos?p=\(current)") ?? IopixClient.shared.server }
+
+    private func emailLink() {
+        var c = URLComponents(string: "mailto:")
+        c?.queryItems = [URLQueryItem(name: "subject", value: "Photo \(current)"), URLQueryItem(name: "body", value: webLink.absoluteString)]
+        if let u = c?.url { UIApplication.shared.open(u) }
+    }
+
+    // MARK: keys and slideshow
+
+    private func key(_ press: KeyPress) -> KeyPress.Result {
+        switch press.key {
+        case .leftArrow: if index > 0 { index -= 1 }; return .handled
+        case .rightArrow: if index + 1 < ids.count { index += 1 }; return .handled
+        case .escape:
+            if slideshow { toggleSlideshow() } else if editing { editing = false } else { dismiss() }
+            return .handled
+        case .space: if ids.count > 1 { toggleSlideshow() }; return .handled
+        case .delete, .deleteForward: if rights.canWrite { confirmTrash = true }; return .handled
+        default: break
+        }
+        switch press.characters.lowercased() {
+        case "0", "1", "2", "3", "4", "5":
+            if rights.canWrite { Task { await rate(Int(press.characters) ?? 0) } }
+            return .handled
+        case "l": Task { await store.setFavorite(current, !store.favoriteIDs.contains(current)) }; return .handled
+        case "i": if sidePane { pane.toggle() } else { sheet.toggle() }; return .handled
+        case "f": if !isVideo(index) { showFaces.toggle() }; return .handled
+        case "e": if rights.canWrite { editing = true }; return .handled
+        case "[": if rights.canWrite, !isVideo(index) { Task { await transform("left") } }; return .handled
+        case "]": if rights.canWrite, !isVideo(index) { Task { await transform("right") } }; return .handled
+        case "d": Task { await share() }; return .handled
+        default: return .ignored
+        }
+    }
+
+    private func toggleSlideshow() {
+        slideshow.toggle()
+        if slideshow { withAnimation { chrome = false }; restartSlideshow() } else { slideTask?.cancel(); withAnimation { chrome = true } }
+    }
+
+    private func restartSlideshow() {
+        slideTask?.cancel()
+        slideTask = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled, slideshow else { return }
+            index = (index + 1) % max(ids.count, 1)
+        }
+    }
+
+    // MARK: quick actions
+
+    private func rate(_ n: Int) async {
+        do { try await EditAPI.edit([current], ["rating": n]); toast = n == 0 ? "Rating cleared." : "Rated \(n) star\(n == 1 ? "" : "s")."; reloadKey += 1 }
+        catch { toast = error.localizedDescription }
+    }
+
+    private func transform(_ op: String) async {
+        do {
+            let r = try await EditAPI.post("api/photos/transform", ["ids": [current], "op": op])
+            if let f = (r["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "Not changed.") }
+            handle(.pictureChanged)
+        } catch { toast = error.localizedDescription }
+    }
+
+    private func trash() async {
+        do {
+            let r = try await EditAPI.post("api/photos/trash", ["ids": [current]])
+            if let f = (r["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "Not moved to the trash.") }
+            toast = "Moved to the trash."
+            handle(.removed)
+        } catch { toast = error.localizedDescription }
+    }
+
+    // MARK: a face box on the picture
+
+    private func faceTitle(_ f: PhotoDetail.Face) -> String {
+        switch f.kind {
+        case .confirmed, .tagOnly: return f.name ?? "Face"
+        case .suggested: return "Is this \(f.name ?? "them")?"
+        case .unknown: return "Unknown face"
+        }
+    }
+
+    @ViewBuilder private func faceMenu(_ f: PhotoDetail.Face) -> some View {
+        let rect = f.rect
+        switch f.kind {
+        case .confirmed, .tagOnly:
+            if let t = f.tag { Button("All photos of \(f.name ?? "them")") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.open("#/photos?tag=\(t)") } } }
+            Button("Someone else…") { naming = f }
+            Button("Adjust the box…") { faces = true }
+            Button("Forget the name") { Task { await faceOp(["op": "unknown", "image": current, "rect": rect], "Name removed; the face stays as unknown.") } }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": current, "rect": rect], "Face ignored.") } }
+            Button("Remove this face", role: .destructive) { Task { await faceOp(["op": "remove", "image": current, "rect": rect], "Face removed.") } }
+        case .suggested:
+            Button("Yes, this is \(f.name ?? "them")") { Task { await faceOp(["op": "confirm", "image": current, "rect": rect], "Confirmed.") } }
+            Button("No, someone else…") { naming = f }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": current, "rect": rect], "Face ignored.") } }
+            Button("Remove this box", role: .destructive) { Task { await faceOp(["op": "remove", "image": current, "rect": rect], "Removed.") } }
+        case .unknown:
+            Button("Who is this?…") { naming = f }
+            Button("Adjust the box…") { faces = true }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": current, "rect": rect], "Face ignored.") } }
+            Button("Remove this box", role: .destructive) { Task { await faceOp(["op": "remove", "image": current, "rect": rect], "Removed.") } }
+        }
+    }
+
+    private func faceOp(_ o: [String: Any], _ said: String) async {
+        do { try await EditAPI.faceOp(o); toast = said; reloadKey += 1 }
+        catch { toast = "That face change did not go through: \(error.localizedDescription)" }
     }
 
     static func filename(_ r: HTTPURLResponse) -> String? {
@@ -253,7 +428,10 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct ZoomablePhoto: UIViewRepresentable {
     let id: Int
     var faces: FaceBoxes?
+    /// The original file can be shown: past the preview's resolution the viewer switches to it (web app: lightbox.js).
+    var original = false
     var tapped: () -> Void = {}
+    var faceTapped: (PhotoDetail.Face) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -280,7 +458,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTap(_:)))
         double.numberOfTapsRequired = 2
         scroll.addGestureRecognizer(double)
-        let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTap))
+        let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTap(_:)))
         single.require(toFail: double)
         scroll.addGestureRecognizer(single)
         return scroll
@@ -289,9 +467,12 @@ struct ZoomablePhoto: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         let c = context.coordinator
         c.tapped = tapped
+        c.faceTapped = faceTapped
+        c.original = original
         c.faceLayer?.boxes = faces
         guard c.loaded != id else { return }
         c.loaded = id
+        c.hires = false
         scroll.zoomScale = 1
         let thumb = "thumb/\(id)", preview = "preview/\(id)"
         c.image?.image = ImageCache.shared.cached(preview) ?? ImageCache.shared.cached(thumb)
@@ -306,11 +487,28 @@ struct ZoomablePhoto: UIViewRepresentable {
         weak var image: UIImageView?
         weak var faceLayer: FaceLayer?
         var loaded: Int?
+        var original = false
+        var hires = false
         var tapped: () -> Void = {}
+        var faceTapped: (PhotoDetail.Face) -> Void = { _ in }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { image }
 
-        @objc func singleTap() { tapped() }
+        /// Zoomed in past what the preview holds: the original file, once, if it is a picture the device can decode.
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            guard original, !hires, scrollView.zoomScale > 1.4, let id = loaded else { return }
+            hires = true
+            Task { @MainActor [weak self] in
+                guard let (data, resp) = try? await IopixClient.shared.session.data(for: IopixClient.shared.request("orig/\(id)")),
+                      (resp as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: data)?.preparingForDisplay(),
+                      self?.loaded == id else { return }
+                self?.image?.image = img
+            }
+        }
+
+        @objc func singleTap(_ g: UITapGestureRecognizer) {
+            if let layer = faceLayer, let f = layer.face(at: g.location(in: layer)) { faceTapped(f) } else { tapped() }
+        }
 
         @objc func doubleTap(_ g: UITapGestureRecognizer) {
             guard let scroll else { return }
@@ -332,15 +530,20 @@ struct MediaPage: View {
     let active: Bool
     var showFaces = false
     var tapped: () -> Void
+    var faceTapped: (PhotoDetail.Face) -> Void = { _ in }
     @State private var video: Bool?
     @State private var boxes: FaceBoxes?
+    @State private var original = false
+
+    /// Formats the device decodes itself; a raw file is left to the server's preview.
+    private static let native: Set<String> = ["JPG", "JPEG", "PNG", "HEIC", "HEIF", "WEBP", "GIF", "TIF", "TIFF", "BMP"]
 
     var body: some View {
         Group {
             if knownVideo || video == true {
                 VideoPage(id: id, active: active)
             } else {
-                ZoomablePhoto(id: id, faces: showFaces ? boxes : nil, tapped: tapped)
+                ZoomablePhoto(id: id, faces: showFaces ? boxes : nil, original: original, tapped: tapped, faceTapped: faceTapped)
             }
         }
         .task(id: showFaces ? id : -id) {
@@ -348,8 +551,11 @@ struct MediaPage: View {
             boxes = FaceBoxes(width: d.w, height: d.h, faces: d.faces.filter { $0.rect.count == 4 })
         }
         .task(id: id) {
-            guard !knownVideo, video == nil, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
-            video = (d["video"] as? NSNumber)?.boolValue == true || d["playable"] != nil || ((d["duration"] as? NSNumber)?.doubleValue ?? 0) > 0
+            guard !knownVideo, let d = try? await IopixClient.shared.json("api/photo/\(id)") else { return }
+            if video == nil { video = (d["video"] as? NSNumber)?.boolValue == true || d["playable"] != nil || ((d["duration"] as? NSNumber)?.doubleValue ?? 0) > 0 }
+            // bigger than the preview and decodable here: zooming in can show the original (as the web app does)
+            let w = (d["w"] as? NSNumber)?.intValue ?? 0, h = (d["h"] as? NSNumber)?.intValue ?? 0
+            original = video != true && Self.native.contains((d["fmt"] as? String ?? "").uppercased()) && max(w, h) > 2560
         }
     }
 }
@@ -420,7 +626,7 @@ struct PhotoInfoPane: View {
     var open: (String) -> Void = { _ in }
 
     var body: some View {
-        PhotoInfoFull(photo: photo, open: open)
+        PhotoInfoFull(photo: photo, open: open, edit: edit)
             // the heading stays put above the details as they scroll, on its own strip
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack {
@@ -438,14 +644,19 @@ struct PhotoInfoPane: View {
     }
 }
 
+/// The details on a phone: the same pane as on iPad and Mac, as a sheet.
 struct PhotoInfoSheet: View {
     let photo: Int
+    var edit: (() -> Void)? = nil
+    var open: (String) -> Void = { _ in }
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            PhotoInfoList(photo: photo)
+            PhotoInfoFull(photo: photo, open: { route in dismiss(); open(route) }, edit: edit.map { e in { dismiss(); e() } })
                 .navigationTitle("Info")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Done") } } }
         }
     }
 }
@@ -611,6 +822,16 @@ struct FaceBoxes {
 /// suggestions in yellow, unknown faces dashed.
 final class FaceLayer: UIView {
     var boxes: FaceBoxes? { didSet { rebuild() } }
+
+    /// The face whose box (or name) is at `p`, for a tap on the picture.
+    func face(at p: CGPoint) -> PhotoDetail.Face? {
+        guard let b = boxes else { return nil }
+        let views = subviews
+        for (k, f) in b.faces.enumerated() where k * 2 + 1 < views.count {
+            if views[k * 2].frame.insetBy(dx: -6, dy: -6).contains(p) || views[k * 2 + 1].frame.contains(p) { return f }
+        }
+        return nil
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)

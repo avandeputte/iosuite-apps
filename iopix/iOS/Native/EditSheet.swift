@@ -37,6 +37,9 @@ struct PhotoEditSheet: View {
     @State private var moving = false
     @State private var renaming = false
     @State private var newName = ""
+    @State private var template = false
+    @State private var shiftAmount = 1
+    @State private var shiftUnit = 3600
     @State private var confirmTrash = false
     @State private var confirmRevert = false
     @State private var busy: String?
@@ -122,6 +125,7 @@ struct PhotoEditSheet: View {
             }
         }
         .sheet(isPresented: $history) { EditHistoryView(photo: photo) { onOutcome(.pictureChanged); Task { await load() } } }
+        .sheet(isPresented: $template) { BulkTemplateSheet(ids: [photo]) { onOutcome(.changed); Task { await load(keepDraft: true) } } }
         .sheet(isPresented: $metadata) { EditMetadataView(photo: photo) { onOutcome(.changed); Task { await load() } } }
         .sheet(isPresented: $moving) {
             EditFolderPicker(current: original?.folderID) { folder in Task { await move(to: folder) } }
@@ -247,6 +251,19 @@ struct PhotoEditSheet: View {
                 case .unknown:
                     EmptyView()
                 }
+                if DateKnown(level: draft.precision) == .exact, original?.taken != nil {
+                    // a camera clock that was off: the date moved by an amount, saved at once (as the bulk editor does)
+                    DisclosureGroup("Shift the date") {
+                        Stepper("By \(shiftAmount)", value: $shiftAmount, in: 1...999)
+                        Picker("Unit", selection: $shiftUnit) {
+                            Text("hours").tag(3600); Text("minutes").tag(60); Text("days").tag(86400); Text("seconds").tag(1)
+                        }
+                        HStack {
+                            Button("Later") { Task { await shift(shiftAmount * shiftUnit) } }.buttonStyle(.bordered)
+                            Button("Earlier") { Task { await shift(-shiftAmount * shiftUnit) } }.buttonStyle(.bordered)
+                        }
+                    }
+                }
             } header: { Text("Date taken") } footer: {
                 if let n = DateKnown(level: draft.precision).note(many: false) { Text(n) }
             }
@@ -315,6 +332,7 @@ struct PhotoEditSheet: View {
                     tool("Use as the folder's cover", "photo.on.rectangle") { Task { await folderCover(folder) } }
                 }
                 tool("Look for faces", "viewfinder") { Task { await detectFaces() } }
+                tool("Apply a metadata template…", "doc.text") { template = true }
                 tool("Edit log…", "clock.arrow.circlepath") { history = true }
                 tool("All metadata…", "list.bullet.rectangle") { metadata = true }
                 if original?.edited == true {
@@ -404,6 +422,15 @@ struct PhotoEditSheet: View {
             onOutcome(.changed)
             await load(keepDraft: true)
             return "Renamed."
+        }
+    }
+
+    private func shift(_ seconds: Int) async {
+        await run("Shifting the date…") {
+            try await EditAPI.edit([photo], ["shift": seconds])
+            onOutcome(.changed)
+            await load()
+            return "Date moved \(abs(seconds) / (seconds % 86400 == 0 ? 86400 : seconds % 3600 == 0 ? 3600 : seconds % 60 == 0 ? 60 : 1)) \(seconds % 86400 == 0 ? "day" : seconds % 3600 == 0 ? "hour" : seconds % 60 == 0 ? "minute" : "second")\(abs(seconds) / (seconds % 86400 == 0 ? 86400 : seconds % 3600 == 0 ? 3600 : seconds % 60 == 0 ? 60 : 1) == 1 ? "" : "s") \(seconds > 0 ? "later" : "earlier")."
         }
     }
 

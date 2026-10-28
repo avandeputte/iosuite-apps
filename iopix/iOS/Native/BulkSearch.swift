@@ -121,6 +121,27 @@ enum BulkSearch {
     }
 }
 
+/// Backspace in an empty search field takes the last filter chip away, as it does in the web app (a hardware
+/// keyboard: Mac, or an iPad with one). Any other key, or text in the field, is left to the field.
+private struct BackspaceDropsLastFilter: ViewModifier {
+    @Binding var text: String
+    @Binding var query: PhotoQuery
+
+    func body(content: Content) -> some View {
+        content.onKeyPress(.delete) {
+            guard text.isEmpty, !query.filters.isEmpty else { return .ignored }
+            query = query.droppingLastFilter()
+            return .handled
+        }
+    }
+}
+
+extension View {
+    func backspaceDropsLastFilter(text: Binding<String>, query: Binding<PhotoQuery>) -> some View {
+        modifier(BackspaceDropsLastFilter(text: text, query: query))
+    }
+}
+
 /// The suggestion rows for `.searchSuggestions`: picking one adds its filter and clears the text.
 struct SearchSuggestionRows: View {
     @Binding var text: String

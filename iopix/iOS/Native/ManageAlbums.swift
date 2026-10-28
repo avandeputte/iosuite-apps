@@ -12,7 +12,16 @@ final class AlbumList: ObservableObject {
         let mine: Bool
         let canEdit: Bool
     }
+    /// A smart album: a saved search, run live for its count and cover.
+    struct Smart: Identifiable, Hashable {
+        let id: Int
+        var name: String
+        let query: String
+    }
     @Published var albums: [Item] = []
+    @Published var searches: [Smart] = []
+    /// What each smart album finds now: how many photos, and the first one as its cover (nil while still running).
+    @Published var smartCounts: [Int: (count: Int, cover: Int?)] = [:]
     @Published var canShare = false
     @Published var canPrivate = false
     @Published var loaded = false
@@ -29,7 +38,26 @@ final class AlbumList: ObservableObject {
                         cover: (a["cover"] as? NSNumber)?.intValue, shared: a["shared"] as? Bool ?? true,
                         mine: a["mine"] as? Bool ?? false, canEdit: a["canEdit"] as? Bool ?? false)
         }
+        searches = (st["searches"] as? [[String: Any]] ?? []).compactMap { x in
+            guard let id = (x["id"] as? NSNumber)?.intValue else { return nil }
+            return Smart(id: id, name: x["name"] as? String ?? "", query: x["query"] as? String ?? "")
+        }
         loaded = true
+        await loadSmartCounts()
+    }
+
+    /// Runs each smart album's search once (the web app does the same, per library version) for its count and cover.
+    private func loadSmartCounts() async {
+        let list = searches
+        await withTaskGroup(of: (Int, (count: Int, cover: Int?)?).self) { group in
+            for s in list where smartCounts[s.id] == nil {
+                group.addTask {
+                    guard let l = try? await PhotoList.load(PhotoQuery.saved(s.query).items) else { return (s.id, nil) }
+                    return (s.id, (l.ids.count, l.ids.first))
+                }
+            }
+            for await (id, r) in group { if let r { smartCounts[id] = r } }
+        }
     }
 }
 
@@ -37,30 +65,53 @@ final class AlbumList: ObservableObject {
 struct ManageAlbumsScreen: View {
     @EnvironmentObject private var store: LibraryStore
     @StateObject private var list = AlbumList()
+    @StateObject private var rights = ManageRights()
+    @State private var filter = ""
     @State private var creating = false
     @State private var newName = ""
     @State private var newShared = true
     @State private var renaming: AlbumList.Item?
+    @State private var renamingSmart: AlbumList.Smart?
     @State private var renameText = ""
     @State private var deleting: AlbumList.Item?
+    @State private var deletingSmart: AlbumList.Smart?
     @State private var notice: Notice?
+
+    private func matches(_ name: String) -> Bool {
+        let f = filter.trimmingCharacters(in: .whitespaces)
+        return f.isEmpty || name.localizedStandardContains(f)
+    }
 
     var body: some View {
         List {
-            NavigationLink {
-                PhotoGridScreen(query: PhotoQuery([("fav", "1")]), title: "Favorites")
-            } label: {
-                ThumbRow(cover: nil, title: "Favorites", sub: store.favorites.formatted(), symbol: "heart.fill")
+            if filter.isEmpty {
+                NavigationLink {
+                    PhotoGridScreen(query: PhotoQuery([("fav", "1")]), title: "Favorites")
+                } label: {
+                    ThumbRow(cover: nil, title: "Favorites", sub: store.favorites.formatted(), symbol: "heart.fill")
+                }
             }
-            let shared = list.albums.filter(\.shared), mine = list.albums.filter { !$0.shared }
+            let albums = list.albums.filter { matches($0.name) }
+            let shared = albums.filter(\.shared), mine = albums.filter { !$0.shared }
+            let smart = list.searches.filter { matches($0.name) }
             if !shared.isEmpty { Section("Shared albums") { ForEach(shared) { row($0) } } }
             if !mine.isEmpty { Section("Only you") { ForEach(mine) { row($0) } } }
+            if !smart.isEmpty || filter.isEmpty {
+                Section {
+                    ForEach(smart) { smartRow($0) }
+                } header: { Text("Smart albums") } footer: {
+                    Text(smart.isEmpty ? "None yet. Filter or search the photos, then choose “Save this search…” from the bookmark menu above the grid."
+                         : "Smart albums are saved searches that update themselves.")
+                }
+            }
             if let problem = list.problem { Text(problem).foregroundStyle(.secondary) }
-            if list.loaded && list.albums.isEmpty && list.problem == nil {
+            if list.loaded && list.albums.isEmpty && list.problem == nil && filter.isEmpty {
                 Text("No albums yet. Make one here, or select photos and choose Add to album.").font(.footnote).foregroundStyle(.secondary)
             }
+            if !filter.isEmpty && albums.isEmpty && smart.isEmpty { Text("No albums match.").foregroundStyle(.secondary) }
         }
         .navigationTitle("Albums")
+        .searchable(text: $filter, prompt: "Find an album")
         .toolbar {
             if list.canShare || list.canPrivate {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -69,7 +120,7 @@ struct ManageAlbumsScreen: View {
                 }
             }
         }
-        .task { await list.load() }
+        .task { await rights.load(); await list.load() }
         .refreshable { await list.load(); await store.load() }
         .sheet(isPresented: $creating) {
             NavigationStack {
@@ -98,6 +149,14 @@ struct ManageAlbumsScreen: View {
         .namePrompt("Rename album", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), text: $renameText) { name in
             if let a = renaming { Task { await act("api/ualbums/\(a.id)", ["name": name], "Renamed.") } }
         }
+        .namePrompt("Rename smart album", isPresented: Binding(get: { renamingSmart != nil }, set: { if !$0 { renamingSmart = nil } }), text: $renameText) { name in
+            if let s = renamingSmart { Task { await act("api/searches/\(s.id)", ["name": name], "Renamed.") } }
+        }
+        .confirmationDialog("Delete the smart album “\(deletingSmart?.name ?? "")”?", isPresented: Binding(get: { deletingSmart != nil }, set: { if !$0 { deletingSmart = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let s = deletingSmart { Task { await act("api/searches/\(s.id)", ["delete": true], "Smart album deleted.") } }
+            }
+        } message: { Text("The photos are not touched.") }
         .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete album", role: .destructive) {
                 if let a = deleting { Task { await act("api/ualbums/\(a.id)", ["delete": true], "Album deleted.") } }
@@ -119,6 +178,9 @@ struct ManageAlbumsScreen: View {
             }
         }
         .contextMenu {
+            Button {
+                copyLink("ualbum=\(a.id)", a.shared ? "Link copied. It works for anyone who can reach iopix." : "Link copied. The album is private: it opens only for you.")
+            } label: { Label("Copy link", systemImage: "link") }
             if a.canEdit {
                 Button { renameText = a.name; renaming = a } label: { Label("Rename…", systemImage: "pencil") }
                 if a.shared, list.canPrivate, a.mine || list.canShare {
@@ -133,6 +195,37 @@ struct ManageAlbumsScreen: View {
                 Button(role: .destructive) { deleting = a } label: { Label("Delete album…", systemImage: "trash") }
             }
         }
+    }
+
+    /// A smart album: its search, run live for the count and cover; open it, copy its link, rename or delete it.
+    private func smartRow(_ s: AlbumList.Smart) -> some View {
+        let r = list.smartCounts[s.id]
+        return NavigationLink {
+            PhotoGridScreen(query: PhotoQuery.saved(s.query), title: s.name)
+        } label: {
+            ThumbRow(cover: r?.cover, title: s.name, sub: r.map { ManageAPI.plural($0.count, "photo") } ?? "…", symbol: "magnifyingglass")
+        }
+        .swipeActions(edge: .trailing) {
+            if rights.canWrite {
+                Button("Delete", role: .destructive) { deletingSmart = s }
+                Button("Rename") { renameText = s.name; renamingSmart = s }.tint(Hue.blue)
+            }
+        }
+        .contextMenu {
+            Button { copyLink(PhotoQuery.saved(s.query).queryString, "Link copied.") } label: { Label("Copy link", systemImage: "link") }
+            if rights.canWrite {
+                Button { renameText = s.name; renamingSmart = s } label: { Label("Rename…", systemImage: "pencil") }
+                Button(role: .destructive) { deletingSmart = s } label: { Label("Delete smart album…", systemImage: "trash") }
+            }
+        }
+    }
+
+    /// The web app's address for these filters, on the clipboard.
+    private func copyLink(_ query: String, _ said: String) {
+        var origin = AppConfig.serverURL.absoluteString
+        while origin.hasSuffix("/") { origin.removeLast() }
+        UIPasteboard.general.string = origin + "/#/photos?" + query
+        notice = Notice(text: said)
     }
 
     private func act(_ path: String, _ body: [String: Any], _ ok: String) async {

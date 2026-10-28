@@ -40,6 +40,11 @@ final class ExploreModel: ObservableObject {
     @Published var trips: [Trip] = []
     @Published var concepts: [Concept] = []
     @Published var account: Account?
+    /// From the server's status: editing is on, there is no digiKam database ("None" in Settings), and how many
+    /// edits made here are not in digiKam's database yet (the web app's S.EDITING, S.NO_DK and S.PENDING).
+    @Published var editing = false
+    @Published var noDigikam = false
+    @Published var pending = 0
 
     static var monthDay: String {
         let c = Calendar.current.dateComponents([.month, .day], from: Date())
@@ -57,8 +62,9 @@ final class ExploreModel: ObservableObject {
             if let list = j["events"] as? [[String: Any]] { trips = Self.trips(["events": list]) }
             else if let d = j["events"] as? [String: Any] { trips = Self.trips(d) }
             async let c: Void = loadConcepts()
+            async let s: Void = loadStatus()
             async let a = try? IopixClient.shared.account()
-            _ = await c
+            _ = await (c, s)
             account = await a
             return
         }
@@ -67,9 +73,17 @@ final class ExploreModel: ObservableObject {
         async let p: Void = loadPairs()
         async let e: Void = loadTrips()
         async let c: Void = loadConcepts()
+        async let s: Void = loadStatus()
         async let a = try? IopixClient.shared.account()
-        _ = await (t, r, p, e, c)
+        _ = await (t, r, p, e, c, s)
         account = await a
+    }
+
+    func loadStatus() async {
+        guard let j = try? await IopixClient.shared.json("api/status") else { return }
+        editing = j["editing"] as? Bool ?? false
+        noDigikam = (j["digikam"] as? [String: Any])?["none"] as? Bool ?? false
+        pending = (j["pendingEdits"] as? NSNumber)?.intValue ?? 0
     }
 
     func loadToday() async {
@@ -557,7 +571,11 @@ struct ExploreView: View {
               Pill(label: "Events & trips", route: "#/events"),
               Pill(label: "Contains text", route: "#/photos?hastext=1"),
               Pill(label: "Blurry", route: "#/photos?blurry=1"),
-              Pill(label: "Map", count: s.geotagged, route: "#/map")]
+              Pill(label: "Best looking", route: "#/photos?looks=top&sort=looks"),
+              Pill(label: "Likely rejects", route: "#/photos?rejects=1")]
+        if model.editing { p.append(Pill(label: "Date suggestions", route: "#/datesuggest")) }
+        if model.editing && !model.noDigikam { p.append(Pill(label: "Edited here, not yet in digiKam", count: model.pending, route: "#/photos?edited=1")) }
+        p.append(Pill(label: "Map", count: s.geotagged, route: "#/map"))
         return p
     }
 

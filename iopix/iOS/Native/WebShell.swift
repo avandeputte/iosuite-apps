@@ -92,7 +92,22 @@ final class Router: ObservableObject {
     @Published var placesPath: [Screen] = []
     @Published var morePath: [Screen] = []
     @Published var placesShowsMap = true
+    /// The level of Places on show: a country, then one of its regions (nil: the countries).
+    @Published var placesCountry: String?
+    @Published var placesRegion: String?
+    /// The filters the map in Places is limited to ("Show these on the map", a day's trail); empty for every photo.
+    @Published var mapQuery = PhotoQuery()
     var lastRoute: [AppTab: String] = [:]
+
+    /// Opens a screen on top of whatever the tab on screen shows.
+    func push(_ screen: Screen) {
+        switch tab {
+        case .explore, .photos: photosPath.append(screen); tab = .photos
+        case .people: peoplePath.append(screen)
+        case .places: placesPath.append(screen)
+        case .more: morePath.append(screen)
+        }
+    }
 
     /// Opens an address of the web app ("#/photos?year=2020") as the native screen for it, in the tab it belongs
     /// to. Settings, Maintenance, editing a photo (#/photos?p=) and the other admin pages open the web app.
@@ -117,10 +132,16 @@ final class Router: ObservableObject {
             peoplePath = [.faces(query.value("tab") ?? "suggested")]
             tab = .people
         case "places":
+            // #/places?country=France&region=Normandy: that level of the list
+            placesCountry = query.value("country")
+            placesRegion = placesCountry == nil ? nil : query.value("region")
             placesShowsMap = false
             placesPath = []
             tab = .places
         case "map":
+            // #/map?year=2020 ("Show these on the map"), #/map?from=D&to=D&trail=D (a day's trail): the map limited
+            // to those photos
+            mapQuery = PhotoQuery(query.filters)
             placesShowsMap = true
             placesPath = []
             tab = .places

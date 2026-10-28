@@ -186,6 +186,14 @@ extension PhotoQuery {
         return q
     }
 
+    /// Without the last filter chip (what Backspace in an empty search field takes away, as in the web app); the
+    /// order is kept.
+    func droppingLastFilter() -> PhotoQuery {
+        var q = self
+        if let i = q.items.lastIndex(where: { $0.name != "sort" }) { q.items.remove(at: i) }
+        return q
+    }
+
     /// The filters as the web app writes them after #/photos? (the order of the photos left out).
     var queryString: String {
         var c = URLComponents()

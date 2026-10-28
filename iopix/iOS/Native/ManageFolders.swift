@@ -13,6 +13,8 @@ final class FolderTree: ObservableObject {
         var caption: String
         var date: String
         var category: String
+        /// The cover photo chosen for it (digiKam's album icon); nil for the automatic one.
+        var icon: Int?
         let n: Int
         let nAll: Int
     }
@@ -31,8 +33,8 @@ final class FolderTree: ObservableObject {
                 return Node(id: id, pid: (f["pid"] as? NSNumber)?.intValue, name: f["name"] as? String ?? "",
                             root: (f["root"] as? NSNumber)?.intValue ?? 0, path: f["path"] as? String ?? "",
                             caption: f["caption"] as? String ?? "", date: f["date"] as? String ?? "",
-                            category: f["category"] as? String ?? "", n: (f["n"] as? NSNumber)?.intValue ?? 0,
-                            nAll: (f["nAll"] as? NSNumber)?.intValue ?? 0)
+                            category: f["category"] as? String ?? "", icon: (f["icon"] as? NSNumber)?.intValue,
+                            n: (f["n"] as? NSNumber)?.intValue ?? 0, nAll: (f["nAll"] as? NSNumber)?.intValue ?? 0)
             }
             problem = nil
         } catch {
@@ -83,6 +85,10 @@ struct ManageFoldersScreen: View {
     @State private var renameText = ""
     @State private var moving: FolderTree.Node?
     @State private var editing: FolderTree.Node?
+    @State private var detecting: FolderTree.Node?
+    /// Face detection is available on this server (the status' faceDetect).
+    @State private var faceDetect = false
+    @State private var filter = ""
     @State private var notice: Notice?
 
     init(parent: Int? = nil, tree: FolderTree? = nil) {
@@ -99,6 +105,24 @@ struct ManageFoldersScreen: View {
         let subs = t.children(of: parent)
         List {
             if let problem = t.problem { Text(problem).foregroundStyle(.secondary) }
+            if parent == nil, !filter.trimmingCharacters(in: .whitespaces).isEmpty {
+                // the find box: every folder whose path matches, flat, as the web app lists them
+                let found = t.nodes.filter { $0.path.localizedStandardContains(filter.trimmingCharacters(in: .whitespaces)) }
+                    .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                ForEach(found) { f in
+                    NavigationLink {
+                        if f.nAll > 0 || t.children(of: f.id).isEmpty {
+                            PhotoGridScreen(query: PhotoQuery([("album", "\(f.id)")]), title: f.name)
+                        } else {
+                            ManageFoldersScreen(parent: f.id, tree: t)
+                        }
+                    } label: {
+                        ThumbRow(cover: cover(f.id), title: f.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).replacingOccurrences(of: "/", with: " › "),
+                                 sub: f.nAll == 0 ? "Empty" : f.nAll.formatted(), symbol: "folder")
+                    }
+                }
+                if found.isEmpty { Text("No folders match.").foregroundStyle(.secondary) }
+            } else {
             if let here {
                 if !here.caption.isEmpty || !here.category.isEmpty {
                     Section {
@@ -133,14 +157,19 @@ struct ManageFoldersScreen: View {
                     if canManage && f.pid != nil {
                         Button { renameText = f.name; renaming = f } label: { Label("Rename…", systemImage: "pencil") }
                         Button { moving = f } label: { Label("Move…", systemImage: "folder.badge.gearshape") }
-                        Button { editing = f } label: { Label("Caption, date and collection…", systemImage: "info.circle") }
+                        Button { editing = f } label: { Label("Caption, date, collection and cover…", systemImage: "info.circle") }
+                        if f.nAll > 0 && faceDetect {
+                            Button { detecting = f } label: { Label("Detect faces in this folder", systemImage: "face.dashed") }
+                        }
                     }
                 }
             }
             if t.loaded && subs.isEmpty && here == nil {
                 Text("No folders.").foregroundStyle(.secondary)
             }
+            }
         }
+        .modifier(FindFolders(on: parent == nil, text: $filter))
         .overlay { if uploading { ProgressView("Uploading…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .navigationTitle(here?.name ?? "Folders")
         .toolbar {
@@ -153,7 +182,10 @@ struct ManageFoldersScreen: View {
                             PhotosPicker(selection: $picked, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current) {
                                 Label("Upload photos here…", systemImage: "square.and.arrow.up")
                             }
-                            Button { editing = here } label: { Label("Caption, date and collection…", systemImage: "info.circle") }
+                            Button { editing = here } label: { Label("Caption, date, collection and cover…", systemImage: "info.circle") }
+                            if here.nAll > 0 && faceDetect {
+                                Button { detecting = here } label: { Label("Detect faces in this folder", systemImage: "face.dashed") }
+                            }
                             if here.pid != nil {
                                 Button { renameText = here.name; renaming = here } label: { Label("Rename…", systemImage: "pencil") }
                                 Button { moving = here } label: { Label("Move…", systemImage: "folder.badge.gearshape") }
@@ -166,6 +198,7 @@ struct ManageFoldersScreen: View {
         .task {
             await rights.load()
             if tree == nil, !t.loaded { await t.load() }
+            faceDetect = ((try? await ManageAPI.get("api/status"))?["faceDetect"] as? Bool) ?? false
         }
         .refreshable { await t.load(); await store.load() }
         .namePrompt("New folder", isPresented: $newFolder, text: $newName, action: "Create",
@@ -182,10 +215,14 @@ struct ManageFoldersScreen: View {
             }
         }
         .sheet(item: $editing) { f in
-            FolderPropertiesSheet(folder: f) { caption, date, category in
-                Task { await act("api/folders/\(f.id)/properties", ["caption": caption, "date": date, "category": category], "Saved.") }
+            FolderPropertiesSheet(folder: f) { caption, date, category, icon in
+                Task { await act("api/folders/\(f.id)/properties", ["caption": caption, "date": date, "category": category, "icon": icon ?? NSNull()], "Folder properties saved.") }
             }
         }
+        .confirmationDialog("Look for faces in the \(ManageAPI.plural(detecting?.nAll ?? 0, "photo")) of “\(detecting?.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? "")” (with its subfolders)?",
+                            isPresented: Binding(get: { detecting != nil }, set: { if !$0 { detecting = nil } }), titleVisibility: .visible) {
+            Button("Look for faces") { if let f = detecting { Task { await detectFaces(f) } } }
+        } message: { Text("New faces are added as unnamed faces; faces already marked stay as they are.") }
         .onChange(of: picked) { _, items in
             guard !items.isEmpty, let here else { return }
             picked = []
@@ -195,6 +232,22 @@ struct ManageFoldersScreen: View {
     }
 
     private func cover(_ id: Int) -> Int? { store.folders.first { $0.id == id }?.cover }
+
+    /// Face detection over a folder and its subfolders: the server runs it in the background.
+    private func detectFaces(_ f: FolderTree.Node) async {
+        do {
+            let r = try await ManageAPI.post("api/faces/detect", ["album": f.id])
+            if r["done"] as? Bool == true {
+                let added = (r["added"] as? NSNumber)?.intValue ?? 0, found = (r["found"] as? NSNumber)?.intValue ?? 0
+                notice = Notice(text: added > 0 ? "Found \(ManageAPI.plural(added, "new face")). Name \(added == 1 ? "it" : "them") under People."
+                                : found > 0 ? "No new faces: the \(ManageAPI.plural(found, "face")) found \(found == 1 ? "is" : "are") already marked." : "No faces found.")
+            } else {
+                notice = Notice(text: "Looking for faces in \(ManageAPI.plural((r["queued"] as? NSNumber)?.intValue ?? 0, "photo")) in the background; progress in Maintenance › AI analysis and models.")
+            }
+        } catch {
+            notice = Notice(text: error.localizedDescription, failed: true)
+        }
+    }
 
     private func create(_ name: String) async {
         let into = parent ?? t.children(of: nil).first?.id ?? 0
@@ -231,6 +284,15 @@ struct ManageFoldersScreen: View {
         } catch {
             notice = Notice(text: error.localizedDescription, failed: true)
         }
+    }
+}
+
+/// The find box, on the top-level list only (as the web app's Folders page has it).
+private struct FindFolders: ViewModifier {
+    let on: Bool
+    @Binding var text: String
+    func body(content: Content) -> some View {
+        if on { content.searchable(text: $text, prompt: "Find a folder…") } else { content }
     }
 }
 
@@ -282,14 +344,17 @@ struct FolderPicker: View {
     }
 }
 
-/// digiKam's folder properties: caption, date and collection.
+/// digiKam's folder properties: caption, date, collection and cover (one of the folder's photos, or the best-rated
+/// one chosen automatically).
 struct FolderPropertiesSheet: View {
     let folder: FolderTree.Node
-    let save: (String, String, String) -> Void
+    let save: (String, String, String, Int?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var caption = ""
     @State private var date = Date()
     @State private var category = ""
+    @State private var icon: Int?
+    @State private var covers: [Int]?
 
     private static let format: DateFormatter = {
         let f = DateFormatter()
@@ -307,6 +372,25 @@ struct FolderPropertiesSheet: View {
                 Section { TextField("Collection", text: $category) } header: { Text("Collection") } footer: {
                     Text("digiKam's collection name, used to group folders.")
                 }
+                Section("Cover") {
+                    if let covers {
+                        if covers.isEmpty {
+                            Text("This folder has no photos yet.").foregroundStyle(.secondary)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    coverChoice(nil) {
+                                        Text("Auto").font(.caption).frame(width: 72, height: 72).background(Color.secondary.opacity(0.12))
+                                    }
+                                    ForEach(covers, id: \.self) { id in
+                                        coverChoice(id) { RemoteImage(path: "thumb/\(id)").frame(width: 72, height: 72).clipped() }
+                                    }
+                                }
+                            }
+                            Text("Auto: the best-rated photo.").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } else { ProgressView() }
+                }
             }
             .navigationTitle(folder.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -314,7 +398,7 @@ struct FolderPropertiesSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        save(caption, Self.format.string(from: date), category)
+                        save(caption, Self.format.string(from: date), category, icon)
                         dismiss()
                     } label: { BarText("Save") }
                 }
@@ -322,8 +406,24 @@ struct FolderPropertiesSheet: View {
             .onAppear {
                 caption = folder.caption
                 category = folder.category
+                icon = folder.icon
                 if let d = Self.format.date(from: folder.date) { date = d }
             }
+            .task {
+                // the first 80 photos of the folder, oldest first, as the web app offers them
+                let l = try? await PhotoList.load([URLQueryItem(name: "album", value: "\(folder.id)"), URLQueryItem(name: "sort", value: "old")])
+                covers = Array((l?.ids ?? []).prefix(80))
+            }
         }
+    }
+
+    private func coverChoice<V: View>(_ id: Int?, @ViewBuilder _ label: () -> V) -> some View {
+        Button { icon = id } label: {
+            label()
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: icon == id ? 3 : 0))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(id == nil ? "Chosen automatically" : "Photo \(id ?? 0)")
     }
 }

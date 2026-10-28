@@ -31,10 +31,11 @@ private func trashPhotos(_ ids: [Int]) async -> Notice {
 /// Files with identical content (same digiKam hash and size), largest first; editors move the extra copies to the
 /// trash.
 struct ManageDuplicatesScreen: View {
-    struct Copy: Identifiable, Hashable { let id: Int, name: String, album: String, ratio: Double, video: Bool }
+    struct Copy: Identifiable, Hashable { let id: Int, name: String, album: String, path: String, ratio: Double, video: Bool }
     struct Group: Identifiable, Hashable { let size: Int, items: [Copy]; var id: Int { items.first?.id ?? 0 } }
     @EnvironmentObject private var store: LibraryStore
     @StateObject private var rights = ManageRights()
+    @ObservedObject private var catalog = BulkCatalog.shared
     @State private var groups: [Group] = []
     @State private var wasted = 0
     @State private var loaded = false
@@ -58,6 +59,16 @@ struct ManageDuplicatesScreen: View {
                     ManageThumbStrip(items: g.items.map { .init(id: $0.id, ratio: $0.ratio, caption: "\($0.name)\n\($0.album)") }, height: 96) { i in
                         viewer = PagerStart(list: PhotoList(ids: g.items.map(\.id)), index: i)
                     }
+                    // each copy's folder, as the web app links it under the thumbnail
+                    ForEach(g.items) { c in
+                        if let album = catalog.folders.first(where: { $0.path == c.path })?.id {
+                            NavigationLink {
+                                PhotoGridScreen(query: PhotoQuery([("album", "\(album)"), ("sort", "old")]), title: c.album.isEmpty ? "The library root" : (c.album as NSString).lastPathComponent)
+                            } label: {
+                                Label("\(c.name) in \(c.album.isEmpty ? "the library root" : c.album)", systemImage: "folder").font(.footnote).lineLimit(1)
+                            }
+                        }
+                    }
                     if rights.canWrite {
                         ForEach(g.items) { c in
                             Button(role: .destructive) { trashing = (g, c) } label: {
@@ -69,7 +80,7 @@ struct ManageDuplicatesScreen: View {
             }
         }
         .navigationTitle("Duplicate files")
-        .task { await rights.load(); await load() }
+        .task { await rights.load(); await catalog.load(); await load() }
         .refreshable { await load() }
         .pager($viewer)
         .confirmationDialog("Move this copy to the trash?", isPresented: Binding(get: { trashing != nil }, set: { if !$0 { trashing = nil } }), titleVisibility: .visible) {
@@ -110,7 +121,7 @@ struct ManageDuplicatesScreen: View {
                 guard let id = (x["id"] as? NSNumber)?.intValue else { return nil }
                 let w = (x["w"] as? NSNumber)?.doubleValue ?? 0, h = (x["h"] as? NSNumber)?.doubleValue ?? 0
                 return Copy(id: id, name: x["name"] as? String ?? "", album: (x["album"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
-                            ratio: h > 0 ? w / h : 1.4, video: (x["video"] as? NSNumber)?.boolValue ?? false)
+                            path: x["album"] as? String ?? "", ratio: h > 0 ? w / h : 1.4, video: (x["video"] as? NSNumber)?.boolValue ?? false)
             })
         }
         loaded = true
@@ -364,11 +375,26 @@ struct ManageDetectedScreen: View {
 /// faces, untagged photos, photos without a location, in the wrong folder or with a doubtful date. Each list opens
 /// its photos; editors can trim boxes, ignore unnamed faces, accept findings, or clean up the doubled boxes.
 struct ManageQualityScreen: View {
+    /// One finding of the location, date and folder checks, with what its inline fixes need: the folder it is in,
+    /// the date its folder is named for (baddate) and the folder its date belongs in (wrongfolder).
+    struct Item: Identifiable, Hashable {
+        let photo: Int, name: String, ts: Double, taken: String, reason: String, folder: String, folderID: Int?
+        let folderDate: String?, suggestID: Int?, suggestPath: String?, expect: String
+        var id: Int { photo }
+    }
     struct Check: Identifiable {
         let key: String, title: String, detail: String, count: Int, photos: [Int], accepted: Int
+        var items: [Item] = []
         var id: String { key }
     }
+    /// Photos for a sheet (the location or date editor).
+    private struct Picked: Identifiable { let ids: [Int]; var id: String { ids.map(String.init).joined(separator: ",") } }
+    /// The checks whose rows list each photo with its inline fixes (the others show a strip of thumbnails).
+    private static let rowChecks: Set<String> = ["nolocation", "baddate", "wrongfolder"]
+    @EnvironmentObject private var store: LibraryStore
     @StateObject private var rights = ManageRights()
+    @ObservedObject private var catalog = BulkCatalog.shared
+    @StateObject private var tree = FolderTree()
     @State private var checks: [Check] = []
     @State private var checkedAt: Double?
     @State private var running = false
@@ -378,6 +404,14 @@ struct ManageQualityScreen: View {
     @State private var confirm: String?
     @State private var ignoring: [Int] = []
     @State private var notice: Notice?
+    // ticked rows belong to one check at a time (a trip's photos to place together); the bar at the bottom acts on them
+    @State private var ticked: Set<Int> = []
+    @State private var tickedCheck = ""
+    @State private var locating: Picked?
+    @State private var dating: Picked?
+    @State private var movePick: Item?
+    @State private var folderDating: [Item]?
+    @State private var openFolder: Item?
 
     var body: some View {
         List {
@@ -393,12 +427,18 @@ struct ManageQualityScreen: View {
                         Spacer()
                         Text(c.count.formatted()).font(.headline).foregroundStyle(c.count == 0 ? Hue.green : Hue.amber)
                     }
-                    if !c.photos.isEmpty {
-                        ManageThumbStrip(items: c.photos.prefix(40).map { .init(id: $0) }, height: 72) { i in
-                            viewer = PagerStart(list: PhotoList(ids: c.photos), index: i)
+                    if Self.rowChecks.contains(c.key) {
+                        if rights.canWrite && c.count > 0 { actions(c) }
+                        ForEach(c.items.prefix(40)) { x in itemRow(c, x) }
+                        if c.items.count > 40 { Text("The first 40 of \(c.items.count.formatted()).").font(.footnote).foregroundStyle(.secondary) }
+                    } else {
+                        if !c.photos.isEmpty {
+                            ManageThumbStrip(items: c.photos.prefix(40).map { .init(id: $0) }, height: 72) { i in
+                                viewer = PagerStart(list: PhotoList(ids: c.photos), index: i)
+                            }
                         }
+                        if rights.canWrite && c.count > 0 { actions(c) }
                     }
-                    if rights.canWrite && c.count > 0 { actions(c) }
                     if c.accepted > 0 {
                         Button("Show the \(ManageAPI.plural(c.accepted, "accepted photo")) again") { Task { await unaccept(c.key) } }.font(.footnote)
                     }
@@ -406,9 +446,24 @@ struct ManageQualityScreen: View {
             }
         }
         .navigationTitle("Metadata quality")
-        .task { await rights.load(); await load() }
+        .safeAreaInset(edge: .bottom) { if !ticked.isEmpty { tickedBar } }
+        .task { await rights.load(); await catalog.load(); await load() }
         .refreshable { await load() }
         .pager($viewer)
+        .navigationDestination(item: $openFolder) { x in
+            PhotoGridScreen(query: PhotoQuery([("album", "\(x.folderID ?? 0)"), ("sort", "old")]), title: x.folder.isEmpty ? "The library root" : (x.folder as NSString).lastPathComponent)
+        }
+        .sheet(item: $locating) { p in BulkLocationSheet(ids: p.ids) { Task { untickAll(); await load() } } }
+        .sheet(item: $dating) { p in BulkEditSheet(ids: p.ids) { Task { untickAll(); await load() } } }
+        .sheet(item: $movePick) { x in
+            FolderPicker(tree: tree, excluding: [], root: tree.node(x.folderID)?.root ?? 0, title: "Move \(x.name) into") { target in
+                Task { await move([x.photo], to: target) }
+            }
+        }
+        .confirmationDialog("Date \(ManageAPI.plural(folderDating?.count ?? 0, "photo")) from the folder \((folderDating?.count ?? 0) == 1 ? "it is" : "they are") in (its date, at noon)?",
+                            isPresented: Binding(get: { folderDating != nil }, set: { if !$0 { folderDating = nil } }), titleVisibility: .visible) {
+            Button("Take the folder’s date") { if let list = folderDating { Task { await useFolderDate(list) } } }
+        }
         .confirmationDialog(confirm == "files" ? "Clean up the image files too?" : "Remove the doubled face boxes?", isPresented: Binding(get: { confirm != nil && confirm != "ignore" }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
             Button(confirm == "files" ? "Clean up image files" : "Remove doubles", role: .destructive) {
                 let files = confirm == "files"
@@ -436,10 +491,166 @@ struct ManageQualityScreen: View {
         case "unnamed":
             Button("Ignore these unnamed faces") { ignoring = c.photos; confirm = "ignore" }
             Button("Accept them as they are") { Task { await accept(c.key, c.photos) } }
-        case "untagged", "nolocation", "wrongfolder", "baddate":
+        case "untagged":
             Button("Accept these as they are") { Task { await accept(c.key, c.photos) } }
+        case "nolocation":
+            if catalog.editing {
+                Button(tickedCheck == c.key && ticked.count >= c.items.count ? "Untick all" : "Tick all shown") { tickAll(c, on: !(tickedCheck == c.key && ticked.count >= c.items.count)) }
+                Button("Set location for all shown") { locating = Picked(ids: c.items.map(\.photo)) }
+            }
+            Button("Accept all shown") { Task { await accept(c.key, c.photos) } }
+        case "baddate":
+            let withFolder = c.items.filter { $0.folderDate != nil }
+            if catalog.editing && !withFolder.isEmpty {
+                Button("Take the folder’s date for \(withFolder.count.formatted())") { folderDating = withFolder }
+            }
+            Button("Accept all shown") { Task { await accept(c.key, c.photos) } }
+        case "wrongfolder":
+            Button("Accept all shown") { Task { await accept(c.key, c.photos) } }
         default:
             EmptyView()
+        }
+    }
+
+    /// One finding, with the inline fixes the web app offers for it: set the location, set or fix the date, take the
+    /// folder's date, move the file to the folder for its date, or accept it as it is.
+    private func itemRow(_ c: Check, _ x: Item) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if catalog.editing {
+                let on = tickedCheck == c.key && ticked.contains(x.photo)
+                Button { tick(c, x.photo) } label: { Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.title3) }
+                    .buttonStyle(.borderless).accessibilityLabel("Tick \(x.name)")
+            }
+            Button { viewer = PagerStart(list: PhotoList(ids: c.photos), index: c.photos.firstIndex(of: x.photo) ?? 0) } label: {
+                RemoteImage(path: "thumb/\(x.photo)").frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(x.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text(itemDetail(c.key, x)).font(.caption).foregroundStyle(.secondary)
+                if x.folderID != nil, c.key != "nolocation" {
+                    Button("in \(x.folder.isEmpty ? "the library root" : x.folder)") { openFolder = x }.buttonStyle(.borderless).font(.caption)
+                }
+                FlowLayout(spacing: 12) {
+                    switch c.key {
+                    case "nolocation":
+                        if catalog.editing { Button("Set location") { locating = Picked(ids: [x.photo]) } }
+                    case "baddate":
+                        if catalog.editing {
+                            Button("Set the date") { dating = Picked(ids: [x.photo]) }
+                            if let fd = x.folderDate { Button("Use the folder’s date (\(fd.prefix(10)))") { Task { await useFolderDate([x]) } } }
+                        }
+                    case "wrongfolder":
+                        if catalog.editing { Button("Fix the date") { dating = Picked(ids: [x.photo]) } }
+                        if catalog.canManage {
+                            if let path = x.suggestPath { Button("Move to \(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))") { Task { await moveToDateFolder([x]) } } }
+                            else { Button("Move to a folder…") { Task { if !tree.loaded { await tree.load() }; movePick = x } } }
+                        }
+                    default: EmptyView()
+                    }
+                    Button("Accept as it is") { Task { await accept(c.key, [x.photo]) } }
+                }
+                .buttonStyle(.borderless).font(.caption)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func itemDetail(_ key: String, _ x: Item) -> String {
+        let day = x.ts > 0 ? Date(timeIntervalSince1970: x.ts).formatted(date: .abbreviated, time: .omitted) : nil
+        switch key {
+        case "nolocation": return day ?? "no date"
+        case "baddate": return "\(x.taken.replacingOccurrences(of: "T", with: " ")) · \(x.reason)"
+        default: return "taken \(day ?? String(x.taken.prefix(10)))" + (x.expect.isEmpty ? "" : " · a folder for \(x.expect)")
+        }
+    }
+
+    // MARK: ticking several rows
+
+    private func tick(_ c: Check, _ photo: Int) {
+        if tickedCheck != c.key { ticked = []; tickedCheck = c.key }
+        if ticked.contains(photo) { ticked.remove(photo) } else { ticked.insert(photo) }
+    }
+
+    private func tickAll(_ c: Check, on: Bool) {
+        tickedCheck = c.key
+        ticked = on ? Set(c.items.map(\.photo)) : []
+    }
+
+    private func untickAll() { ticked = [] }
+
+    private var tickedItems: [Item] { checks.first { $0.key == tickedCheck }?.items.filter { ticked.contains($0.photo) } ?? [] }
+
+    /// Fixed at the bottom while rows are ticked: the fixes for all of them together, as the web app's bar.
+    private var tickedBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(ManageAPI.plural(ticked.count, "photo")) ticked").font(.subheadline.weight(.medium))
+                Spacer()
+                Button("Untick all") { untickAll() }.font(.subheadline)
+            }
+            FlowLayout(spacing: 8) {
+                let items = tickedItems
+                switch tickedCheck {
+                case "nolocation":
+                    Button("Set their location…") { locating = Picked(ids: Array(ticked)) }.buttonStyle(.borderedProminent)
+                case "baddate":
+                    Button("Set their date…") { dating = Picked(ids: Array(ticked)) }.buttonStyle(.borderedProminent)
+                    let withFolder = items.filter { $0.folderDate != nil }
+                    if !withFolder.isEmpty { Button("Use the folder’s date for \(withFolder.count)") { folderDating = withFolder }.buttonStyle(.bordered) }
+                case "wrongfolder":
+                    Button("Fix their date…") { dating = Picked(ids: Array(ticked)) }.buttonStyle(.borderedProminent)
+                    let movable = items.filter { $0.suggestID != nil }
+                    if catalog.canManage && !movable.isEmpty { Button("Move \(movable.count) to the folder for their date") { Task { await moveToDateFolder(movable) } }.buttonStyle(.bordered) }
+                default: EmptyView()
+                }
+                Button("Accept them as they are") { let ids = Array(ticked), key = tickedCheck; Task { await accept(key, ids); untickAll() } }.buttonStyle(.bordered)
+            }
+            .font(.caption)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+    }
+
+    // MARK: the fixes
+
+    /// The date the folder is named for (at noon), as the photo's date.
+    private func useFolderDate(_ list: [Item]) async {
+        var n = 0
+        for x in list { if let fd = x.folderDate, await BulkEdit.apply([x.photo], ["taken": fd], quiet: true) { n += 1 } }
+        notice = Notice(text: "\(ManageAPI.plural(n, "photo")) dated from \(n == 1 ? "its" : "their") folder.", failed: n == 0)
+        untickAll()
+        await load()
+    }
+
+    /// Moves each file (with its sidecar) to the folder for its date, as the check suggests.
+    private func moveToDateFolder(_ list: [Item]) async {
+        var by: [Int: [Int]] = [:]
+        for x in list { if let a = x.suggestID { by[a, default: []].append(x.photo) } }
+        var n = 0, failed = 0
+        for (album, ids) in by {
+            do {
+                let r = try await ManageAPI.post("api/photos/move", ["ids": ids, "album": album])
+                n += (r["moved"] as? [Any])?.count ?? 0
+                failed += (r["failed"] as? [Any])?.count ?? 0
+            } catch { notice = Notice(text: error.localizedDescription, failed: true); return }
+        }
+        notice = Notice(text: "\(ManageAPI.plural(n, "photo")) moved to the folder for \(n == 1 ? "its" : "their") date" + (failed > 0 ? "; \(failed) could not be." : "."), failed: n == 0)
+        untickAll()
+        await load()
+        await store.load()
+    }
+
+    private func move(_ ids: [Int], to album: Int) async {
+        do {
+            let r = try await ManageAPI.post("api/photos/move", ["ids": ids, "album": album])
+            let n = (r["moved"] as? [Any])?.count ?? 0, failed = (r["failed"] as? [[String: Any]]) ?? []
+            notice = Notice(text: "\(ManageAPI.plural(n, "photo")) moved" + (failed.isEmpty ? "." : "; \(failed.count) not: \(failed.first?["error"] as? String ?? "")"), failed: n == 0)
+            await load()
+            await store.load()
+        } catch {
+            notice = Notice(text: error.localizedDescription, failed: true)
         }
     }
 
@@ -465,8 +676,23 @@ struct ManageQualityScreen: View {
                 let list = (s["items"] as? [[String: Any]]) ?? (s["examples"] as? [[String: Any]]) ?? []
                 var seen = Set<Int>()
                 let photos = list.compactMap { ($0["photo"] as? NSNumber)?.intValue }.filter { seen.insert($0).inserted }
-                return Check(key: key, title: title, detail: detail, count: count, photos: photos, accepted: (s["accepted"] as? NSNumber)?.intValue ?? 0)
+                var c = Check(key: key, title: title, detail: detail, count: count, photos: photos, accepted: (s["accepted"] as? NSNumber)?.intValue ?? 0)
+                if Self.rowChecks.contains(key) {
+                    var seenRows = Set<Int>()
+                    c.items = list.compactMap { x in
+                        guard let id = (x["photo"] as? NSNumber)?.intValue, seenRows.insert(id).inserted else { return nil }
+                        let sug = x["suggest"] as? [String: Any]
+                        return Item(photo: id, name: x["name"] as? String ?? "", ts: (x["ts"] as? NSNumber)?.doubleValue ?? 0,
+                                    taken: x["taken"] as? String ?? "", reason: x["reason"] as? String ?? "",
+                                    folder: (x["folder"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                                    folderID: (x["folder_id"] as? NSNumber)?.intValue, folderDate: x["folder_date"] as? String,
+                                    suggestID: (sug?["id"] as? NSNumber)?.intValue, suggestPath: sug?["path"] as? String, expect: x["expect"] as? String ?? "")
+                    }
+                }
+                return c
             }
+            // ticks of rows that left the list go with them
+            if let c = checks.first(where: { $0.key == tickedCheck }) { ticked = ticked.intersection(c.items.map(\.photo)) } else { ticked = [] }
             problem = nil
         } catch {
             problem = error.localizedDescription
@@ -512,6 +738,14 @@ struct ManageHistoryScreen: View {
     @State private var search = ""
     @State private var sent = ""
     @State private var action = ""
+    // the web app's filters: a person (their tag), who made the change, and a range of days
+    @State private var person: Int?
+    @State private var user = ""
+    @State private var users: [String] = []
+    @State private var fromOn = false
+    @State private var from = Date()
+    @State private var untilOn = false
+    @State private var until = Date()
     @State private var loaded = false
     @State private var problem: String?
     @State private var viewer: PagerStart?
@@ -527,6 +761,23 @@ struct ManageHistoryScreen: View {
         List {
             Section {
                 Picker("Show", selection: $action) { ForEach(Self.actions, id: \.0) { Text($0.1).tag($0.0) } }
+                let people = store.people.filter { $0.all > 0 || $0.count > 0 }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                if !people.isEmpty {
+                    Picker("Person", selection: $person) {
+                        Text("Any person").tag(Int?.none)
+                        ForEach(people) { Text($0.name).tag(Int?.some($0.id)) }
+                    }
+                }
+                if !users.isEmpty {
+                    Picker("By", selection: $user) {
+                        Text("Anyone").tag("")
+                        ForEach(users, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Toggle("From a day", isOn: $fromOn)
+                if fromOn { DatePicker("From", selection: $from, displayedComponents: .date) }
+                Toggle("Until a day", isOn: $untilOn)
+                if untilOn { DatePicker("Until", selection: $until, displayedComponents: .date) }
                 if loaded { Text(ManageAPI.plural(total, "change")).font(.footnote).foregroundStyle(.secondary) }
             }
             ForEach(entries) { e in
@@ -564,20 +815,29 @@ struct ManageHistoryScreen: View {
         .searchable(text: $search, prompt: "Search changes, file names, people")
         .onSubmit(of: .search) { sent = search }
         .onChange(of: search) { _, s in if s.isEmpty { sent = "" } }
-        .task(id: "\(sent)|\(action)") { await rights.load(); await load(more: false) }
+        .task(id: "\(sent)|\(action)|\(person ?? 0)|\(user)|\(since ?? 0)|\(untilStamp ?? 0)") { await rights.load(); await load(more: false) }
         .refreshable { await load(more: false) }
         .pager($viewer)
         .notice($notice)
     }
+
+    /// The range as the web app sends it: from the start of the first day to the end of the last (local time).
+    private var since: Int? { fromOn ? Int(Calendar.current.startOfDay(for: from).timeIntervalSince1970) : nil }
+    private var untilStamp: Int? { untilOn ? Int(Calendar.current.startOfDay(for: until).timeIntervalSince1970) + 86400 : nil }
 
     private func load(more: Bool) async {
         var q = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "offset", value: "\(more ? entries.count : 0)")]
         if !sent.isEmpty { q.append(URLQueryItem(name: "q", value: sent)) }
         if !action.isEmpty { q.append(URLQueryItem(name: "action", value: action)) }
         if let photo { q.append(URLQueryItem(name: "photo", value: "\(photo)")) }
+        if let person { q.append(URLQueryItem(name: "person", value: "\(person)")) }
+        if !user.isEmpty { q.append(URLQueryItem(name: "user", value: user)) }
+        if let since { q.append(URLQueryItem(name: "since", value: "\(since)")) }
+        if let untilStamp { q.append(URLQueryItem(name: "until", value: "\(untilStamp)")) }
         let j: [String: Any]
         do { j = try await ManageAPI.get("api/history", q); problem = nil } catch { problem = error.localizedDescription; loaded = true; return }
         total = (j["total"] as? NSNumber)?.intValue ?? 0
+        if let u = j["users"] as? [String], !u.isEmpty { users = u }  // who has made changes (the server lists them once)
         let page: [Entry] = (j["entries"] as? [[String: Any]] ?? []).compactMap { e in
             guard let id = (e["id"] as? NSNumber)?.intValue else { return nil }
             return Entry(id: id, photo: (e["photo"] as? NSNumber)?.intValue, ts: (e["ts"] as? NSNumber)?.doubleValue ?? 0, user: e["user"] as? String ?? "",

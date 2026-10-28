@@ -39,6 +39,10 @@ struct EditLocationSheet: View {
     @State private var looking = false
     @State private var townOnly = false
     @State private var radius = EditLocationSheet.accuracyChoices[1]
+    @State private var coords = ""      // typed or pasted "lat, lon"
+    @State private var altText = ""
+    @State private var altNote: String?
+    @State private var altTyped = false  // a typed altitude is kept; otherwise the ground height at the pin fills it in
 
     var body: some View {
         NavigationStack {
@@ -49,11 +53,19 @@ struct EditLocationSheet: View {
                             if townOnly {
                                 MapCircle(center: pin, radius: radius).foregroundStyle(.orange.opacity(0.15)).stroke(.orange, lineWidth: 1)
                             }
-                            Marker("Here", coordinate: pin).tint(townOnly ? .orange : Hue.green)
+                            // the pin can be dragged to the right spot, as on the web
+                            Annotation("", coordinate: pin, anchor: .bottom) {
+                                Image(systemName: "mappin").font(.system(size: 34)).foregroundStyle(townOnly ? .orange : Hue.green)
+                                    .shadow(radius: 2)
+                                    .gesture(DragGesture(coordinateSpace: .named("map")).onChanged { v in
+                                        if let c = proxy.convert(v.location, from: .named("map")) { self.pin = c }
+                                    }.onEnded { _ in moved() })
+                            }
                         }
                     }
+                    .coordinateSpace(name: "map")
                     .onTapGesture { p in
-                        if let c = proxy.convert(p, from: .local) { pin = c; alt = nil }
+                        if let c = proxy.convert(p, from: .local) { pin = c; moved() }
                     }
                 }
                 .frame(height: mapHeight)  // a fixed share: the found places and suggestions below need room too
@@ -68,6 +80,22 @@ struct EditLocationSheet: View {
                     } footer: {
                         if townOnly { Text("Find the town and put the pin on its center. The photo is saved as approximate, without altitude.") }
                     }
+                    Section {
+                        TextField("Latitude, longitude", text: $coords)
+                            .keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
+                            .onSubmit { useCoords() }
+                            .onChange(of: coords) { _, _ in useCoords() }
+                        if !townOnly {
+                            HStack {
+                                TextField("Altitude (metres)", text: $altText).keyboardType(.numbersAndPunctuation)
+                                    .onChange(of: altText) { _, v in
+                                        altTyped = true
+                                        alt = Double(v.replacingOccurrences(of: ",", with: "."))
+                                    }
+                                if let altNote { Text(altNote).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    } header: { Text("Coordinates") } footer: { Text("Paste coordinates from another app, or drag the pin. The altitude is the ground height at the pin unless you type one.") }
                     if !hits.isEmpty {
                         Section("Found") { ForEach(hits) { row($0) } }
                     }
@@ -114,10 +142,46 @@ struct EditLocationSheet: View {
                 if let lat, let lon {
                     let c = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     pin = c
+                    coords = String(format: "%.5f, %.5f", lat, lon)
                     camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: 1500, longitudinalMeters: 1500))
                 }
             }
         }
+    }
+
+    /// The pin was put somewhere by hand: the coordinates field follows, and the altitude is looked up.
+    private func moved() {
+        guard let pin else { return }
+        coords = String(format: "%.5f, %.5f", pin.latitude, pin.longitude)
+        altTyped = false
+        alt = nil; altText = ""
+        Task { await groundHeight(pin) }
+    }
+
+    private func useCoords() {
+        let parts = coords.replacingOccurrences(of: ";", with: ",").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, let la = Double(parts[0]), let lo = Double(parts[1]), abs(la) <= 90, abs(lo) <= 180 else { return }
+        let c = CLLocationCoordinate2D(latitude: la, longitude: lo)
+        if let pin, abs(pin.latitude - la) < 1e-6, abs(pin.longitude - lo) < 1e-6 { return }
+        pin = c
+        withAnimation { camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: townOnly ? radius * 2.6 : 1500, longitudinalMeters: townOnly ? radius * 2.6 : 1500)) }
+        altTyped = false
+        Task { await groundHeight(c) }
+    }
+
+    /// The ground height at the pin (the server asks an elevation service), until an altitude is typed.
+    private func groundHeight(_ c: CLLocationCoordinate2D) async {
+        altNote = "looking up…"
+        guard let r = try? await IopixClient.shared.json("api/elevation", query: [URLQueryItem(name: "lat", value: String(c.latitude)), URLQueryItem(name: "lon", value: String(c.longitude))]) else {
+            altNote = "no altitude service reachable"; return
+        }
+        guard !altTyped, let p = pin, abs(p.latitude - c.latitude) < 1e-6 else { return }
+        if let a = (r["alt"] as? NSNumber)?.doubleValue {
+            alt = a
+            altText = String(format: "%.1f", a)
+            altTyped = false
+            altNote = "ground height" + ((r["source"] as? String).map { " from \($0)" } ?? "")
+        } else { altNote = nil }
     }
 
     /// The whole of an approximate position's circle in view.
@@ -135,6 +199,8 @@ struct EditLocationSheet: View {
             pin = c; alt = h.alt
             let span = townOnly ? radius * 2.6 : 1500
             withAnimation { camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: span, longitudinalMeters: span)) }
+            coords = String(format: "%.5f, %.5f", h.lat, h.lon)
+            if let a = h.alt { altText = String(format: "%.1f", a); altTyped = true; altNote = "from that photo" } else { altTyped = false; Task { await groundHeight(c) } }
         } label: {
             HStack(spacing: 10) {
                 if let t = h.thumb { RemoteImage(path: "thumb/\(t)").frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6)) }

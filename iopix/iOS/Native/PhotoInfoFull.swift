@@ -192,8 +192,21 @@ struct PhotoDetail {
 struct PhotoInfoFull: View {
     let photo: Int
     let open: (String) -> Void
+    /// Set for accounts that can change photos: the Actions menu and the face, tag and location shortcuts.
+    var edit: (() -> Void)? = nil
     @State private var d: PhotoDetail?
     @State private var failed = false
+    /// The sections hidden with the gear (the web app's info_hide, kept with the account when signed in).
+    @AppStorage("iopix.pref.info_hide") private var hiddenList = ""
+    @State private var faceMenu: PhotoDetail.Face?
+    @State private var naming: PhotoDetail.Face?
+    @State private var addPerson = false
+    @State private var template = false
+    @State private var metadata = false
+    @State private var album = false
+    @State private var toast: String?
+    @State private var logKey = 0
+    @EnvironmentObject private var store: LibraryStore
     @State private var used: Int?   // a suggested year saved from here (the panel's copy is not reloaded)
 
     var body: some View {
@@ -215,12 +228,164 @@ struct PhotoInfoFull: View {
             d = await PhotoDetail.load(photo)
             failed = d == nil
         }
+        .task {
+            // the account's choice of sections, as the web app saved it
+            if let me = try? await IopixClient.shared.json("api/auth/me"), let h = (me["settings"] as? [String: Any])?["info_hide"] as? String { hiddenList = h }
+        }
+        .confirmationDialog(faceMenu.map(faceTitle) ?? "Face", isPresented: Binding(get: { faceMenu != nil }, set: { if !$0 { faceMenu = nil } }), titleVisibility: .visible) {
+            if let f = faceMenu { faceActions(f) }
+        }
+        .sheet(item: $naming) { f in
+            EditPersonPicker(photo: photo, title: f.kind == .confirmed ? "Who is this instead?" : "Who is this?") { person in
+                Task { await faceOp(["op": "name", "image": photo, "rect": f.rect, "tag": person.id], "Named \(person.name).") }
+            }
+        }
+        .sheet(isPresented: $addPerson) {
+            EditPersonPicker(photo: photo, title: d?.video == true ? "Who is in this video?" : "Who is in this photo?") { person in
+                Task { await faceOp(["op": "tagonly", "image": photo, "tag": person.id], "Added \(person.name).") }
+            }
+        }
+        .sheet(isPresented: $template) { BulkTemplateSheet(ids: [photo]) { Task { await reload() } } }
+        .sheet(isPresented: $metadata) { EditMetadataView(photo: photo) { Task { await reload() } } }
+        .sheet(isPresented: $album) { BulkAlbumSheet(ids: [photo]).environmentObject(store) }
+        .editToast($toast)
+    }
+
+    private func reload() async {
+        d = await PhotoDetail.load(photo)
+        logKey += 1
+    }
+
+    private func hidden(_ key: String) -> Bool { hiddenList.split(separator: ",").contains(Substring(key)) }
+
+    private func setHidden(_ key: String, _ hide: Bool) {
+        var set = Set(hiddenList.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+        if hide { set.insert(key) } else { set.remove(key) }
+        hiddenList = set.sorted().joined(separator: ",")
+        Task { _ = try? await EditAPI.post("api/auth/settings", ["info_hide": hiddenList]) }  // with the account, when signed in
+    }
+
+    /// The web app's Actions menu and the gear that chooses the sections, above the details.
+    @ViewBuilder private func actionsBar(_ d: PhotoDetail) -> some View {
+        HStack(spacing: 8) {
+            if edit != nil {
+                Menu {
+                    if !d.video {
+                        Section(d.video ? "People" : "Faces") {
+                            Button { Task { await detectFaces() } } label: { Label("Detect faces", systemImage: "viewfinder") }
+                            let unnamed = d.faces.filter { $0.kind == .unknown }
+                            if !unnamed.isEmpty {
+                                Button { Task { await removeUnnamed(unnamed) } } label: { Label("Remove all unnamed face regions (\(unnamed.count))", systemImage: "person.crop.square.badge.xmark") }
+                            }
+                        }
+                    }
+                    Button { addPerson = true } label: { Label(d.video ? "Add a person to this video…" : "Add a person without a face box…", systemImage: "person.badge.plus") }
+                    if let lat = d.lat, let lon = d.lon {
+                        Section("Around this photo") {
+                            if let day = d.day { Button { open("#/map?from=\(day)&to=\(day)&trail=\(day)") } label: { Label("Day's trail on the map", systemImage: "point.topleft.down.to.point.bottomright.curvepath") } }
+                            Button { open("#/photos?bbox=" + [lat - 0.01, lon - 0.015, lat + 0.01, lon + 0.015].map { String(format: "%.4f", $0) }.joined(separator: ",")) } label: { Label("Photos nearby", systemImage: "mappin.and.ellipse") }
+                        }
+                    }
+                    Section("Metadata") {
+                        Button { edit?() } label: { Label("Change the date, location, title, tags…", systemImage: "slider.horizontal.3") }
+                        Button { template = true } label: { Label("Apply a metadata template…", systemImage: "doc.text") }
+                        Button { metadata = true } label: { Label("All metadata…", systemImage: "list.bullet.rectangle") }
+                    }
+                    Section {
+                        Button { album = true } label: { Label("Add to album…", systemImage: "rectangle.stack.badge.plus") }
+                        Button { open("#/history?photo=\(d.id)") } label: { Label("Edit log", systemImage: "clock.arrow.circlepath") }
+                    }
+                } label: {
+                    Label("Actions", systemImage: "ellipsis.circle").font(.callout)
+                        .padding(.horizontal, 10).padding(.vertical, 5).background(Color.secondary.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                ForEach(AdminDisplayScreen.infoSections, id: \.0) { key, label in
+                    Toggle(label, isOn: Binding(get: { !hidden(key) }, set: { setHidden(key, !$0) }))
+                }
+            } label: { Image(systemName: "gearshape").foregroundStyle(.secondary) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Choose the sections")
+        }
+    }
+
+    private func detectFaces() async {
+        do {
+            _ = try await EditAPI.post("api/faces/detect", ["ids": [photo]])
+            toast = "Looking for faces…"
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await reload()
+        } catch { toast = error.localizedDescription }
+    }
+
+    private func removeUnnamed(_ faces: [PhotoDetail.Face]) async {
+        do {
+            try await EditAPI.faceOps(faces.map { ["op": "remove", "image": photo, "rect": $0.rect] })
+            toast = "\(faces.count) unnamed face region\(faces.count == 1 ? "" : "s") removed."
+            await reload()
+        } catch { toast = error.localizedDescription }
+    }
+
+    private func faceTitle(_ f: PhotoDetail.Face) -> String {
+        switch f.kind {
+        case .confirmed, .tagOnly: return f.name ?? "Face"
+        case .suggested: return "Is this \(f.name ?? "them")?"
+        case .unknown: return "Unknown face"
+        }
+    }
+
+    /// The web app's face menu, for a row in People.
+    @ViewBuilder private func faceActions(_ f: PhotoDetail.Face) -> some View {
+        let rect = f.rect
+        switch f.kind {
+        case .tagOnly:
+            if let t = f.tag { Button("All photos of \(f.name ?? "them")") { open("#/photos?tag=\(t)") } }
+            if let t = f.tag { Button("Take \(f.name ?? "them") off this photo", role: .destructive) { Task { await faceOp(["op": "untag", "image": photo, "tag": t], "\(f.name ?? "") taken off this photo.") } } }
+        case .confirmed:
+            if let t = f.tag { Button("All photos of \(f.name ?? "them")") { open("#/photos?tag=\(t)") } }
+            Button("Someone else…") { naming = f }
+            if let t = f.tag { Button("Use as \(f.name ?? "their") badge picture") { Task { await badge(t, f.name ?? "") } } }
+            Button("Forget the name") { Task { await faceOp(["op": "unknown", "image": photo, "rect": rect], "Name removed; the face stays as unknown.") } }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": photo, "rect": rect], "Face ignored.") } }
+            Button("Remove this face", role: .destructive) { Task { await faceOp(["op": "remove", "image": photo, "rect": rect], "Face removed.") } }
+        case .suggested:
+            Button("Yes, this is \(f.name ?? "them")") { Task { await faceOp(["op": "confirm", "image": photo, "rect": rect], "Confirmed.") } }
+            Button("No, someone else…") { naming = f }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": photo, "rect": rect], "Face ignored.") } }
+            Button("Remove this box", role: .destructive) { Task { await faceOp(["op": "remove", "image": photo, "rect": rect], "Removed.") } }
+        case .unknown:
+            Button("Who is this?…") { naming = f }
+            Button("Not a face to name (ignore)") { Task { await faceOp(["op": "ignore", "image": photo, "rect": rect], "Face ignored.") } }
+            Button("Remove this box", role: .destructive) { Task { await faceOp(["op": "remove", "image": photo, "rect": rect], "Removed.") } }
+        }
+    }
+
+    private func faceOp(_ o: [String: Any], _ said: String) async {
+        do { try await EditAPI.faceOp(o); toast = said; await reload() }
+        catch { toast = "That face change did not go through: \(error.localizedDescription)" }
+    }
+
+    private func badge(_ tag: Int, _ name: String) async {
+        do { _ = try await EditAPI.post("api/tags/op", ["op": "icon", "id": tag, "photo": photo]); toast = "Now \(name)'s badge picture." }
+        catch { toast = error.localizedDescription }
+    }
+
+    private func removeTag(_ t: (id: Int, name: String)) async {
+        do { _ = try await EditAPI.edit([photo], ["remove_tags": [t.id]]); toast = "\(t.name) removed."; await reload() }
+        catch { toast = error.localizedDescription }
     }
 
     @ViewBuilder private func content(_ d: PhotoDetail) -> some View {
-        if let t = d.title { SelectableText(t, style: .title3, bold: true) }
-        if let c = d.caption { SelectableText(c, secondary: true) }
-        if let date = d.date, let n = d.precision {
+        actionsBar(d)
+        if !hidden("caption") {
+            if let t = d.title { SelectableText(t, style: .title3, bold: true) }
+            if let c = d.caption { SelectableText(c, secondary: true) }
+        }
+        if hidden("date") {
+        } else if let date = d.date, let n = d.precision {
             // an approximate date: only what is known, never the placeholder day
             let y = String((d.day ?? "").prefix(4)), ym = String((d.day ?? "").prefix(7))
             let last = Calendar(identifier: .gregorian).range(of: .day, in: .month, for: date).map { $0.count } ?? 31
@@ -237,43 +402,72 @@ struct PhotoInfoFull: View {
                 link(date.formatted(PhotoDetail.utc(.dateTime.weekday(.wide).month(.wide).day().year())), d.day.map { "#/photos?from=\($0)&to=\($0)&sort=old" })
             } sub: { Text(date.formatted(PhotoDetail.utc(.dateTime.hour().minute()))) }
         }
-        if let g = d.suggestion, used != d.id { suggestionRow(g) }
-        row(d.video ? "video" : "photo") { SelectableText(d.name) } sub: { Text(fileLine(d)) }
-        if let f = d.folder { row("folder") { link(f.path, "#/photos?album=\(f.id)&sort=old") } sub: { Text("Folder") } }
-        if d.versions.count > 1 {
-            row("square.on.square") {
-                link(d.versions.enumerated().map { $1.original ? "Original" : ($1.id == d.id ? "This version" : "Version \($0)") }.joined(separator: " · "),
-                     "#/photos?ids=" + d.versions.map { String($0.id) }.joined(separator: ","))
-            } sub: { Text("Versions") }
+        if let g = d.suggestion, used != d.id, !hidden("date") { suggestionRow(g) }
+        if !hidden("file") {
+            row(d.video ? "video" : "photo") { SelectableText(d.name) } sub: { Text(fileLine(d)) }
+            if let f = d.folder { row("folder") { link(f.path, "#/photos?album=\(f.id)&sort=old") } sub: { Text("Folder") } }
+            if d.versions.count > 1 {
+                // each version opens in the viewer, as on the web
+                row("square.on.square") {
+                    HStack(spacing: 4) {
+                        ForEach(Array(d.versions.enumerated()), id: \.offset) { i, v in
+                            if i > 0 { Text("·").foregroundStyle(.secondary) }
+                            let label = v.original ? "Original" : (v.id == d.id ? "This version" : "Version \(i)")
+                            if v.id == d.id { Text(label) } else { link(label, "#/photos?p=\(v.id)") }
+                        }
+                    }
+                } sub: { Text("Versions") }
+            }
         }
-        if d.rating > 0 {
+        if d.rating > 0, !hidden("details") {
             row("star") { Text(String(repeating: "★", count: min(d.rating, 5)) + String(repeating: "☆", count: max(0, 5 - d.rating))) } sub: { Text("Rating") }
         }
-        if !d.faces.isEmpty {
+        if !d.faces.isEmpty, !hidden("people") {
             heading("People")
             ForEach(d.faces) { f in faceRow(d, f) }
         }
-        if !d.tags.isEmpty {
+        if !hidden("tags"), !d.tags.isEmpty || edit != nil {
             heading("Tags")
             FlowLayout(spacing: 6) {
-                ForEach(d.tags, id: \.id) { t in chip(t.name, symbol: nil) { open("#/photos?tag=\(t.id)") } }
+                ForEach(d.tags, id: \.id) { t in
+                    chip(t.name, symbol: nil) { open("#/photos?tag=\(t.id)") }
+                        .contextMenu {
+                            if edit != nil {
+                                Button { Task { await badge(t.id, t.name) } } label: { Label("Use this photo as the tag's picture", systemImage: "photo") }
+                                Button(role: .destructive) { Task { await removeTag(t) } } label: { Label("Remove \(t.name)", systemImage: "xmark") }
+                            }
+                        }
+                }
+                if edit != nil { chip("Add a tag…", symbol: "plus") { edit?() } }
             }
         }
-        if let lat = d.lat, let lon = d.lon { location(d, lat, lon) }
-        if !d.details.isEmpty || d.creator != nil {
+        if hidden("location") {
+        } else if let lat = d.lat, let lon = d.lon {
+            location(d, lat, lon)
+        } else if edit != nil {
+            heading("Location")
+            Button("Set the location on the map…") { edit?() }.buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.callout)
+        }
+        if !hidden("details"), !d.details.isEmpty || d.creator != nil {
             heading("Details")
             if let c = d.creator { kv("Creator") { link(c, "#/photos?" + q(["creator": c])) } }
             ForEach(Array(d.details.enumerated()), id: \.offset) { _, p in kv(p.0) { SelectableText(p.1) } }
         }
-        if d.camera != nil || d.exposure != nil {
+        if !hidden("camera"), d.camera != nil || d.exposure != nil {
             heading("Camera")
             kv("Camera") { if let c = d.camera { link(c, "#/photos?" + q(["camera": c])) } else { Text("Unknown camera") } }
             if let l = d.lens { kv("Lens") { link(l, "#/photos?" + q(["lens": l])) } }
             if let e = d.exposure { kv("Exposure") { Text(e) } }
         }
-        heading("File")
-        SelectableText(d.path, style: .caption1, secondary: true)
-        if d.hasAI { ai(d) }
+        if !hidden("file") {
+            heading("File")
+            SelectableText(d.path, style: .caption1, secondary: true)
+        }
+        if d.hasAI, !hidden("ai") { ai(d) }
+        if !hidden("history") {
+            heading("Edit log")
+            InlineEditLog(photo: d.id, canWrite: edit != nil, open: open) { Task { await reload() } }.id(logKey)
+        }
     }
 
     // MARK: sections
@@ -281,7 +475,8 @@ struct PhotoInfoFull: View {
     @ViewBuilder private func faceRow(_ d: PhotoDetail, _ f: PhotoDetail.Face) -> some View {
         let named = f.kind == .confirmed || f.kind == .tagOnly
         Button {
-            if named, let tag = f.tag { open("#/photos?tag=\(tag)") }
+            // a named person opens their photos; with editing rights every row has the web app's face menu
+            if edit != nil { faceMenu = f } else if named, let tag = f.tag { open("#/photos?tag=\(tag)") }
         } label: {
             HStack(spacing: 10) {
                 FaceThumb(crop: f.rect.count == 4 ? "facecrop/\(d.id)/\(f.rect[0])/\(f.rect[1])/\(f.rect[2])/\(f.rect[3]).jpg" : nil,
@@ -296,7 +491,7 @@ struct PhotoInfoFull: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(!named)
+        .disabled(!named && edit == nil)
     }
 
     @ViewBuilder private func location(_ d: PhotoDetail, _ lat: Double, _ lon: Double) -> some View {
@@ -523,5 +718,73 @@ private struct FaceThumb: View {
                 if let i { image = i; return }
             }
         }
+    }
+}
+
+
+/// The last changes iopix made to this photo, with their undo, inside the info pane (the web app's Edit log section).
+struct InlineEditLog: View {
+    let photo: Int
+    let canWrite: Bool
+    let open: (String) -> Void
+    var restored: () -> Void = {}
+    @State private var entries: [EditHistoryView.Entry]?
+    @State private var total = 0
+    @State private var working: Int?
+    @State private var note: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let entries {
+                if entries.isEmpty { Text("iopix hasn't changed this photo.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(entries) { e in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(EditHistoryView.actions[e.action] ?? e.action.capitalized).font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 5).padding(.vertical, 1).background(Hue.indigo.opacity(0.14), in: Capsule())
+                            SelectableText(e.summary, style: .footnote)
+                        }
+                        HStack(spacing: 10) {
+                            Text(Date(timeIntervalSince1970: e.ts).formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+                            if canWrite {
+                                ForEach(e.restore, id: \.self) { k in
+                                    Button(EditHistoryView.restoreLabels[k] ?? k.capitalized) { Task { await restore(e, k) } }
+                                        .font(.caption2).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            if working == e.id { ProgressView().controlSize(.mini) }
+                        }
+                    }
+                }
+                if total > entries.count {
+                    Button("All \(total) changes…") { open("#/history?photo=\(photo)") }.font(.caption).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                }
+                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .task(id: photo) { await load() }
+    }
+
+    private func load() async {
+        guard let r = try? await EditAPI.get("api/history", [URLQueryItem(name: "photo", value: "\(photo)"), URLQueryItem(name: "limit", value: "6")]) else { entries = []; return }
+        total = (r["total"] as? NSNumber)?.intValue ?? 0
+        entries = (r["entries"] as? [[String: Any]] ?? []).compactMap { e in
+            guard let id = (e["id"] as? NSNumber)?.intValue else { return nil }
+            return EditHistoryView.Entry(id: id, ts: (e["ts"] as? NSNumber)?.doubleValue ?? 0, user: e["user"] as? String ?? "",
+                                         action: e["action"] as? String ?? "", summary: e["summary"] as? String ?? "", restore: e["restore"] as? [String] ?? [])
+        }
+    }
+
+    private func restore(_ e: EditHistoryView.Entry, _ kind: String) async {
+        working = e.id
+        defer { working = nil }
+        do {
+            _ = try await EditAPI.post("api/history/\(e.id)/restore", ["kind": kind])
+            note = kind == "deleted" ? "Photo restored." : "Restored."
+            restored()
+            await load()
+        } catch { note = error.localizedDescription }
     }
 }
