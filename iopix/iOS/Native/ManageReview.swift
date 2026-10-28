@@ -249,13 +249,6 @@ struct ManageBurstsScreen: View {
                         PhotoGridScreen(query: PhotoQuery([("burst", "\(b.id)"), ("sort", "old")]), title: "Burst")
                     }
                     if rights.canWrite, b.frames.count > 1 {
-                        // the gentler choice: a "Rejected" pick label on the others (undo from the edit log)
-                        let rest = b.frames.filter { !$0.best && $0.pick != 1 }.map(\.id)
-                        if !rest.isEmpty {
-                            Button { Task { await reject(rest) } } label: {
-                                Label("Mark the other \(rest.count == 1 ? "frame" : "\(rest.count) frames") as rejected", systemImage: "hand.thumbsdown")
-                            }
-                        }
                         Button(role: .destructive) { keeping = b } label: { Label("Keep the best, trash the rest", systemImage: "trash") }
                     }
                 } header: {
@@ -284,18 +277,6 @@ struct ManageBurstsScreen: View {
             }
         } message: { Text("They can be restored from the Trash.") }
         .notice($notice)
-    }
-
-    private func reject(_ ids: [Int]) async {
-        do {
-            _ = try await ManageAPI.post("api/edit", ["ids": ids, "changes": ["pick": 1]])
-            notice = Notice(text: ids.count == 1 ? "The other frame is marked rejected." : "The other \(ids.count) frames are marked rejected.")
-            bursts = bursts.map { b in
-                Burst(id: b.id, frames: b.frames.map { f in var f = f; if ids.contains(f.id) { f.pick = 1 }; return f })
-            }
-        } catch {
-            notice = Notice(text: error.localizedDescription, failed: true)
-        }
     }
 
     private func load(more: Bool) async {

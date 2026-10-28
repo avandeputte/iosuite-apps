@@ -194,8 +194,7 @@ struct PhotoInfoFull: View {
     let open: (String) -> Void
     @State private var d: PhotoDetail?
     @State private var failed = false
-    @State private var rejected: Int?
-    @State private var used: Int?   // a suggested year saved from here  // marked rejected from here (the panel's copy is not reloaded)
+    @State private var used: Int?   // a suggested year saved from here (the panel's copy is not reloaded)
 
     var body: some View {
         ScrollView {
@@ -408,18 +407,9 @@ struct PhotoInfoFull: View {
                     d.faceQuality.map { "Face sharpness \(pct($0)) / 100" }, d.dark ? "Very dark" : nil, d.bright ? "Very bright" : nil,
                 ].compactMap { $0 }
                 if !small.isEmpty { SelectableText(small.joined(separator: " · "), style: .footnote, secondary: true) }
+                // a suggestion only: nothing in iopix sets the Rejected label (web 1.87.1)
                 if !q.rejectLabels.isEmpty {
                     (Text("Likely reject: ").bold() + Text(q.rejectLabels.joined(separator: ", ").lowercased())).foregroundStyle(.orange)
-                    if d.pick == 1 || rejected == d.id {
-                        Text("Marked rejected")
-                    } else if EditRights.shared.canWrite {
-                        Button("Mark as rejected") {
-                            Task {
-                                if (try? await EditAPI.post("api/edit", ["ids": [d.id], "changes": ["pick": 1]])) != nil { rejected = d.id }
-                            }
-                        }
-                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
-                    }
                 }
             }
         }
