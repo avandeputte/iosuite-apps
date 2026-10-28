@@ -101,7 +101,7 @@ struct PhotoPager: View {
                     .frame(width: 360)
                     .transition(.move(edge: .trailing))
             } else if info && sidePane {
-                PhotoInfoPane(photo: current) { route in
+                PhotoInfoPane(photo: current, edit: rights.canWrite ? { editing = true } : nil) { route in
                     // a date, person, tag or place in the panel: its photos, as the web app's panel does
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.open(route) }
@@ -410,15 +410,23 @@ extension VideoPage {
 /// The details beside the photo on a wide screen, like the web app's info panel.
 struct PhotoInfoPane: View {
     let photo: Int
+    /// Set for accounts that can change photos: an Edit button beside the heading turns the pane into the editor.
+    var edit: (() -> Void)? = nil
     var open: (String) -> Void = { _ in }
 
     var body: some View {
         PhotoInfoFull(photo: photo, open: open)
             // the heading stays put above the details as they scroll, on its own strip
             .safeAreaInset(edge: .top, spacing: 0) {
-                Text("Info").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 8)
-                    .background(.regularMaterial)
+                HStack {
+                    Text("Info").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                    if let edit {
+                        Button(action: edit) { Label("Edit", systemImage: "slider.horizontal.3") }
+                            .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+                    }
+                }
+                .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 8)
+                .background(.regularMaterial)
             }
             .background(.regularMaterial)
             .ignoresSafeArea(edges: .bottom)
