@@ -31,6 +31,7 @@ private func trashPhotos(_ ids: [Int]) async -> Notice {
 /// Files with identical content (same digiKam hash and size), largest first; editors move the extra copies to the
 /// trash.
 struct ManageDuplicatesScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     struct Copy: Identifiable, Hashable { let id: Int, name: String, album: String, path: String, ratio: Double, video: Bool }
     struct Group: Identifiable, Hashable { let size: Int, items: [Copy]; var id: Int { items.first?.id ?? 0 } }
     @EnvironmentObject private var store: LibraryStore
@@ -56,7 +57,7 @@ struct ManageDuplicatesScreen: View {
             }
             ForEach(groups) { g in
                 Section("\(g.items.count) copies · \(ManageAPI.bytes(g.size)) each") {
-                    ManageThumbStrip(items: g.items.map { .init(id: $0.id, ratio: $0.ratio, caption: "\($0.name)\n\($0.album)") }, height: 96) { i in
+                    ManageThumbStrip(items: g.items.map { .init(id: $0.id, ratio: $0.ratio, caption: "\($0.name)\n\($0.album)") }, height: max(96, ManageThumbSize.side(thumbSize))) { i in
                         viewer = PagerStart(list: PhotoList(ids: g.items.map(\.id)), index: i)
                     }
                     // each copy's folder, as the web app links it under the thumbnail
@@ -80,6 +81,7 @@ struct ManageDuplicatesScreen: View {
             }
         }
         .navigationTitle("Duplicate files")
+        .toolbar { ManageThumbSizeMenu() }
         .task { await rights.load(); await catalog.load(); await load() }
         .refreshable { await load() }
         .pager($viewer)
@@ -132,6 +134,7 @@ struct ManageDuplicatesScreen: View {
 
 /// Photos that look almost the same (by the content-search model); an admin can look again at another strictness.
 struct ManageNearDuplicatesScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     struct Item: Hashable { let id: Int, name: String, size: Int, ratio: Double, sharp: Double? }
     struct Group: Identifiable, Hashable { let n: Int, score: Double, identical: Bool, items: [Item]; var id: Int { items.first?.id ?? 0 } }
     @EnvironmentObject private var store: LibraryStore
@@ -166,13 +169,14 @@ struct ManageNearDuplicatesScreen: View {
             }
             ForEach(groups) { g in
                 Section("\(g.n) similar · \(Int((g.score * 100).rounded()))% alike" + (g.identical ? " · also byte-identical" : "")) {
-                    ManageThumbStrip(items: g.items.map { .init(id: $0.id, ratio: $0.ratio, caption: $0.name + ($0.sharp.map { " · sharpness \(Int(($0 * 100).rounded()))%" } ?? "")) }, height: 96) { i in
+                    ManageThumbStrip(items: g.items.map { .init(id: $0.id, ratio: $0.ratio, caption: $0.name + ($0.sharp.map { " · sharpness \(Int(($0 * 100).rounded()))%" } ?? "")) }, height: max(96, ManageThumbSize.side(thumbSize))) { i in
                         viewer = PagerStart(list: PhotoList(ids: g.items.map(\.id)), index: i)
                     }
                 }
             }
         }
         .navigationTitle("Near-duplicates")
+        .toolbar { ManageThumbSizeMenu() }
         .task { await rights.load(); await load() }
         .refreshable { await load() }
         .pager($viewer)
@@ -218,6 +222,7 @@ struct ManageNearDuplicatesScreen: View {
 /// Photos taken in quick succession, newest first, with the best frame picked by sharpness and faces. Editors move
 /// the other frames to the trash.
 struct ManageBurstsScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     struct Frame: Hashable {
         let id: Int, best: Bool, ratio: Double, ts: Double, sharp: Double?, faces: Double?
         var focus: Double? = nil, looks: Double? = nil, eyesClosed = false, pick = 0
@@ -253,7 +258,7 @@ struct ManageBurstsScreen: View {
                                         f.faces.map { "faces \(Int(($0 * 100).rounded()))%" }, f.looks.map { "looks \(String(format: "%.1f", $0))" },
                                         f.eyesClosed ? "eyes closed" : nil, f.pick == 1 ? "rejected" : nil].compactMap { $0 }.joined(separator: " · "),
                               badge: f.best ? "Best" : nil)
-                    }, height: 96) { i in
+                    }, height: max(96, ManageThumbSize.side(thumbSize))) { i in
                         viewer = PagerStart(list: PhotoList(ids: b.frames.map(\.id), times: b.frames.map(\.ts)), index: i)
                     }
                     NavigationLink("Open in the grid") {
@@ -271,6 +276,7 @@ struct ManageBurstsScreen: View {
             }
         }
         .navigationTitle("Bursts & best shots")
+        .toolbar { ManageThumbSizeMenu() }
         .task { await rights.load(); if !loaded { await load(more: false) } }
         .refreshable { await load(more: false) }
         .pager($viewer)
@@ -375,6 +381,7 @@ struct ManageDetectedScreen: View {
 /// faces, untagged photos, photos without a location, in the wrong folder or with a doubtful date. Each list opens
 /// its photos; editors can trim boxes, ignore unnamed faces, accept findings, or clean up the doubled boxes.
 struct ManageQualityScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     /// One finding of the location, date and folder checks, with what its inline fixes need: the folder it is in,
     /// the date its folder is named for (baddate) and the folder its date belongs in (wrongfolder).
     struct Item: Identifiable, Hashable {
@@ -453,6 +460,7 @@ struct ManageQualityScreen: View {
             }
         }
         .navigationTitle("Metadata quality")
+        .toolbar { ManageThumbSizeMenu() }
         .safeAreaInset(edge: .bottom) { if !ticked.isEmpty { tickedBar } }
         .task { await rights.load(); await catalog.load(); await load() }
         .refreshable { await load() }
@@ -530,7 +538,7 @@ struct ManageQualityScreen: View {
                     .buttonStyle(.borderless).accessibilityLabel("Tick \(x.name)")
             }
             Button { viewer = PagerStart(list: PhotoList(ids: c.photos), index: c.photos.firstIndex(of: x.photo) ?? 0) } label: {
-                RemoteImage(path: "thumb/\(x.photo)").frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 6))
+                RemoteImage(path: "thumb/\(x.photo)").frame(width: ManageThumbSize.side(thumbSize) * 4 / 3, height: ManageThumbSize.side(thumbSize)).clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             VStack(alignment: .leading, spacing: 3) {
@@ -765,6 +773,7 @@ struct ManageQualityScreen: View {
 /// Every change made in iopix, newest first: who, when and what; searchable. Editors can undo a change or put back
 /// the backup a change kept.
 struct ManageHistoryScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     struct Entry: Identifiable, Hashable {
         let id: Int, photo: Int?, ts: Double, user: String, action: String, summary: String, path: String, restore: [String]
     }
@@ -823,7 +832,7 @@ struct ManageHistoryScreen: View {
                     HStack(alignment: .top, spacing: 10) {
                         if let p = e.photo {
                             Button { viewer = PagerStart(list: PhotoList(ids: [p]), index: 0) } label: {
-                                RemoteImage(path: "thumb/\(p)").frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 6))
+                                RemoteImage(path: "thumb/\(p)").frame(width: ManageThumbSize.side(thumbSize) * 4 / 3, height: ManageThumbSize.side(thumbSize)).clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                             .buttonStyle(.plain)
                         }
@@ -850,6 +859,7 @@ struct ManageHistoryScreen: View {
             if loaded && entries.isEmpty && problem == nil { Text("No changes yet.").foregroundStyle(.secondary) }
         }
         .navigationTitle(photo == nil ? "History" : "This photo's history")
+        .toolbar { ManageThumbSizeMenu() }
         .searchable(text: $search, prompt: "Search changes, file names, people")
         .onSubmit(of: .search) { sent = search }
         .onChange(of: search) { _, s in if s.isEmpty { sent = "" } }

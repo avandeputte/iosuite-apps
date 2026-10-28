@@ -778,6 +778,7 @@ struct AdminUpdateRow: View {
 /// Rating, title, caption, tags, date and location, read from digiKam's database, the XMP sidecar and the file, and
 /// compared: fix a photo with its buttons, or select several and take the values from one place.
 struct AdminConsistencyScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     @StateObject private var notice = AdminNotice()
     @State private var field = ""
     @State private var d: [String: Any] = [:]
@@ -851,6 +852,7 @@ struct AdminConsistencyScreen: View {
             }
         }
         .navigationTitle("Metadata consistency")
+        .toolbar { ManageThumbSizeMenu() }
         .safeAreaInset(edge: .bottom) { if !selected.isEmpty { bar } }
         .task { editing = ((try? await AdminAPI.get("api/status"))?.bool("editing")) ?? true; await load() }
         .onChange(of: field) { _, _ in selected = []; Task { await load() } }
@@ -871,7 +873,7 @@ struct AdminConsistencyScreen: View {
                     }
                     .buttonStyle(.borderless)
                 }
-                RemoteImage(path: "thumb/\(id)").frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 6))
+                RemoteImage(path: "thumb/\(id)").frame(width: max(48, ManageThumbSize.side(thumbSize) * 4 / 3), height: max(48, ManageThumbSize.side(thumbSize))).clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.str("name") ?? "").font(.subheadline.weight(.medium)).lineLimit(1)
                     Text(pathNote(r)).font(.caption2).foregroundStyle(.secondary).lineLimit(2)

@@ -34,6 +34,7 @@ struct DateSuggestion: Identifiable, Hashable {
 /// Explore › Date suggestions on the web: the suggested years for every photo marked "Date unknown", and the people
 /// they come from, whose birth years editors can enter.
 struct ManageDateSuggestScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     struct Person: Identifiable, Hashable {
         let id: Int, name: String, birth: Int?, entered: Bool, basis: String?, n: Int
         var detail: String {
@@ -99,7 +100,7 @@ struct ManageDateSuggestScreen: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { i, x in
                     HStack(alignment: .top, spacing: 12) {
                         Button { viewer = PagerStart(list: PhotoList(ids: items.map(\.id)), index: i) } label: {
-                            RemoteImage(path: "thumb/\(x.id)").frame(width: 96, height: 72).clipShape(RoundedRectangle(cornerRadius: 6))
+                            RemoteImage(path: "thumb/\(x.id)").frame(width: max(96, ManageThumbSize.side(thumbSize) * 4 / 3), height: max(72, ManageThumbSize.side(thumbSize))).clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 3) {
@@ -123,6 +124,7 @@ struct ManageDateSuggestScreen: View {
             }
         }
         .navigationTitle("Date suggestions")
+        .toolbar { ManageThumbSizeMenu() }
         .task { await rights.load(); if !loaded { await load() } }
         .onAppear { if !loaded { Task { await load() } } }
         .refreshable { await load() }

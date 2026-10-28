@@ -3,6 +3,7 @@ import SwiftUI
 /// Maintenance › Damaged files (iopix 1.86): every photo's file read and checked, and the one safe repair (a JPEG whose
 /// picture is complete but whose end marker is missing gets the marker, after a copy is kept; undo in the edit log).
 struct AdminDamagedScreen: View {
+    @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
     let canEdit: Bool
     @StateObject private var notice = AdminNotice()
     @State private var d: [String: Any] = [:]
@@ -46,7 +47,7 @@ struct AdminDamagedScreen: View {
                     ForEach(Array(found.enumerated()), id: \.offset) { i, x in
                         HStack(alignment: .top, spacing: 12) {
                             Button { viewer = PagerStart(list: PhotoList(ids: found.compactMap { $0.int("photo") }), index: i) } label: {
-                                RemoteImage(path: "thumb/\(x.int("photo") ?? 0)").frame(width: 64, height: 48).clipShape(RoundedRectangle(cornerRadius: 6))
+                                RemoteImage(path: "thumb/\(x.int("photo") ?? 0)").frame(width: max(64, ManageThumbSize.side(thumbSize) * 4 / 3), height: max(48, ManageThumbSize.side(thumbSize))).clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                             .buttonStyle(.plain)
                             VStack(alignment: .leading, spacing: 2) {
@@ -67,6 +68,7 @@ struct AdminDamagedScreen: View {
             }
         }
         .navigationTitle("Damaged files")
+        .toolbar { ManageThumbSizeMenu() }
         .task { await load() }
         .refreshable { await load() }
         .onDisappear { poll?.cancel() }

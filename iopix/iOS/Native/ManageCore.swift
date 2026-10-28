@@ -151,3 +151,27 @@ struct ManageThumbStrip: View {
         }
     }
 }
+
+
+/// The size of the photos on the management screens, as the web app's List / Large / Larger choice; one setting for
+/// all of them, kept on this device.
+enum ManageThumbSize {
+    static let key = "iopix.manage.thumb"
+    /// The height of a thumbnail for the choice.
+    static func side(_ choice: String) -> CGFloat { choice == "huge" ? 160 : choice == "large" ? 100 : 52 }
+}
+
+struct ManageThumbSizeMenu: ToolbarContent {
+    @AppStorage(ManageThumbSize.key) private var size = "list"
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Picker("Photo size", selection: $size) {
+                    Text("List").tag("list"); Text("Large").tag("large"); Text("Larger").tag("huge")
+                }
+            } label: { Image(systemName: "arrow.up.left.and.arrow.down.right.square") }
+                .accessibilityLabel("Photo size")
+        }
+    }
+}
