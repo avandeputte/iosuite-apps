@@ -15,6 +15,9 @@ enum EditOutcome {
 struct PhotoEditSheet: View {
     let photo: Int
     var onOutcome: (EditOutcome) -> Void = { _ in }
+    /// Set when the editor is in the info pane beside the photo (iPad and Mac, as in the web app) rather than a sheet:
+    /// what Close does there.
+    var inPane: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var catalog = EditCatalog.shared
@@ -90,33 +93,7 @@ struct PhotoEditSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if original != nil {
-                    form
-                } else if let problem {
-                    VStack(spacing: 12) {
-                        Text("Couldn't load this photo").font(.headline)
-                        Text(problem).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        Button("Try again") { Task { await load() } }.buttonStyle(.borderedProminent)
-                    }
-                    .padding(32)
-                } else {
-                    ProgressView()
-                }
-            }
-            .navigationTitle(original?.name ?? "Edit")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Close") } }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving { ProgressView() } else {
-                        Button { Task { await save() } } label: { BarText("Save") }.disabled(changes.isEmpty || !rights.canWrite)
-                    }
-                }
-            }
-            .editToast($toast)
-        }
+        frame
         .task { await rights.refresh(); await load(); await catalog.load() }  // the photo first: the library summary can take a moment
         .sheet(isPresented: $tagPicker) {
             EditTagPicker(chosen: Set(draft.keywords.map(\.id))) { entry in
@@ -160,6 +137,66 @@ struct PhotoEditSheet: View {
         .confirmationDialog("Undo the edits iopix made to this photo?", isPresented: $confirmRevert, titleVisibility: .visible) {
             Button("Undo edits", role: .destructive) { Task { await revert() } }
         } message: { Text("Its sidecar goes back to how it was before iopix first changed it.") }
+    }
+
+    private func close() { if let inPane { inPane() } else { dismiss() } }
+
+    private var content: some View {
+        Group {
+            if original != nil {
+                form
+            } else if let problem {
+                VStack(spacing: 12) {
+                    Text("Couldn't load this photo").font(.headline)
+                    Text(problem).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Try again") { Task { await load() } }.buttonStyle(.borderedProminent)
+                }
+                .padding(32)
+            } else {
+                ProgressView()
+            }
+        }
+    }
+
+    private var saveButton: some View {
+        Group {
+            if saving { ProgressView() } else {
+                Button { Task { await save() } } label: { BarText("Save") }.disabled(changes.isEmpty || !rights.canWrite)
+            }
+        }
+    }
+
+    @ViewBuilder private var frame: some View {
+        if inPane != nil {
+            // in the pane: its own heading strip, like the Info heading it replaces
+            content
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    HStack(spacing: 12) {
+                        Button(action: close) { Image(systemName: "xmark").font(.body.weight(.semibold)) }
+                            .buttonStyle(.bordered).buttonBorderShape(.circle)
+                            .accessibilityLabel("Close")
+                        Text(original?.name ?? "Edit").font(.headline).lineLimit(1).truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        saveButton.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                    }
+                    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
+                    .background(.regularMaterial)
+                }
+                .scrollContentBackground(.hidden)
+                .background(.regularMaterial)
+                .editToast($toast)
+        } else {
+            NavigationStack {
+                content
+                    .navigationTitle(original?.name ?? "Edit")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button(action: close) { CloseLabel("Close") } }
+                        ToolbarItem(placement: .confirmationAction) { saveButton }
+                    }
+                    .editToast($toast)
+            }
+        }
     }
 
     // MARK: the form
@@ -385,7 +422,7 @@ struct PhotoEditSheet: View {
             let r = try await EditAPI.post("api/photos/trash", ["ids": [photo]])
             if let f = (r["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "Not moved to the trash.") }
             onOutcome(.removed)
-            dismiss()
+            close()
             return nil
         }
     }
@@ -472,7 +509,7 @@ struct EditTagPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find or make a tag")
             .navigationTitle("Add a tag")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await catalog.load() }
         }
     }
@@ -529,7 +566,7 @@ struct EditFolderPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a folder")
             .navigationTitle("Move to")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await catalog.load() }
         }
     }

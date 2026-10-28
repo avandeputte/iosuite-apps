@@ -29,6 +29,8 @@ struct PhotoPager: View {
     /// Face boxes over the photo, as the web app's F key shows them; kept from one photo to the next.
     @AppStorage("iopix.viewer.faces") private var showFaces = false
     private var info: Bool { sidePane ? pane : sheet }
+    /// On a wide screen editing happens in the pane beside the photo, as in the web app; on iPhone it is a sheet.
+    private var editInPane: Bool { editing && sidePane }
     @Environment(\.horizontalSizeClass) private var width
     /// On a wide screen (iPad) the details sit in a pane beside the photo, as on the web; on a phone in a sheet.
     private var sidePane: Bool { width == .regular }
@@ -62,6 +64,22 @@ struct PhotoPager: View {
         return start.list.times[original]
     }
 
+    /// What an edit in the sheet or the pane changed: reload, or leave a trashed photo out.
+    private func handle(_ outcome: EditOutcome) {
+        switch outcome {
+        case .changed: reloadKey += 1
+        case .pictureChanged:
+            ImageCache.shared.forget("thumb/\(current)"); ImageCache.shared.forget("preview/\(current)")
+            reloadKey += 1
+        case .removed:
+            let gone = current
+            if ids.count <= 1 { dismiss() } else { ids.removeAll { $0 == gone }; index = min(index, ids.count - 1); reloadKey += 1 }
+            NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil, userInfo: ["removed": [gone]])
+        case .added:
+            NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             ZStack {
@@ -77,7 +95,12 @@ struct PhotoPager: View {
                 .ignoresSafeArea()
             }
             .overlay(alignment: .top) { if chrome { topBar } }
-            if info && sidePane {
+            if editInPane {
+                PhotoEditSheet(photo: current, onOutcome: handle, inPane: { editing = false })
+                    .id(current)  // another photo: its own details, not the last one's draft
+                    .frame(width: 360)
+                    .transition(.move(edge: .trailing))
+            } else if info && sidePane {
                 PhotoInfoPane(photo: current) { route in
                     // a date, person, tag or place in the panel: its photos, as the web app's panel does
                     dismiss()
@@ -88,26 +111,14 @@ struct PhotoPager: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: info)
+        .animation(.easeInOut(duration: 0.25), value: editInPane)
         .statusBarHidden(!chrome)
         .sheet(isPresented: Binding(get: { sheet && !sidePane }, set: { sheet = $0 })) {
             PhotoInfoSheet(photo: current)
                 .presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $editing) {
-            PhotoEditSheet(photo: current) { outcome in
-                switch outcome {
-                case .changed: reloadKey += 1
-                case .pictureChanged:
-                    ImageCache.shared.forget("thumb/\(current)"); ImageCache.shared.forget("preview/\(current)")
-                    reloadKey += 1
-                case .removed:
-                    let gone = current
-                    if ids.count <= 1 { dismiss() } else { ids.removeAll { $0 == gone }; index = min(index, ids.count - 1); reloadKey += 1 }
-                    NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil, userInfo: ["removed": [gone]])
-                case .added:
-                    NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
-                }
-            }
+        .sheet(isPresented: Binding(get: { editing && !sidePane }, set: { editing = $0 })) {
+            PhotoEditSheet(photo: current, onOutcome: handle)
         }
         .fullScreenCover(isPresented: $faces) {
             EditFacesView(photo: current) { reloadKey += 1 }
@@ -148,7 +159,7 @@ struct PhotoPager: View {
                     .accessibilityLabel(showFaces ? "Hide faces" : "Show faces")
             }
             Button {
-                if sidePane { pane.toggle() } else { sheet.toggle() }
+                if sidePane { if editing { editing = false; pane = true } else { pane.toggle() } } else { sheet.toggle() }
             } label: { ViewerIcon(symbol: info ? "info.circle.fill" : "info.circle") }
                 .accessibilityLabel("Info")
             Menu {

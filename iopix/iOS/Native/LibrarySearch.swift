@@ -125,3 +125,11 @@ struct BarText: View {
     init(_ text: String) { self.text = text }
     var body: some View { Text(text).lineLimit(1).fixedSize() }
 }
+
+/// The button that closes a sheet without saving (Close, Cancel, Done on the left): an ✕, as iOS and macOS draw it
+/// now, which fits the round glass button the system gives that spot on iPad and Mac. The word is what VoiceOver says.
+struct CloseLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Image(systemName: "xmark").accessibilityLabel(text) }
+}

@@ -314,7 +314,7 @@ struct BulkAlbumSheet: View {
             }
             .navigationTitle(ids.count == 1 ? "Add 1 photo to an album" : "Add \(ids.count.formatted()) photos to an album")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .onAppear { shared = catalog.canShareAlbums }
         }
     }
@@ -368,7 +368,7 @@ struct BulkMoveSheet: View {
             .searchable(text: $filter, prompt: "Type part of a folder name")
             .navigationTitle(ids.count == 1 ? "Move 1 photo to…" : "Move \(ids.count.formatted()) photos to…")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await load() }
         }
     }
@@ -428,7 +428,7 @@ struct BulkRenameSheet: View {
             .navigationTitle(ids.count == 1 ? "Rename 1 file by date" : "Rename \(ids.count.formatted()) files by date")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) { Button(busy ? "Renaming…" : "Rename") { Task { await rename() } }.disabled(busy) }
             }
         }

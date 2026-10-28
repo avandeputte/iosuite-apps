@@ -301,7 +301,7 @@ struct BulkTemplateSheet: View {
             }
             .navigationTitle("Apply a template")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await load() }
         }
     }
@@ -361,7 +361,7 @@ struct BulkCopySheet: View {
             .navigationTitle("Copy to \(BulkEdit.plural(ids.count - 1, "photo"))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) { Button { Task { await copy() } } label: { BarText("Copy") } }
             }
             .onAppear { if source == 0 { source = ids.first ?? 0 } }
@@ -505,7 +505,7 @@ struct BulkLocationSheet: View {
             .navigationTitle(ids.count > 1 ? "Location for \(ids.count.formatted()) photos" : "Set location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) { Button { Task { await save() } } label: { BarText("Save") }.disabled(pin == nil) }
             }
             .confirmationDialog("Remove the location from \(BulkEdit.plural(ids.count, "photo"))?", isPresented: $confirmRemove, titleVisibility: .visible) {
@@ -639,7 +639,7 @@ struct BulkGPXSheet: View {
             .navigationTitle("Match with a GPS track")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button { Task { await apply() } } label: { BarText("Apply") }.disabled(((result?["matched"] as? NSNumber)?.intValue ?? 0) == 0 || busy)
                 }

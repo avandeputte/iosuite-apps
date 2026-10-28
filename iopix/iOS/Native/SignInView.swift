@@ -75,7 +75,7 @@ struct SignInView: View {
             }
             .navigationTitle("Sign in to iopix")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await loadAccounts() }
             .sheet(isPresented: $showGate) {
                 if let gate {
@@ -151,7 +151,7 @@ struct GateSignIn: View {
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle(start.host ?? "Sign in")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
         }
     }
 }

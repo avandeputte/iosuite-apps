@@ -222,7 +222,7 @@ struct AdminAddUserSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: noPassword) { _, on in if on { role = "viewer"; password = "" } }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         let n = name.trimmingCharacters(in: .whitespaces)

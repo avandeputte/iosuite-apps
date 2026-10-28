@@ -170,7 +170,7 @@ struct EditMetadataView: View {
             .navigationTitle("All metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Close") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Close") } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else if !changed.isEmpty {
                         Button { Task { await save() } } label: { BarText("Save \(changed.count)") }

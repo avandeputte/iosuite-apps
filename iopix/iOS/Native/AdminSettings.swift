@@ -258,7 +258,7 @@ struct AdminSetupSheet: View {
             .navigationTitle("Create the admin account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         Task {
@@ -766,7 +766,7 @@ struct AdminTemplateSheet: View {
             .navigationTitle(template.name.isEmpty ? "New template" : template.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         template.name = template.name.trimmingCharacters(in: .whitespaces)

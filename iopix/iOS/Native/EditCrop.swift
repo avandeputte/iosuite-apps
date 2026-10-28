@@ -58,7 +58,7 @@ struct EditCropView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else { Button { Task { await save() } } label: { BarText("Crop") } }
                 }
@@ -152,7 +152,7 @@ struct EditAdjustView: View {
             .navigationTitle("Adjust")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { BarText("Cancel") } }
+                ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else { Button { Task { await save() } } label: { BarText("Save as new version") } }
                 }

@@ -82,7 +82,7 @@ struct ManageAlbumsScreen: View {
                 .navigationTitle("New album")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button { creating = false } label: { BarText("Cancel") } }
+                    ToolbarItem(placement: .cancellationAction) { Button { creating = false } label: { CloseLabel("Cancel") } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button {
                             let n = newName.trimmingCharacters(in: .whitespaces)
