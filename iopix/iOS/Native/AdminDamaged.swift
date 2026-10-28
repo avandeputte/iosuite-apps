@@ -19,7 +19,7 @@ struct AdminDamagedScreen: View {
     var body: some View {
         List {
             Section {
-                Text("Every photo's file is read and checked: JPEGs that stop early or lack their end marker, PNGs with damaged data, and pictures that cannot be decoded. Files are only read. One kind of damage can be repaired safely: a JPEG whose picture is complete but whose end marker is missing (some phones' burst photos). The repair adds the marker after keeping a copy of the file, and every repair is in the edit log with undo. A file that was cut off cannot be repaired here; a backup or the original device may still have it whole.")
+                Text("Every photo's file is read and checked: JPEGs that stop early or lack their end marker, PNGs with damaged data, and pictures that cannot be decoded. Files are only read. A JPEG whose picture is complete but whose end marker is missing (some phones' burst photos) can be repaired: the marker is added after a copy of the file is kept. A JPEG whose bottom is missing can be cropped to the intact part above the damage. Both are in the edit log with undo. A backup or the original device may still have a damaged file whole.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let problem { Text(problem).foregroundStyle(.secondary) }
                 if loaded {
@@ -55,6 +55,10 @@ struct AdminDamagedScreen: View {
                                 Text(x.str("detail") ?? "").font(.caption).foregroundStyle(x.bool("fixable") ? Color.secondary : Color.orange)
                                 if canEdit && x.bool("fixable"), let id = x.int("photo") {
                                     Button("Repair") { ask([id]) }.font(.callout)
+                                }
+                                // iopix 1.87: a JPEG whose bottom is missing can be cropped to the part above the damage
+                                if canEdit, let keep = x.dbl("keep"), let id = x.int("photo") {
+                                    Button("Keep the intact part (\(Int((keep * 100).rounded()))%)") { askKeep(id, keep) }.font(.callout)
                                 }
                             }
                         }
@@ -106,6 +110,21 @@ struct AdminDamagedScreen: View {
         }
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         await load()
+    }
+
+    private func askKeep(_ id: Int, _ keep: Double) {
+        confirm = AdminConfirm(title: "Crop this photo to its intact part?",
+                               message: "It keeps the top \(Int((keep * 100).rounded()))% of the picture, above the damage, without re-encoding. The file is copied first and the crop can be undone from the edit log.",
+                               button: "Crop") {
+            await notice.run(nil) {
+                let r = try await AdminAPI.post("api/filecheck/keep", ["ids": [id]])
+                let failed = r.list("failed")
+                notice.say(failed.isEmpty ? "Cropped to the intact part." : "Not cropped: \(failed[0].str("error") ?? "")")
+                ImageCache.shared.forget("thumb/\(id)"); ImageCache.shared.forget("preview/\(id)")
+                NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
+            }
+            await load()
+        }
     }
 
     private func ask(_ ids: [Int]) {
