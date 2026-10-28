@@ -90,6 +90,7 @@ struct EditHistoryView: View {
         do {
             try await EditAPI.post("api/history/\(e.id)/restore", ["kind": kind])
             toast = kind == "deleted" ? "Photo restored." : "Restored."
+            await PhotoChange.changed(photo)
             restored()
             await load()
         } catch {

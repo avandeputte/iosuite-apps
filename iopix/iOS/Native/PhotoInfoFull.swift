@@ -321,7 +321,7 @@ struct PhotoInfoFull: View {
             _ = try await EditAPI.post("api/faces/detect", ["ids": [photo]])
             toast = "Looking for faces…"
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            await reload()
+            await PhotoChange.changed(photo)
         } catch { toast = error.localizedDescription }
     }
 
@@ -377,7 +377,7 @@ struct PhotoInfoFull: View {
     }
 
     private func removeTag(_ t: (id: Int, name: String)) async {
-        do { _ = try await EditAPI.edit([photo], ["remove_tags": [t.id]]); toast = "\(t.name) removed."; await reload() }
+        do { _ = try await EditAPI.edit([photo], ["remove_tags": [t.id]]); toast = "\(t.name) removed."; await PhotoChange.changed(photo, faces: false) }
         catch { toast = error.localizedDescription }
     }
 
@@ -786,6 +786,7 @@ struct InlineEditLog: View {
         do {
             _ = try await EditAPI.post("api/history/\(e.id)/restore", ["kind": kind])
             note = kind == "deleted" ? "Photo restored." : "Restored."
+            await PhotoChange.changed(photo)  // the picture's boxes and the pane follow, now and after the reindex
             restored()
             await load()
         } catch { note = error.localizedDescription }

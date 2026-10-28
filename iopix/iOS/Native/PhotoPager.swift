@@ -148,7 +148,7 @@ struct PhotoPager: View {
         .hidesMacToolbar()
         .task { await rights.refresh() }
         // the web app's keys, for a Mac or an iPad with a keyboard
-        .focusable().focusEffectDisabled().focused($focused)
+        .focusable(true, interactions: .edit).focusEffectDisabled().focused($focused)
         .onAppear { focused = true }
         .onKeyPress(phases: .down) { press in key(press) }
         .onChange(of: index) { _, _ in if slideshow { restartSlideshow() } }
@@ -787,15 +787,31 @@ enum PhotoChange {
         let photo = (o["image"] as? Int) ?? 0
         let seen = await FacesAPI.indexVersion()
         try await EditAPI.faceOp(o)
-        post(photo, faces: true)
-        Task { await FacesAPI.awaitReindex(after: seen); NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil) }
+        settled(photo, after: seen)
     }
 
     static func faceOps(_ ops: [[String: Any]], photo: Int) async throws {
         let seen = await FacesAPI.indexVersion()
         try await EditAPI.faceOps(ops)
-        post(photo, faces: true)
-        Task { await FacesAPI.awaitReindex(after: seen); NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil) }
+        settled(photo, after: seen)
+    }
+
+    /// The photo's details (/api/photo) come from the server's index, which it rebuilds right after a change: the
+    /// screens are told now, and again once the rebuild shows, so a reload that came too early is done over.
+    static func settled(_ photo: Int, after seen: String?, faces: Bool = true) {
+        post(photo, faces: faces)
+        Task {
+            await FacesAPI.awaitReindex(after: seen)
+            post(photo, faces: faces)
+            NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
+        }
+    }
+
+    /// Any change to one photo made without the helpers above (an undo from the edit log, metadata saved): the same
+    /// two notices.
+    static func changed(_ photo: Int, faces: Bool = true) async {
+        let seen = await FacesAPI.indexVersion()
+        settled(photo, after: seen, faces: faces)
     }
 }
 
