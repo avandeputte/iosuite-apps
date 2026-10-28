@@ -37,6 +37,7 @@ struct IopixApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)  // the Display setting
+                .macTextSelection()
                 .environmentObject(queue)
                 .environmentObject(watcher)
                 .environmentObject(launch)

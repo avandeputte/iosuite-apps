@@ -36,7 +36,7 @@ struct EditHistoryView: View {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(Self.actions[e.action] ?? e.action.capitalized).font(.caption.weight(.semibold))
                                     .padding(.horizontal, 6).padding(.vertical, 2).background(Hue.indigo.opacity(0.14), in: Capsule())
-                                Text(e.summary).font(.subheadline)
+                                SelectableText(e.summary, style: .subheadline)
                             }
                             Text("\(Date(timeIntervalSince1970: e.ts).formatted(date: .abbreviated, time: .shortened))\(e.user.isEmpty ? "" : " · \(e.user)")")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -141,21 +141,23 @@ struct EditMetadataView: View {
                 ForEach(Dictionary(grouping: shown, by: \.group).sorted { $0.key < $1.key }, id: \.key) { group, list in
                     Section(group) {
                         ForEach(list) { f in
-                            Button {
-                                guard rights.canWrite, f.editable else { return }
-                                editing = f
-                                value = changed[f.id]?.value ?? f.value
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text(f.tag).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                        if f.editable && rights.canWrite { Image(systemName: "pencil").font(.caption2).foregroundStyle(.tertiary) }
-                                        if changed[f.id] != nil { Text("changed").font(.caption2).foregroundStyle(Hue.orange) }
+                            // the value can be selected and copied; the pencil edits it
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(f.tag).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    if changed[f.id] != nil { Text("changed").font(.caption2).foregroundStyle(Hue.orange) }
+                                    Spacer(minLength: 0)
+                                    if f.editable && rights.canWrite {
+                                        Button {
+                                            editing = f
+                                            value = changed[f.id]?.value ?? f.value
+                                        } label: { Image(systemName: "pencil") }
+                                        .buttonStyle(.borderless)
+                                        .accessibilityLabel("Edit \(f.tag)")
                                     }
-                                    Text(changed[f.id]?.value ?? f.value).font(.footnote).foregroundStyle(.primary).textSelection(.enabled)
                                 }
+                                SelectableText(changed[f.id]?.value ?? f.value, style: .footnote)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }

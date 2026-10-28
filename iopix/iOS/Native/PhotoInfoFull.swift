@@ -219,8 +219,8 @@ struct PhotoInfoFull: View {
     }
 
     @ViewBuilder private func content(_ d: PhotoDetail) -> some View {
-        if let t = d.title { Text(t).font(.title3.bold()).textSelection(.enabled) }
-        if let c = d.caption { Text(c).foregroundStyle(.secondary).textSelection(.enabled) }
+        if let t = d.title { SelectableText(t, style: .title3, bold: true) }
+        if let c = d.caption { SelectableText(c, secondary: true) }
         if let date = d.date, let n = d.precision {
             // an approximate date: only what is known, never the placeholder day
             let y = String((d.day ?? "").prefix(4)), ym = String((d.day ?? "").prefix(7))
@@ -239,7 +239,7 @@ struct PhotoInfoFull: View {
             } sub: { Text(date.formatted(PhotoDetail.utc(.dateTime.hour().minute()))) }
         }
         if let g = d.suggestion, used != d.id { suggestionRow(g) }
-        row(d.video ? "video" : "photo") { Text(d.name).textSelection(.enabled) } sub: { Text(fileLine(d)) }
+        row(d.video ? "video" : "photo") { SelectableText(d.name) } sub: { Text(fileLine(d)) }
         if let f = d.folder { row("folder") { link(f.path, "#/photos?album=\(f.id)&sort=old") } sub: { Text("Folder") } }
         if d.versions.count > 1 {
             row("square.on.square") {
@@ -264,7 +264,7 @@ struct PhotoInfoFull: View {
         if !d.details.isEmpty || d.creator != nil {
             heading("Details")
             if let c = d.creator { kv("Creator") { link(c, "#/photos?" + q(["creator": c])) } }
-            ForEach(Array(d.details.enumerated()), id: \.offset) { _, p in kv(p.0) { Text(p.1).textSelection(.enabled) } }
+            ForEach(Array(d.details.enumerated()), id: \.offset) { _, p in kv(p.0) { SelectableText(p.1) } }
         }
         if d.camera != nil || d.exposure != nil {
             heading("Camera")
@@ -273,7 +273,7 @@ struct PhotoInfoFull: View {
             if let e = d.exposure { kv("Exposure") { Text(e) } }
         }
         heading("File")
-        Text(d.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        SelectableText(d.path, style: .caption1, secondary: true)
         if d.hasAI { ai(d) }
     }
 
@@ -338,7 +338,7 @@ struct PhotoInfoFull: View {
         .allowsHitTesting(false)
         .id("\(d.id)")
         row("mappin.and.ellipse") {
-            Text(String(format: "%.5f, %.5f", lat, lon)).textSelection(.enabled)
+            SelectableText(String(format: "%.5f, %.5f", lat, lon))
         } sub: {
             HStack(spacing: 4) {
                 if let alt = d.alt, alt != 0 { Text("\(Int(alt.rounded())) m altitude ·") }
@@ -352,7 +352,7 @@ struct PhotoInfoFull: View {
 
     @ViewBuilder private func ai(_ d: PhotoDetail) -> some View {
         heading("AI analysis")
-        if let c = d.captionAI { Text(c).italic().foregroundStyle(.secondary).textSelection(.enabled) }
+        if let c = d.captionAI { SelectableText(c, italic: true, secondary: true) }
         if !d.concepts.isEmpty {
             sub("Detected")
             FlowLayout(spacing: 6) {
@@ -366,7 +366,7 @@ struct PhotoInfoFull: View {
             }
         }
         if let t = d.ocr {
-            row("text.viewfinder") { Text(t).font(.callout).textSelection(.enabled) } sub: { Text("Text in the picture") }
+            row("text.viewfinder") { SelectableText(t, style: .callout) } sub: { Text("Text in the picture") }
         }
         if let q = d.quality {
             qualityRow(d, q)
