@@ -541,9 +541,13 @@ struct ZoomablePhoto: UIViewRepresentable {
             g.setTranslation(.zero, in: scroll)
             guard abs(dy) > 0.01 else { return }
             let target = min(max(scroll.zoomScale * exp(dy / 150), scroll.minimumZoomScale), scroll.maximumZoomScale)  // wheel up: in
+            guard abs(target - scroll.zoomScale) > 0.0001 else { return }  // already at the fit size: nothing moves (no black flash)
+            if target <= scroll.minimumZoomScale + 0.0001 { scroll.setZoomScale(scroll.minimumZoomScale, animated: false); return }
             let p = g.location(in: image)
+            // the window onto the picture after the zoom, kept inside it so the view never shows past its edges
             let w = scroll.bounds.width / target, h = scroll.bounds.height / target
-            scroll.zoom(to: CGRect(x: p.x - w / 2, y: p.y - h / 2, width: w, height: h), animated: false)
+            let x = min(max(0, p.x - w / 2), max(0, image.bounds.width - w)), y = min(max(0, p.y - h / 2), max(0, image.bounds.height - h))
+            scroll.zoom(to: CGRect(x: x, y: y, width: w, height: h), animated: false)
         }
 
         @objc func singleTap(_ g: UITapGestureRecognizer) {
