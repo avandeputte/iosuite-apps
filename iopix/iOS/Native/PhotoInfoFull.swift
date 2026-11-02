@@ -48,12 +48,22 @@ struct PhotoDetail {
     var focusMeasured = false
     /// A year for a "Date unknown" photo from how old its people look (iopix 1.82, editors only).
     var suggestion: DateSuggestion?
+    /// Editors' other suggestions (iopix 1.94 and later): where it was probably taken, which way up it belongs, and
+    /// people probably in it from a shirt number or their clothes.
+    var placeSuggestion: PlaceSuggestion?
+    var rotation: RotationFinding?
+    var people: [(kind: ManagePersonSuggestScreen.Kind, s: PersonSuggestion)] = []
+    /// Shirt numbers read in it.
+    var jerseys: [String] = []
+    /// A video's chapters (seconds) and what is said in it.
+    var chapters: [Double] = []
+    var transcript: String?
     var pick = 0
     var burst: (id: Int, size: Int, best: Bool, bestID: Int?)?
     var similar = false
 
     var hasAI: Bool {
-        captionAI != nil || !concepts.isEmpty || !objects.isEmpty || ocr != nil || sharpness != nil || quality != nil || burst != nil || (similar && !video)
+        captionAI != nil || !concepts.isEmpty || !objects.isEmpty || !jerseys.isEmpty || ocr != nil || sharpness != nil || quality != nil || burst != nil || (similar && !video)
     }
 
     static func load(_ id: Int) async -> PhotoDetail? {
@@ -154,6 +164,17 @@ struct PhotoDetail {
         p.sharpness = num(d["sharpn"]); p.faceQuality = num(d["faceq"])
         p.pick = int(d["pick"]) ?? 0
         p.suggestion = (d["dateSuggestion"] as? [String: Any]).flatMap(DateSuggestion.init(json:))
+        p.placeSuggestion = (d["placeSuggestion"] as? [String: Any]).flatMap(PlaceSuggestion.init(json:))
+        p.rotation = (d["rotationSuggestion"] as? [String: Any]).flatMap(RotationFinding.init(json:))
+        p.people = (d["jerseySuggestions"] as? [[String: Any]] ?? []).compactMap { PersonSuggestion(json: $0, kind: .jersey).map { (.jersey, $0) } }
+            + (d["clothingSuggestions"] as? [[String: Any]] ?? []).compactMap { PersonSuggestion(json: $0, kind: .clothing).map { (.clothing, $0) } }
+        var numbers: [String] = []
+        for j in d["jerseys"] as? [[String: Any]] ?? [] { if let n = j["number"].map({ "\($0)" }), !numbers.contains(n) { numbers.append(n) } }
+        p.jerseys = numbers
+        if let v = d["videoInfo"] as? [String: Any] {
+            p.chapters = (v["chapters"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+            p.transcript = str(v["transcript"])
+        }
         p.focusMeasured = d["focusn"] is NSNumber
         if let q = d["quality"] as? [String: Any] {
             p.quality = Quality(focusRank: num(q["focusRank"]), aestheticRank: num(q["aestheticRank"]), aesthetic: num(q["aesthetic"]),
@@ -208,6 +229,7 @@ struct PhotoInfoFull: View {
     @State private var logKey = 0
     @EnvironmentObject private var store: LibraryStore
     @State private var used: Int?   // a suggested year saved from here (the panel's copy is not reloaded)
+    @State private var handled: Set<String> = []  // other suggestions used or dismissed from here
 
     var body: some View {
         ScrollView {
@@ -406,6 +428,7 @@ struct PhotoInfoFull: View {
             } sub: { Text(date.formatted(PhotoDetail.utc(.dateTime.hour().minute()))) }
         }
         if let g = d.suggestion, used != d.id, !hidden("date") { suggestionRow(g) }
+        if let r = d.rotation, !handled.contains("rotation"), !hidden("file") { rotationRow(r) }
         if !hidden("file") {
             row(d.video ? "video" : "photo") { SelectableText(d.name) } sub: { Text(fileLine(d)) }
             if let f = d.folder { row("folder") { link(f.path, "#/photos?album=\(f.id)&sort=old") } sub: { Text("Folder") } }
@@ -425,9 +448,24 @@ struct PhotoInfoFull: View {
         if d.rating > 0, !hidden("details") {
             row("star") { Text(String(repeating: "★", count: min(d.rating, 5)) + String(repeating: "☆", count: max(0, 5 - d.rating))) } sub: { Text("Rating") }
         }
-        if !d.faces.isEmpty, !hidden("people") {
+        let people = d.people.filter { !handled.contains($0.s.id) }
+        if !d.faces.isEmpty || !people.isEmpty, !hidden("people") {
             heading("People")
             ForEach(d.faces) { f in faceRow(d, f) }
+            ForEach(people, id: \.s.id) { p in personSuggestionRow(p.kind, p.s) }
+        }
+        if d.video, !d.chapters.isEmpty || d.transcript != nil, !hidden("file") {
+            heading("In this video")
+            if !d.chapters.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(Array(d.chapters.enumerated()), id: \.offset) { _, t in
+                        chip(Self.clock(t), symbol: "play.fill") {
+                            NotificationCenter.default.post(name: .iopixVideoSeek, object: nil, userInfo: ["photo": d.id, "t": t])
+                        }
+                    }
+                }
+            }
+            if let t = d.transcript { SelectableText(t, style: .callout, secondary: true) }
         }
         if !hidden("tags"), !d.tags.isEmpty || edit != nil {
             heading("Tags")
@@ -449,6 +487,7 @@ struct PhotoInfoFull: View {
             location(d, lat, lon)
         } else if edit != nil {
             heading("Location")
+            if let g = d.placeSuggestion, !handled.contains("place") { placeRow(g) }
             Button("Set the location on the map…") { edit?() }.buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.callout)
         }
         if !hidden("details"), !d.details.isEmpty || d.creator != nil {
@@ -573,6 +612,16 @@ struct PhotoInfoFull: View {
                     .compactMap { $0 }.joined(separator: " · "))
             }
         }
+        if !d.jerseys.isEmpty {
+            row("tshirt") {
+                HStack(spacing: 4) {
+                    ForEach(Array(d.jerseys.enumerated()), id: \.offset) { i, n in
+                        if i > 0 { Text("·").foregroundStyle(.secondary) }
+                        link("Number \(n)", "#/photos?jersey=\(n)")
+                    }
+                }
+            } sub: { Text("Shirt numbers read") }
+        }
         if let b = d.burst {
             row("square.stack.3d.up") { link("Part of a burst of \(b.size) frames", "#/photos?burst=\(b.id)&sort=old") } sub: {
                 HStack(spacing: 4) {
@@ -611,6 +660,82 @@ struct PhotoInfoFull: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder private func placeRow(_ g: PlaceSuggestion) -> some View {
+        row("sparkles") {
+            Text("Probably \(g.whereText)") + Text(" (\(g.within))").foregroundStyle(.secondary)
+        } sub: {
+            VStack(alignment: .leading, spacing: 4) {
+                if !g.text.isEmpty { Text(g.text) }
+                HStack(spacing: 12) {
+                    if EditRights.shared.canWrite {
+                        Button("Use") {
+                            Task { await act("place", "Position saved.") {
+                                _ = try await EditAPI.post("api/edit", ["ids": [g.id], "changes": ["gps": ["lat": g.lat, "lon": g.lon, "accuracy": Int((g.km * 1000).rounded())]]])
+                            } }
+                        }
+                    }
+                    Button("All suggestions") { open("#/placesuggest") }
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+            }
+        }
+    }
+
+    @ViewBuilder private func rotationRow(_ r: RotationFinding) -> some View {
+        row("rotate.right") {
+            Text("Looks \(r.text)")
+        } sub: {
+            HStack(spacing: 12) {
+                if EditRights.shared.canWrite {
+                    Button(r.label) {
+                        Task { await act("rotation", "Rotated.") {
+                            let x = try await EditAPI.post("api/photos/transform", ["ids": [r.id], "op": r.op])
+                            if let f = (x["failed"] as? [[String: Any]])?.first { throw EditAPI.Failure(message: f["error"] as? String ?? "Not rotated.") }
+                            NotificationCenter.default.post(name: .iopixPhotoChanged, object: nil, userInfo: ["photo": r.id])
+                        } }
+                    }
+                    Button("It's fine") { Task { await act("rotation", nil) { _ = try await EditAPI.post("api/rotation/dismiss", ["photos": [r.id]]) } } }
+                }
+            }
+            .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+        }
+    }
+
+    @ViewBuilder private func personSuggestionRow(_ kind: ManagePersonSuggestScreen.Kind, _ s: PersonSuggestion) -> some View {
+        row(kind == .jersey ? "tshirt" : "person.fill.questionmark") {
+            Text("Probably \(s.name)")
+        } sub: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(kind == .jersey ? "\(s.headline) · \(s.detail)" : s.detail)
+                if EditRights.shared.canWrite {
+                    HStack(spacing: 12) {
+                        Button("Tag") { Task { await act(s.id, "Added \(s.name).") { try await EditAPI.faceOps([["op": "tagonly", "image": s.photo, "tag": s.tag]]) } } }
+                        Button("Not them") { Task { await act(s.id, nil) { _ = try await EditAPI.post("api/suggestions/dismiss", ["kind": kind.rawValue, "pairs": [[s.photo, s.tag]]]) } } }
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+    }
+
+    /// Runs a suggestion's button, then hides the suggestion and reloads the details.
+    private func act(_ key: String, _ done: String?, _ work: () async throws -> Void) async {
+        do {
+            try await work()
+            handled.insert(key)
+            if let done { toast = done }
+            NotificationCenter.default.post(name: .iopixPhotosChanged, object: nil)
+            await reload()
+        } catch {
+            toast = error.localizedDescription
+        }
+    }
+
+    static func clock(_ t: Double) -> String {
+        let s = Int(t.rounded(.down))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
 
     @ViewBuilder private func suggestionRow(_ g: DateSuggestion) -> some View {

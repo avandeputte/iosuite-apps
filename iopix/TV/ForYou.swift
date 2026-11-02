@@ -38,7 +38,7 @@ struct PhotoRow: View {
                 LazyHStack(spacing: 30) {
                     ForEach(Array(list.ids.prefix(40).enumerated()), id: \.offset) { i, id in
                         Button { viewer = ViewerStart(list: list, index: i, playing: false) } label: {
-                            RemoteImage(path: "thumb/\(id)").frame(width: 360, height: 240)
+                            RemoteImage(path: "thumb/\(id)?fit=3x2").frame(width: 360, height: 240)
                                 .overlay(alignment: .bottomLeading) {
                                     if list.isVideo(i) { Image(systemName: "play.circle.fill").font(.title2).padding(10) }
                                 }
@@ -77,8 +77,8 @@ struct ForYouView: View {
                                     Button { viewer = ViewerStart(list: PhotoList(ids: [p.then, p.now]), index: 0, playing: false) } label: {
                                         VStack(spacing: 12) {
                                             HStack(spacing: 6) {
-                                                RemoteImage(path: "thumb/\(p.then)").frame(width: 250, height: 250)
-                                                RemoteImage(path: "thumb/\(p.now)").frame(width: 250, height: 250)
+                                                RemoteImage(path: "thumb/\(p.then)?fit=square").frame(width: 250, height: 250)
+                                                RemoteImage(path: "thumb/\(p.now)?fit=square").frame(width: 250, height: 250)
                                             }
                                             Text(p.name).font(.headline)
                                             Text("\(Int(p.years.rounded())) years apart").font(.caption).foregroundStyle(.secondary)

@@ -646,13 +646,20 @@ struct VideoPage: View {
             }
         }
         .onChange(of: active) { _, on in if !on { player?.pause(); preparing?.cancel(); preparing = nil } }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixVideoSeek)) { n in
+            // a chapter chosen in the info pane: play from there
+            guard (n.userInfo?["photo"] as? Int) == id, let t = n.userInfo?["t"] as? Double else { return }
+            if let player { player.seek(to: CMTime(seconds: t, preferredTimescale: 600)); player.play() } else { play(from: t) }
+        }
         .onDisappear { player?.pause(); player = nil; preparing?.cancel(); preparing = nil }
     }
 }
 
 extension VideoPage {
     /// The original when it plays here, otherwise the copy the server makes (it may take a moment the first time).
-    private func play() {
+    private func play() { play(from: nil) }
+
+    private func play(from t: Double?) {
         problem = nil
         preparing = Task {
             defer { preparing = nil }
@@ -661,6 +668,7 @@ extension VideoPage {
                 try Task.checkCancellation()
                 let p = VideoSource.player(url)
                 player = p
+                if let t { await p.seek(to: CMTime(seconds: t, preferredTimescale: 600)) }
                 p.play()
             } catch is CancellationError {
             } catch {
@@ -813,6 +821,8 @@ struct PageView: UIViewControllerRepresentable {
 extension Notification.Name {
     /// Photos were trashed, restored or added from the viewer or an editing sheet; lists reload. userInfo["removed"]: ids gone.
     static let iopixPhotosChanged = Notification.Name("iopixPhotosChanged")
+    /// {photo, t}: play that video from t seconds (a chapter in the info pane).
+    static let iopixVideoSeek = Notification.Name("iopixVideoSeek")
     /// One photo's details changed (a face named, a title saved): every view showing it reloads at once, as the web
     /// app's screens do. userInfo["photo"]: its id; ["faces"]: true when its faces changed.
     static let iopixPhotoChanged = Notification.Name("iopixPhotoChanged")

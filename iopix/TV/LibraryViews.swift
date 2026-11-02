@@ -73,7 +73,8 @@ struct CoverCard: View {
         VStack(spacing: 14) {
             Group {
                 if let image {
-                    RemoteImage(path: image)
+                    // a plain thumbnail: cropped by the server around its subject, to the card's shape (iopix 1.91)
+                    RemoteImage(path: image.hasPrefix("thumb/") && !image.contains("?") ? image + (round ? "?fit=square" : "?fit=3x2") : image)
                 } else {
                     // a picture all the same: the focus effect lifts the card's first image, and a card without
                     // one shows no focus at all (the remote seemed to skip it)
@@ -392,7 +393,7 @@ struct PhotoTiles: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 280, maximum: 300), spacing: 30)], spacing: 30) {
             ForEach(Array(list.ids.enumerated()), id: \.offset) { i, id in
                 Button { open(i) } label: {
-                    RemoteImage(path: "thumb/\(id)")
+                    RemoteImage(path: "thumb/\(id)?fit=3x2")
                         .frame(width: 290, height: 194)
                         .overlay(alignment: .bottomLeading) {
                             if list.isVideo(i) {

@@ -534,7 +534,8 @@ struct ExploreView: View {
                     Button { router.open(c.route) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Group {
-                                if let img = c.image { RemoteImage(path: img) } else { Color.secondary.opacity(0.12) }
+                                // cropped by the server around the subject, to the card's shape (iopix 1.91)
+                                if let img = c.image { RemoteImage(path: img.hasPrefix("thumb/") && !img.contains("?") ? img + "?fit=7x5" : img) } else { Color.secondary.opacity(0.12) }
                             }
                             .frame(width: wide ? 200 : 150, height: wide ? 140 : 110)
                             .clipShape(RoundedRectangle(cornerRadius: 10))

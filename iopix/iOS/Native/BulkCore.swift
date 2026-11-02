@@ -266,6 +266,7 @@ extension BulkCatalog {
             case "eyes": add(k, v, "Eyes closed", "eye.slash")
             case "rejects": add(k, v, "Likely rejects", "hand.thumbsdown")
             case "reject": add(k, v, ["blur": "Blurry all over", "eyes": "Eyes closed", "burst": "Worse burst frame", "exposure": "Nearly black or blown out"][v] ?? v, "hand.thumbsdown")
+            case "jersey": add(k, v, "Jersey number \(v)", "tshirt")
             case "bursts": add(k, v, "In a burst", "square.stack.3d.down.right")
             case "bestonly": add(k, v, "Best frame of each burst", "star.square.on.square")
             case "burst": add(k, v, "One burst", "square.stack.3d.down.right")

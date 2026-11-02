@@ -22,7 +22,8 @@ struct DateSuggestion: Identifiable, Hashable {
 
     var range: String { lo == hi ? "" : "\(lo)–\(hi)" }
     var why: String {
-        "From how old \(people.count == 1 ? "this person looks" : "these people look"): " +
+        if !clues.isEmpty { return clues.joined(separator: " · ") }
+        return "From how old \(people.count == 1 ? "this person looks" : "these people look"): " +
             people.map { "\($0.name) (looks about \($0.age))" }.joined(separator: ", ") + "."
     }
 

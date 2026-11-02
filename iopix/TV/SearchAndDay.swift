@@ -23,7 +23,7 @@ struct OnThisDayView: View {
                                 LazyHStack(spacing: 30) {
                                     ForEach(g.indices, id: \.self) { i in
                                         Button { viewer = ViewerStart(list: list, index: i, playing: false) } label: {
-                                            RemoteImage(path: "thumb/\(list.ids[i])").frame(width: 360, height: 240)
+                                            RemoteImage(path: "thumb/\(list.ids[i])?fit=3x2").frame(width: 360, height: 240)
                                         }
                                         .buttonStyle(.card)
                                     }
