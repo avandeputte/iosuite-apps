@@ -44,8 +44,10 @@ content), so sending a photo twice does no harm.
 ## iPhone and iPad
 
 The iPhone and iPad app is native: Explore, Photos (filters, search, saved searches, selection with bulk
-actions), People and Faces, Places with a map, Folders, Albums, Tags, Trash, Import, Duplicates, Bursts,
-Detected content, Metadata quality, History, Settings and Maintenance, and editing a photo (details, tags,
+actions), People and Faces, Places with a map, Folders, Albums, Tags, Trash, Import, Detected content,
+History, Settings and Maintenance (with the check and suggestion pages under Library: Metadata quality,
+Duplicate files, Date and Place suggestions, Jersey numbers, Clothing matches, Wrongly rotated and Damaged
+files), and editing a photo (details, tags,
 location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or later for background sending,
 one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
 the slower paths. "Open in iopix" shows the same photo in the web app.

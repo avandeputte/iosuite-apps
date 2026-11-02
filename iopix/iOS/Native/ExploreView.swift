@@ -567,13 +567,15 @@ struct ExploreView: View {
               Pill(label: "No location", count: s.total - s.geotagged, route: "#/photos?geo=0"),
               Pill(label: "Favorites", count: store.favorites, route: "#/photos?fav=1"),
               Pill(label: "Duplicate files", route: "#/duplicates"),
-              Pill(label: "Bursts & best shots", route: "#/bursts"),
               Pill(label: "Events & trips", route: "#/events"),
               Pill(label: "Contains text", route: "#/photos?hastext=1"),
               Pill(label: "Blurry", route: "#/photos?blurry=1"),
               Pill(label: "Best looking", route: "#/photos?looks=top&sort=looks"),
               Pill(label: "Likely rejects", route: "#/photos?rejects=1")]
-        if model.editing { p.append(Pill(label: "Date suggestions", route: "#/datesuggest")) }
+        if model.editing {
+            p += [Pill(label: "Date suggestions", route: "#/datesuggest"), Pill(label: "Place suggestions", route: "#/placesuggest"),
+                  Pill(label: "Jersey numbers", route: "#/jerseys"), Pill(label: "Clothing matches", route: "#/clothing")]
+        }
         if model.editing && !model.noDigikam { p.append(Pill(label: "Edited here, not yet in digiKam", count: model.pending, route: "#/photos?edited=1")) }
         p.append(Pill(label: "Map", count: s.geotagged, route: "#/map"))
         return p

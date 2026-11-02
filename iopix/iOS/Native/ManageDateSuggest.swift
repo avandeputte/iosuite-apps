@@ -6,6 +6,8 @@ struct DateSuggestion: Identifiable, Hashable {
     struct Who: Hashable { let tag: Int, name: String, age: Int }
     let id: Int, year: Int, lo: Int, hi: Int
     let people: [Who]
+    /// What the year comes from (iopix 1.95): the people's ages, the years they are photographed in, look-alikes, the camera.
+    let clues: [String]
 
     init?(json x: [String: Any]) {
         func int(_ k: String) -> Int? { (x[k] as? NSNumber)?.intValue }
@@ -15,6 +17,7 @@ struct DateSuggestion: Identifiable, Hashable {
             guard let t = (p["tag"] as? NSNumber)?.intValue, let n = p["name"] as? String else { return nil }
             return Who(tag: t, name: n, age: (p["age"] as? NSNumber)?.intValue ?? 0)
         }
+        clues = (x["clues"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
     }
 
     var range: String { lo == hi ? "" : "\(lo)–\(hi)" }
@@ -63,7 +66,7 @@ struct ManageDateSuggestScreen: View {
     var body: some View {
         List {
             Section {
-                Text("A year for each photo marked “Date unknown”, from how old the named people in it look. Ages from faces are rough, so every suggestion is a range. Nothing is saved until you use a year: it is then saved as a year-only date, with undo in the edit log.")
+                Text("A year for each photo marked “Date unknown”, from every clue the library has about it: how old the named people in it look, the years those people are photographed in, the photos with a date that look most like it, and the camera. Every suggestion is a range and lists its clues. Nothing is saved until you use a year: it is then saved as a year-only date, with undo in the edit log.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !ready {
                     Label("Install “MiVOLO v2 (age)” under Maintenance › AI analysis and models to get suggestions.", systemImage: "arrow.down.circle")
@@ -94,7 +97,7 @@ struct ManageDateSuggestScreen: View {
             }
             Section {
                 if loaded && items.isEmpty {
-                    Text(ready ? "No suggestions: no photo marked “Date unknown” shows a named person with enough to go on." : "No suggestions yet.")
+                    Text(ready ? "No suggestions: no photo marked “Date unknown” has a clue to go on." : "No suggestions yet.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(Array(items.enumerated()), id: \.element.id) { i, x in
@@ -105,7 +108,8 @@ struct ManageDateSuggestScreen: View {
                         .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 3) {
                             (Text("About \(String(x.year))").bold() + Text(x.range.isEmpty ? "" : "  (\(x.range))").foregroundStyle(.secondary))
-                            Text(x.people.map { "\($0.name) looks \($0.age)" }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            Text(x.clues.isEmpty ? x.people.map { "\($0.name) looks \($0.age)" }.joined(separator: " · ") : x.clues.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
                             if rights.canWrite {
                                 Button("Use \(String(x.year))") { Task { await use([x]) } }
                                     .buttonStyle(.bordered).controlSize(.small).disabled(busy)

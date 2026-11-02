@@ -92,12 +92,8 @@ struct SidebarLayout: View {
         guard queue.account?.isAdmin == true else { return [] }
         return [Row(title: "Import", symbol: "square.and.arrow.down.on.square", hue: Hue.blue, screen: .importPhotos),
                 Row(title: "Trash", symbol: "trash", hue: Hue.rose, screen: .trash),
-                Row(title: "Duplicate files", symbol: "doc.on.doc", hue: Hue.orange, screen: .duplicates),
                 Row(title: "Near-duplicates", symbol: "square.on.square", hue: Hue.orange, screen: .nearDuplicates),
-                Row(title: "Bursts & best shots", symbol: "square.stack.3d.down.right", hue: Hue.amber, screen: .bursts),
                 Row(title: "Detected content", symbol: "sparkles", hue: Hue.purple, screen: .detected),
-                Row(title: "Metadata quality", symbol: "checkmark.seal", hue: Hue.teal, screen: .quality),
-                Row(title: "Date suggestions", symbol: "calendar.badge.clock", hue: Hue.amber, screen: .dateSuggest),
                 Row(title: "History", symbol: "clock.arrow.circlepath", hue: Hue.slate, screen: .history(photo: nil))]
     }
 
@@ -187,10 +183,14 @@ struct ScreenView: View {
         case .importPhotos: ManageImportScreen()
         case .duplicates: ManageDuplicatesScreen()
         case .nearDuplicates: ManageNearDuplicatesScreen()
-        case .bursts: ManageBurstsScreen()
         case .detected: ManageDetectedScreen()
         case .quality: ManageQualityScreen()
         case .dateSuggest: ManageDateSuggestScreen()
+        case .placeSuggest: ManagePlaceSuggestScreen()
+        case .jerseys: ManagePersonSuggestScreen(kind: .jersey)
+        case .clothing: ManagePersonSuggestScreen(kind: .clothing)
+        case .rotation: ManageRotationScreen()
+        case .damaged: AdminDamagedScreen(canEdit: true)
         case .history(let photo): ManageHistoryScreen(photo: photo)
         case .faces(let tab): FacesReviewScreen(tab: tab)
         case .settings: AdminSettingsScreen()
@@ -277,7 +277,6 @@ struct MoreView: View {
         case "settings": return "Settings"
         case "maintenance": return "Maintenance"
         case "duplicates": return "Duplicate files"
-        case "bursts": return "Bursts & best shots"
         case "detected": return "Detected content"
         case "photos": return "Edit in iopix"
         default: return "iopix"

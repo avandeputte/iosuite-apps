@@ -74,7 +74,8 @@ enum Screen: Hashable {
     case tags(parent: Int?)
     case events
     case map
-    case trash, importPhotos, duplicates, nearDuplicates, bursts, detected, quality, dateSuggest
+    case trash, importPhotos, duplicates, nearDuplicates, detected, quality, dateSuggest
+    case placeSuggest, jerseys, clothing, rotation, damaged
     case history(photo: Int?)
     case faces(String)
     case settings, maintenance, consistency
@@ -157,21 +158,25 @@ final class Router: ObservableObject {
         case "events":
             morePath = [.events]
             tab = .more
-        case "trash", "import", "duplicates", "neardups", "bursts", "detected", "quality", "history",
-             "settings", "maintenance", "analysis", "consistency", "datesuggest":
+        case "trash", "import", "duplicates", "neardups", "detected", "quality", "history",
+             "settings", "maintenance", "analysis", "consistency", "datesuggest", "placesuggest", "jerseys", "clothing", "rotation", "damaged":
             let screen: Screen
             switch view {
             case "trash": screen = .trash
             case "import": screen = .importPhotos
             case "duplicates": screen = .duplicates
             case "neardups": screen = .nearDuplicates
-            case "bursts": screen = .bursts
             case "detected": screen = .detected
             case "quality": screen = .quality
             case "history": screen = .history(photo: query.value("photo").flatMap(Int.init))
             case "settings": screen = .settings
             case "consistency": screen = .consistency
             case "datesuggest": screen = .dateSuggest
+            case "placesuggest": screen = .placeSuggest
+            case "jerseys": screen = .jerseys
+            case "clothing": screen = .clothing
+            case "rotation": screen = .rotation
+            case "damaged": screen = .damaged
             default: screen = .maintenance
             }
             morePath = [screen]

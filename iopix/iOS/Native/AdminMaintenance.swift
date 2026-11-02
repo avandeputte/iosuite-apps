@@ -10,6 +10,9 @@ struct AdminMaintenanceScreen: View {
     @State private var consistency: String?
     @State private var quality: String?
     @State private var damaged: String?  // the file check in one line; nil when the server has none
+    @State private var duplicates: String?
+    /// Each suggestion page's line ("12 suggestions (800 / 900 analysed)."), by its route; nil for a page the server lacks.
+    @State private var suggestions: [String: String] = [:]
     @State private var applying = false
     @State private var confirm: AdminConfirm?
     @State private var problem: String?
@@ -101,10 +104,19 @@ struct AdminMaintenanceScreen: View {
             NavigationLink { AdminConsistencyScreen() } label: {
                 AdminRow(title: "Metadata consistency", detail: (consistency ?? "Loading…") + " Rating, title, caption and tags are compared in the three places they live.")
             }
-            Button { router.open("#/quality") } label: {
-                AdminRow(title: "Metadata quality", detail: (quality ?? "Checking…") + " Duplicate faces, the same person twice, and boxes outside the photo.")
+            NavigationLink { ManageQualityScreen() } label: {
+                AdminRow(title: "Metadata quality", detail: (quality ?? "Checking…") + " Photos without a location, with an implausible date or in a folder for another date; duplicate faces, the same person twice, and boxes outside the photo.")
             }
-            .foregroundStyle(.primary)
+            NavigationLink { ManageDuplicatesScreen() } label: {
+                AdminRow(title: "Duplicate files", detail: (duplicates ?? "") + "Copies of the same file, from digiKam's own fingerprints. \(appName) never deletes anything; remove the extras in digiKam.")
+            }
+            ForEach(Self.suggestionPages, id: \.route) { page in
+                if let line = suggestions[page.route] {
+                    NavigationLink { page.screen() } label: {
+                        AdminRow(title: page.title, detail: line + page.text)
+                    }
+                }
+            }
             if damaged != nil {  // iopix 1.86 and later
                 NavigationLink { AdminDamagedScreen(canEdit: status.bool("editing")) } label: {
                     AdminRow(title: "Damaged files", detail: (damaged ?? "") + "Every file read and checked: JPEGs that stop early or lack their end marker, damaged PNGs, pictures that cannot be decoded; a safe repair where there is one.")
@@ -125,6 +137,19 @@ struct AdminMaintenanceScreen: View {
             }
         }
     }
+
+    /// The suggestion pages, summarised in a line each from a one-item read of their lists (the total comes with it).
+    struct SuggestionPage {
+        let route: String, title: String, text: String, noun: String
+        let screen: () -> AnyView
+    }
+    static let suggestionPages = [
+        SuggestionPage(route: "datesuggest", title: "Date suggestions", text: "A year for each photo marked Date unknown, from the ages of the people in it, the photos they appear in, the camera and the look of the file; folder hints bound the guesses.", noun: "suggestion") { AnyView(ManageDateSuggestScreen()) },
+        SuggestionPage(route: "placesuggest", title: "Place suggestions", text: "A position for each photo without one, from where the photos around it in time were taken.", noun: "suggestion") { AnyView(ManagePlaceSuggestScreen()) },
+        SuggestionPage(route: "jerseys", title: "Jersey numbers", text: "Players read from shirt numbers where the face is not named, when one player clearly wears the number in the same folder or year.", noun: "suggestion") { AnyView(ManagePersonSuggestScreen(kind: .jersey)) },
+        SuggestionPage(route: "clothing", title: "Clothing matches", text: "People recognised by what they wear in the same event, where their face is not named or not visible.", noun: "suggestion") { AnyView(ManagePersonSuggestScreen(kind: .clothing)) },
+        SuggestionPage(route: "rotation", title: "Wrongly rotated", text: "Photos that read as on their side or upside down, each shown the way it would look after the turn.", noun: "photo") { AnyView(ManageRotationScreen()) },
+    ]
 
     private var libraryCopyText: String {
         let d = m.dict("digikam"), mir = d.dict("mirror")
@@ -205,6 +230,17 @@ struct AdminMaintenanceScreen: View {
             if let n = q.dict("untagged").int("count"), n > 0 { t += "\(AdminFormat.plural(n, "photo shows", "photos show")) people but nobody is tagged. " }
             if let n = q.dict("invalid").int("count"), n > 0 { t += "\(AdminFormat.plural(n, "box is", "boxes are")) outside the photo or empty." }
             quality = t
+        }
+        if let d = try? await AdminAPI.get("api/duplicates") {
+            let sets = d.list("groups").count
+            duplicates = sets > 0 ? "\(AdminFormat.plural(sets, "set")) of byte-identical files, \(AdminFormat.bytes(d.dbl("wasted"))) that could be freed. " : "No byte-identical copies. "
+        }
+        for page in Self.suggestionPages {
+            guard let d = try? await AdminAPI.get("api/\(page.route)", [URLQueryItem(name: "limit", value: "1")]) else { continue }
+            let total = d.int("total") ?? 0
+            let cov = (d["coverage"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+            suggestions[page.route] = (d["ready"] as? Bool) == false ? "Not analysed yet. "
+                : (total > 0 ? AdminFormat.plural(total, page.noun) : "No \(page.noun)s") + (cov.count == 2 && cov[1] > 0 ? " (\(AdminFormat.n(cov[0])) / \(AdminFormat.n(cov[1])) analysed)" : "") + ". "
         }
         if let f = try? await AdminAPI.get("api/filecheck") {
             let p = f.dict("progress"), found = f.list("found")
