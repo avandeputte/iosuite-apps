@@ -12,6 +12,18 @@ struct SettingsView: View {
     @State private var openAtLogin = LoginItem.status == .enabled
 
     var body: some View {
+        // Tabs, each a scrolling form, so the window stays short enough for a laptop screen.
+        TabView {
+            general.tabItem { Label("General", systemImage: "gearshape") }
+            passwords.tabItem { Label("Passwords", systemImage: "key") }
+            Form { ServerSettings() }
+                .formStyle(.grouped)
+                .tabItem { Label("Server", systemImage: "server.rack") }
+        }
+        .frame(width: 540, height: 520)
+    }
+
+    private var general: some View {
         Form {
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
@@ -28,17 +40,6 @@ struct SettingsView: View {
                     ForEach([100, 250, 500, 1000, 5000], id: \.self) { Text("\($0) items").tag($0) }
                 }
                 Text("The Inbox stays on this Mac; only notes go to the server.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Skip copied text that looks like a password", isOn: $skipPasswordLike)
-                    .help("A single word of 10 to 64 characters mixing letters, digits and symbols. Catches password managers in the browser, like Proton Pass.")
-                IgnoredAppsList()
-            } header: {
-                Text("Passwords")
-            } footer: {
-                Text("Copies made while one of these apps is in front never land in the Inbox, and neither do copies that apps mark as private. Password managers in the browser, like Proton Pass, are caught by the first option.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -62,8 +63,6 @@ struct SettingsView: View {
                 }
             }
 
-            ServerSettings()
-
             Section("Login") {
                 Toggle("Start in the menu bar when I log in", isOn: $openAtLogin)
                     .onChange(of: openAtLogin) { _, on in
@@ -80,7 +79,21 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var passwords: some View {
+        Form {
+            Section {
+                Toggle("Skip copied text that looks like a password", isOn: $skipPasswordLike)
+                    .help("A single word of 10 to 64 characters mixing letters, digits and symbols. Catches password managers in the browser, like Proton Pass.")
+                IgnoredAppsList()
+            } header: {
+                Text("Passwords")
+            } footer: {
+                Text("Copies made while one of these apps is in front never land in the Inbox, and neither do copies that apps mark as private. Password managers in the browser, like Proton Pass, are caught by the first option.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
