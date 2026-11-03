@@ -337,6 +337,7 @@ extension NotesStore {
 
     func signOut() async {
         await client.signOut()
+        await CookieSync.clearWebView()
         account = nil
         syncStatus = .signedOut
     }

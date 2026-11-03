@@ -7,10 +7,7 @@ struct ServerSettings: View {
     @State private var address = ServerConfig.serverURL?.absoluteString ?? ""
     @State private var addressProblem: String?
     @State private var checking = false
-    @State private var name = ""
-    @State private var password = ""
     @State private var signingIn = false
-    @State private var signInProblem: String?
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ""
     @State private var hasToken = ServiceToken.isSet
@@ -56,21 +53,14 @@ struct ServerSettings: View {
                     }
                     Button("Sign Out") { Task { await store.signOut() } }
                 } else {
-                    TextField("Name", text: $name)
-                        .textContentType(.username)
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                    SecureField("Password", text: $password)
-                        .textContentType(.password)
-                        .onSubmit(signIn)
-                    Button(signingIn ? "Signing In…" : "Sign In", action: signIn)
-                        .disabled(signingIn || name.isEmpty)
-                    if let signInProblem {
-                        Text(signInProblem).font(.caption).foregroundStyle(.red)
-                    }
+                    Text("Sign in on the server's own page, the way you do in the browser.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Sign In…") { signingIn = true }
                 }
+            }
+            .sheet(isPresented: $signingIn) {
+                SignInView()
+                    .environmentObject(store)
             }
 
             Section {
@@ -139,23 +129,9 @@ struct ServerSettings: View {
             } else {
                 address = url.absoluteString
                 store.setServer(url)
+                await store.refreshAccount()
+                if store.account == nil { signingIn = true }  // straight on to the server's sign-in page
             }
-        }
-    }
-
-    private func signIn() {
-        guard !name.isEmpty, !signingIn else { return }
-        signingIn = true
-        signInProblem = nil
-        Task {
-            do {
-                try await store.signIn(name: name, password: password)
-                password = ""
-                if store.account == nil { signInProblem = "Signed in, but the server doesn't see the session. Check the server address (http or https)." }
-            } catch {
-                signInProblem = error.localizedDescription
-            }
-            signingIn = false
         }
     }
 }
