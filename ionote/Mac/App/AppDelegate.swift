@@ -15,11 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItem?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // `ionotes --init-cloudkit-schema`: set up the iCloud schema once, for the iPhone/iPad app, then quit.
-        if CommandLine.arguments.contains("--init-cloudkit-schema") {
-            NSApp.setActivationPolicy(.prohibited)
-            exit(CloudKitSchema.initialize() ? 0 : 1)
-        }
         // One ionotes at a time: registering the login item starts a copy straight away (RunAtLoad).
         let me = NSRunningApplication.current
         if let other = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
@@ -51,8 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        store.reindex()
-        Task { await store.checkICloud() }
+        store.syncSoon(after: 0)
     }
 
     /// Closing the window keeps ionotes running in the menu bar, watching the clipboard.

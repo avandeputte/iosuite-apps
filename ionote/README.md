@@ -1,6 +1,7 @@
 # ionotes
 
-Save anything from the clipboard as a searchable note, on your Mac, iPhone and iPad, synced through iCloud.
+Save anything from the clipboard as a searchable note, on your Mac, iPhone and iPad, synced through
+your own [ionotes server](https://github.com/avandeputte/ionotes).
 A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-teal note-card icon.
 
 - **Inbox**: everything you copy (text, images, files) and every screenshot you take lands in the Inbox,
@@ -17,8 +18,9 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
   Saving an Inbox item as a note takes it out of the Inbox.
 - **Search**: full-text search (SQLite FTS5) over titles, note text and text found in images, prefix-matching
   every word you type.
-- **iCloud sync**: notes live in SwiftData, mirrored to the private CloudKit database of
-  `iCloud.net.iothing.ionotes`, so they follow your Apple Account to other Macs, and later to an iPhone/iPad app.
+- **Sync with your server**: notes, folders, tags and colours live on a self-hosted ionotes server (FastAPI and
+  MariaDB, with its own web app). Each device keeps a full copy in local SQLite, so reading, searching and writing
+  work offline; changes are sent when the server is back.
 - **Menu bar**: click the icon to open ionotes; right-click it to pause clipboard capture, open Settings or quit.
   Quit from the Dock (or ⌘Q) just closes the window: ionotes keeps running in the menu bar.
   ionotes starts at login in the menu bar only (a launch agent passes `--background`); the Dock icon appears
@@ -46,8 +48,8 @@ open ionotes.xcodeproj
 In Xcode, pick the **ionotes** scheme and press ⌘R. The team id in `project.yml` is the iopix one
 (`69M2JRAT8P`); change `DEVELOPMENT_TEAM` there if needed and run `xcodegen generate` again.
 
-The first build registers the iCloud container. If Xcode shows a red iCloud container under
-*Signing & Capabilities › iCloud*, click the refresh button there (or `+` and add `iCloud.net.iothing.ionotes`).
+Then open Settings (⌘,) › ionotes server, enter the server's address (e.g. `192.168.1.10:8610`, or its HTTPS
+name), Connect, and sign in with an ionotes account (an editor or admin can change notes, a viewer only read).
 
 To build and install from the command line instead:
 
@@ -80,29 +82,34 @@ The `ionotesiOS` target has the same bundle id as the Mac app, so both are one a
    iopix. The build number is the build's date and time.
 3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
 
-TestFlight builds use iCloud's **Production** environment, so deploy the schema first (see below).
 
-## iCloud notes
+## Syncing
 
-- Sync needs the Mac signed in to iCloud with iCloud Drive on. The sidebar shows "Syncing with iCloud" when
-  it is working.
-- `/Applications/ionotes.app/Contents/MacOS/ionotes --init-cloudkit-schema` creates every record type and field in
-  the Development environment (then quits), ready to deploy.
-- Debug builds use CloudKit's **Development** environment. Before sharing a release build, open the
-  [CloudKit Console](https://icloud.developer.apple.com), pick `iCloud.net.iothing.ionotes`, and
-  *Deploy Schema Changes* to Production; for that release set `com.apple.developer.aps-environment` to
-  `production` in `project.yml`.
-- CloudKit only allows additive schema changes once in Production: new fields on `NoteRecord` must be
-  optional or have a default, and nothing can be renamed or removed.
+- Settings › ionotes server: the address, sign in (name and password; the app keeps only the 30-day session
+  cookie, never the password), an optional Cloudflare Access service token (kept in the Keychain) for a server
+  behind Cloudflare, the sync status, the last error and **Sync Now**.
+- A sync sends the changes made here (`POST /api/sync/push`), uploads new pictures (`PUT /api/notes/{id}/image`),
+  then fetches what changed since the last `rev` (`GET /api/sync`), and pictures this device doesn't have yet.
+  It runs on launch, when the app comes to the front, two seconds after an edit, every minute and when the network
+  returns. An edit made offline carries its own time; when the server has a later edit, the server's copy wins.
+- Text in pictures is read on the device (Vision) and sent as `ocrText`; the server only reads pictures added in
+  its web app.
+- Changing the server address drops what came from the old server (changes not sent yet are kept and go to the
+  new one).
+- Moving from the iCloud version: the old SwiftData store stays in `~/Library/Application Support/ionotes/Notes.store`;
+  its notes were exported to a zip that imports on the server (admin › Settings › Import), keeping their ids.
 
 ## How it is put together
 
 ```
 Shared/            platform-neutral, ready for an iPhone/iPad target
-  Models.swift       NoteRecord (SwiftData, synced), Note and InboxItem snapshots
-  NotesStore.swift   source of truth for the UI; mirrors SwiftData into the search index
-  Persistence.swift  ModelContainer with the CloudKit private database
-  Database.swift     local SQLite: Inbox + FTS5 search index of notes
+  Models.swift       Note, Folder and InboxItem
+  NotesStore.swift   source of truth for the UI: edits, folders, tags, the Inbox
+  Sync.swift         syncing with the server: push, picture uploads, pull, picture downloads
+  IonotesClient.swift  the server's API on URLSession (session cookie, Cloudflare service token)
+  ServerConfig.swift   server address, Keychain, service token
+  ServerSettings.swift the server section of Settings (Mac and iPhone/iPad) and the sync status
+  Database.swift     local SQLite: notes (offline copy + changes to send), folders, tag colours, FTS5 index, Inbox
   OCR.swift          Vision text recognition
   Brand.swift        the two-colour "ionotes" name (iopix's gold, ionotes' teal)
 Mac/
@@ -115,8 +122,8 @@ tools/make_icon.py   draws the app icon (needs Pillow and Poppins Bold; --ios fo
 tools/testflight.sh  builds the iPhone/iPad app and uploads it to TestFlight
 ```
 
-The search index is rebuilt from SwiftData whenever notes change locally or arrive from iCloud,
-so it never needs syncing itself. Local data lives in `~/Library/Application Support/ionotes/`.
+The search index (FTS5) is kept by triggers on the local notes table, so search works offline.
+Local data lives in `~/Library/Application Support/ionotes/` (`index.sqlite`, `NoteImages/`, `InboxImages/`).
 
 ionotes is not sandboxed: it needs to read the screenshots folder and the clipboard. That suits a
 Developer ID release like iopix's (`tools/release-mac.sh` in iopix-apps works with the scheme name changed).

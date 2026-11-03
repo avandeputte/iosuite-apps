@@ -39,7 +39,7 @@ struct NotesList: View {
         .searchable(text: $store.searchText, prompt: "Search notes")
         .navigationTitle(!store.searchText.isEmpty ? "Search"
                          : store.selectedTag.map { "#\($0)" } ?? store.folderName(store.selectedFolder) ?? "All Notes")
-        .refreshable { store.reindex() }
+        .refreshable { await store.sync() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -140,7 +140,7 @@ struct NoteRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if note.hasImage {
-                Thumbnail(noteID: note.id, version: note.updatedAt, size: 52)
+                Thumbnail(noteID: note.id, version: note.imageKey, size: 52)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {

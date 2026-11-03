@@ -75,7 +75,7 @@ struct NoteEditor: View {
             saveTask?.cancel()
             store.updateNote(id: note.id, title: title, body: text)
         }
-        .task(id: note.id) {
+        .task(id: "\(note.id)|\(note.imageKey ?? "")") {
             image = store.imageData(for: note).flatMap(UIImage.init(data:))
         }
         .fullScreenCover(isPresented: $showImage) {

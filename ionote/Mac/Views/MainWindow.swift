@@ -114,30 +114,6 @@ struct MainWindow: View {
     }
 }
 
-/// "Syncing with iCloud", or why not.
-struct SyncStatusView: View {
-    @EnvironmentObject private var store: NotesStore
-
-    var body: some View {
-        Group {
-            switch store.syncState {
-            case .checking:
-                Label("Checking iCloud…", systemImage: "icloud")
-            case .syncing:
-                Label("Syncing with iCloud", systemImage: "checkmark.icloud")
-            case .localOnly:
-                Label("On this Mac only", systemImage: "icloud.slash")
-                    .help("This build isn't signed for iCloud. See the README to turn on sync.")
-            case .noAccount(let why):
-                Label("iCloud off", systemImage: "exclamationmark.icloud")
-                    .help(why)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-}
-
 /// Inbox, all notes, folders (drop notes on one to file them) and tags.
 struct Sidebar: View {
     @EnvironmentObject private var store: NotesStore

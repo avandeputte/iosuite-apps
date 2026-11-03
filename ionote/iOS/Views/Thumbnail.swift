@@ -5,7 +5,7 @@ import SwiftUI
 struct Thumbnail: View {
     @EnvironmentObject private var store: NotesStore
     let noteID: String
-    let version: Date
+    let version: String?
     var size: CGFloat = 52
     @State private var image: UIImage?
 
@@ -22,11 +22,11 @@ struct Thumbnail: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .task(id: "\(noteID)-\(version.timeIntervalSince1970)") { image = load() }
+        .task(id: "\(noteID)-\(version ?? "")") { image = load() }
     }
 
     private func load() -> UIImage? {
-        let key = "\(noteID)-\(version.timeIntervalSince1970)" as NSString
+        let key = "\(noteID)-\(version ?? "")" as NSString
         if let cached = Thumbnail.cache.object(forKey: key) { return cached }
         guard let note = store.note(id: noteID), let data = store.imageData(for: note),
               let thumb = Thumbnail.downsample(data, maxPixels: size * 3) else { return nil }

@@ -27,7 +27,7 @@ struct SettingsView: View {
                 Picker("Inbox keeps the last", selection: $inboxLimit) {
                     ForEach([100, 250, 500, 1000, 5000], id: \.self) { Text("\($0) items").tag($0) }
                 }
-                Text("The Inbox stays on this Mac; only notes sync.")
+                Text("The Inbox stays on this Mac; only notes go to the server.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -62,8 +62,9 @@ struct SettingsView: View {
                 }
             }
 
-            Section("iCloud and login") {
-                SyncStatusView()
+            ServerSettings()
+
+            Section("Login") {
                 Toggle("Start in the menu bar when I log in", isOn: $openAtLogin)
                     .onChange(of: openAtLogin) { _, on in
                         do {

@@ -16,13 +16,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                Section {
-                    SyncStatusView()
-                } header: {
-                    Text("iCloud")
-                } footer: {
-                    Text("Notes, folders, tags and colours sync with ionotes on your Mac through your iCloud account. The clipboard Inbox stays on the Mac.")
-                }
+                ServerSettings()
 
                 Section {
                     Label("Paste: the clipboard button at the bottom of the notes list", systemImage: "doc.on.clipboard")

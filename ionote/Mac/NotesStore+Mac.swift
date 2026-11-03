@@ -59,7 +59,7 @@ extension NotesStore {
     /// (Mail and Word attach or insert it), or its text.
     func dragProvider(for note: Note) -> NSItemProvider {
         let provider: NSItemProvider
-        if let data = imageData(for: note), let url = exportFile(data, name: note.displayTitle, key: note.id),
+        if let data = imageData(for: note), let url = exportFile(data, name: note.displayTitle, key: note.exportKey),
            let file = NSItemProvider(contentsOf: url) {
             provider = file
         } else {

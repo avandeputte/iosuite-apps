@@ -6,7 +6,7 @@ import SwiftUI
 struct Thumbnail: View {
     enum Source: Hashable {
         case file(String)
-        case note(id: String, version: Date)
+        case note(id: String, version: String?)
     }
 
     @EnvironmentObject private var store: NotesStore
@@ -60,7 +60,7 @@ struct Thumbnail: View {
     private var cacheKey: NSString {
         switch source {
         case .file(let path): return "file:\(path)" as NSString
-        case .note(let id, _): return "note:\(id)@\(Int(size))" as NSString
+        case .note(let id, let version): return "note:\(id)@\(Int(size))/\(version ?? "")" as NSString
         }
     }
 

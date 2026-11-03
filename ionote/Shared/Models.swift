@@ -1,73 +1,5 @@
 import Foundation
-import SwiftData
 import SwiftUI
-
-/// A note as stored in SwiftData and synced through the CloudKit private database.
-///
-/// CloudKit rules for SwiftData models: every property needs a default or must be optional,
-/// no unique constraints, and schema changes after release must be additive (new optional fields).
-/// This file is platform-neutral so a future iPhone/iPad target can share it.
-@Model
-final class NoteRecord {
-    /// Stable identifier used by the local search index and the UI.
-    var uuid: String = UUID().uuidString
-    var title: String = ""
-    var body: String = ""
-    var ocrText: String = ""
-    /// PNG/JPEG bytes. External storage keeps large blobs out of the row; CloudKit syncs it as an asset.
-    @Attribute(.externalStorage) var imageData: Data?
-    /// Where the note came from: "clipboard", "service", "screenshot" or "manual".
-    var source: String = "manual"
-    var sourceApp: String?
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
-    /// Added after 1.0; CloudKit only allows new fields that have a default.
-    var tags: [String] = []
-    var pinned: Bool = false
-    /// The `uuid` of the FolderRecord this note is filed in; nil for no folder.
-    var folderID: String?
-
-    init(title: String = "", body: String = "", imageData: Data? = nil, source: String, sourceApp: String? = nil) {
-        self.title = title
-        self.body = body
-        self.imageData = imageData
-        self.source = source
-        self.sourceApp = sourceApp
-    }
-
-    var snapshot: Note {
-        Note(id: uuid, title: title, body: body, ocrText: ocrText, hasImage: imageData != nil,
-             source: source, sourceApp: sourceApp, createdAt: createdAt, updatedAt: updatedAt,
-             tags: tags, pinned: pinned, folderID: folderID)
-    }
-}
-
-/// A folder notes can be filed in ("Work", "AI"). Synced like notes; notes point at it by `uuid`.
-@Model
-final class FolderRecord {
-    var uuid: String = UUID().uuidString
-    var name: String = ""
-    var createdAt: Date = Date()
-    /// A LabelColor raw value, or nil for the default look.
-    var color: String?
-
-    init(name: String) {
-        self.name = name
-    }
-}
-
-/// The colour picked for a tag. Tags themselves are just names on notes, so this only exists once
-/// a tag has been given a colour. Matched by name, ignoring case.
-@Model
-final class TagRecord {
-    var name: String = ""
-    var color: String?
-
-    init(name: String, color: String?) {
-        self.name = name
-        self.color = color
-    }
-}
 
 struct Folder: Identifiable, Hashable {
     let id: String
@@ -115,6 +47,11 @@ struct Note: Identifiable, Hashable {
     var tags: [String]
     var pinned: Bool
     var folderID: String?
+    /// Which picture this device has for the note (nil until it has been fetched), so previews can follow it.
+    var imageKey: String? = nil
+
+    /// Names the exported file of the note's picture; a new picture gets a new file.
+    var exportKey: String { imageKey.map { "\(id)-\($0)" } ?? id }
 
     var displayTitle: String {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -184,9 +121,16 @@ enum AppPaths {
         return dir
     }
 
-    /// Local SQLite database: the inbox plus the full-text search index of notes.
-    static var databaseURL: URL { supportDir.appendingPathComponent("index.sqlite") }
+    /// Notes' pictures, one file per note named by its id: the offline copy of what is on the server.
+    static var noteImagesDir: URL {
+        let dir = supportDir.appendingPathComponent("NoteImages", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 
-    /// SwiftData store (synced with CloudKit).
-    static var notesStoreURL: URL { supportDir.appendingPathComponent("Notes.store") }
+    static func noteImageURL(_ id: String) -> URL { noteImagesDir.appendingPathComponent(id) }
+
+    /// Local SQLite database: the notes (an offline copy of the server's, plus changes not sent yet), their
+    /// search index, and the inbox.
+    static var databaseURL: URL { supportDir.appendingPathComponent("index.sqlite") }
 }

@@ -166,25 +166,3 @@ private struct BrandTitle: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View { Brand.name(onLight: scheme == .light).font(.title3) }
 }
-
-/// "Syncing with iCloud", or why not.
-struct SyncStatusView: View {
-    @EnvironmentObject private var store: NotesStore
-
-    var body: some View {
-        Group {
-            switch store.syncState {
-            case .checking:
-                Label("Checking iCloud…", systemImage: "icloud")
-            case .syncing:
-                Label("Syncing with iCloud", systemImage: "checkmark.icloud")
-            case .localOnly:
-                Label("On this device only", systemImage: "icloud.slash")
-            case .noAccount(let why):
-                Label(why, systemImage: "exclamationmark.icloud")
-            }
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-    }
-}

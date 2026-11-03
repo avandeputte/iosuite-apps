@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ionotes on iPhone and iPad: the same notes, folders and tags as the Mac, synced through iCloud.
+/// ionotes on iPhone and iPad: the same notes, folders and tags as the Mac, synced through your ionotes server.
 /// The clipboard Inbox stays on the Mac; here you paste or pick photos straight into notes.
 @main
 struct IonotesApp: App {
@@ -16,8 +16,8 @@ struct IonotesApp: App {
                 .preferredColorScheme(colorScheme)
         }
         .onChange(of: scenePhase) { _, phase in
-            // Pick up notes changed on the Mac while ionotes was in the background.
-            if phase == .active { store.reindex() }
+            // Pick up notes changed elsewhere while ionotes was in the background; sync every minute while in use.
+            store.setActive(phase == .active)
         }
     }
 

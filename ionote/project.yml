@@ -28,23 +28,15 @@ targets:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
       - Shared  # model, store, search index, OCR and brand: shared with the iPhone/iPad app
-    entitlements:
-      path: Mac/ionotes.entitlements
-      properties:
-        # notes sync through the private CloudKit database of this container
-        com.apple.developer.icloud-container-identifiers: [iCloud.net.iothing.ionotes]
-        com.apple.developer.icloud-services: [CloudKit]
-        com.apple.developer.aps-environment: development  # pushes tell this Mac when another device changed a note
-        # the same iCloud side as TestFlight and App Store builds of the iPhone/iPad app
-        com.apple.developer.icloud-container-environment: Production
     info:
       path: Mac/Info.plist
       properties:
         CFBundleDisplayName: ionotes
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CloudKitContainer: iCloud.net.iothing.ionotes
         LSApplicationCategoryType: public.app-category.productivity
+        # notes sync with a self-hosted ionotes server, often plain http on the home network
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}
         UTExportedTypeDeclarations:  # a note dragged onto a folder in the sidebar
           - UTTypeIdentifier: net.iothing.ionotes.note
             UTTypeDescription: ionotes note
@@ -69,7 +61,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ionotes
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  # iPhone and iPad: the same notes through the same iCloud container. Same bundle id as the Mac app,
+  # iPhone and iPad: the same notes through the same ionotes server. Same bundle id as the Mac app,
   # so both are one app in App Store Connect.
   ionotesiOS:
     type: application
@@ -77,23 +69,17 @@ targets:
     sources:
       - iOS
       - Shared
-    entitlements:
-      path: iOS/ionotes.entitlements
-      properties:
-        com.apple.developer.icloud-container-identifiers: [iCloud.net.iothing.ionotes]
-        com.apple.developer.icloud-services: [CloudKit]
-        aps-environment: development  # TestFlight/App Store builds get "production" when exported
     info:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: ionotes
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CloudKitContainer: iCloud.net.iothing.ionotes
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
         UILaunchScreen: {}
-        UIBackgroundModes: [remote-notification]  # CloudKit tells the app when the Mac changed a note
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}
+        NSLocalNetworkUsageDescription: ionotes syncs your notes with your ionotes server on your home network.
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

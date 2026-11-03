@@ -87,7 +87,7 @@ struct NoteRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if note.hasImage {
-                Thumbnail(source: .note(id: note.id, version: note.updatedAt), size: 44)
+                Thumbnail(source: .note(id: note.id, version: note.imageKey), size: 44)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
@@ -343,10 +343,10 @@ struct NoteEditor: View {
             saveTask?.cancel()
             store.updateNote(id: note.id, title: title, body: text)
         }
-        .task(id: note.id) {
+        .task(id: "\(note.id)|\(note.imageKey ?? "")") {
             imageURL = nil
             guard note.hasImage else { image = nil; return }
-            let key = "note:" + note.id
+            let key = "note:\(note.id)/\(note.imageKey ?? "")"
             image = ImagePreview.cached(key)
             if image == nil, let data = store.imageData(for: note) {
                 let loaded = await ImagePreview.load(key) { data }
