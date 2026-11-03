@@ -1,0 +1,113 @@
+name: ionotes
+options:
+  bundleIdPrefix: net.iothing
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # your Apple team id (Xcode › Settings › Accounts), the same as iopix
+    DEVELOPMENT_TEAM: 69M2JRAT8P
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+targets:
+  ionotes:
+    type: application
+    platform: macOS
+    sources:
+      - path: Mac
+        excludes: ["LaunchAgent/**"]
+      - path: Mac/LaunchAgent  # starts ionotes at login, menu bar only (see Mac/App/LoginItem.swift)
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+      - Shared  # model, store, search index, OCR and brand: shared with the iPhone/iPad app
+    entitlements:
+      path: Mac/ionotes.entitlements
+      properties:
+        # notes sync through the private CloudKit database of this container
+        com.apple.developer.icloud-container-identifiers: [iCloud.net.iothing.ionotes]
+        com.apple.developer.icloud-services: [CloudKit]
+        com.apple.developer.aps-environment: development  # pushes tell this Mac when another device changed a note
+        # the same iCloud side as TestFlight and App Store builds of the iPhone/iPad app
+        com.apple.developer.icloud-container-environment: Production
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: ionotes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CloudKitContainer: iCloud.net.iothing.ionotes
+        LSApplicationCategoryType: public.app-category.productivity
+        UTExportedTypeDeclarations:  # a note dragged onto a folder in the sidebar
+          - UTTypeIdentifier: net.iothing.ionotes.note
+            UTTypeDescription: ionotes note
+            UTTypeConformsTo: [public.data]
+        NSHumanReadableCopyright: ""
+        NSServices:
+          # select text anywhere › right-click › Save to ionotes
+          - NSMenuItem: {default: Save to ionotes}
+            NSMessage: saveToNotes
+            NSPortName: ionotes
+            NSRequiredContext: {}
+            NSSendTypes: [public.utf8-plain-text, NSStringPboardType]
+          # images in Finder › right-click › Services › Save Image to ionotes
+          - NSMenuItem: {default: Save Image to ionotes}
+            NSMessage: saveFilesToNotes
+            NSPortName: ionotes
+            NSRequiredContext: {}
+            NSSendFileTypes: [public.image]
+    settings:
+      base:
+        PRODUCT_NAME: ionotes
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ionotes
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  # iPhone and iPad: the same notes through the same iCloud container. Same bundle id as the Mac app,
+  # so both are one app in App Store Connect.
+  ionotesiOS:
+    type: application
+    platform: iOS
+    sources:
+      - iOS
+      - Shared
+    entitlements:
+      path: iOS/ionotes.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers: [iCloud.net.iothing.ionotes]
+        com.apple.developer.icloud-services: [CloudKit]
+        aps-environment: development  # TestFlight/App Store builds get "production" when exported
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: ionotes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CloudKitContainer: iCloud.net.iothing.ionotes
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.productivity
+        UILaunchScreen: {}
+        UIBackgroundModes: [remote-notification]  # CloudKit tells the app when the Mac changed a note
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: net.iothing.ionotes.note
+            UTTypeDescription: ionotes note
+            UTTypeConformsTo: [public.data]
+    settings:
+      base:
+        PRODUCT_NAME: ionotes
+        PRODUCT_MODULE_NAME: ionotes
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ionotes
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO  # the Mac has its own ionotes
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
