@@ -191,7 +191,7 @@ struct ExploreView: View {
             .navigationTitle("Explore")
             .globalSearch()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { sizePicker }
+                ToolbarItemGroup(placement: .topBarLeading) { SuiteMenuButton(); sizePicker }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: showUploads) {
                         Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")

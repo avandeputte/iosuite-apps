@@ -184,7 +184,7 @@ struct AdminMaintenanceScreen: View {
                 AdminRow(title: "Restart \(appName)", detail: "Stops the server; launchd, Docker or systemd starts it again within seconds. Handy when a background job looks stuck.")
                 Button("Restart", role: .destructive) {
                     confirm = AdminConfirm(title: "Restart \(appName) now?", message: "Anyone using it is disconnected for a few seconds.", button: "Restart", destructive: true) {
-                        await notice.run("Restarting…") { try await AdminAPI.post("api/restart") }
+                        await notice.run("Restarting…") { try await AdminAPI.post("api/server", ["action": "restart"]) }
                     }
                 }
             }
@@ -696,7 +696,7 @@ struct AdminLogScreen: View {
 // MARK: - Version and updates
 
 /// Which version runs on the server and whether a newer one is out: check, update now (then wait for the restart),
-/// and the MCP update token.
+/// the daily check and the MCP update token. GET and POST /api/server, the same in every ioThing app (iopix 1.119).
 struct AdminUpdateRow: View {
     let appName: String
     @StateObject private var notice = AdminNotice()
@@ -714,13 +714,20 @@ struct AdminUpdateRow: View {
             if let last = lastText { Text(last).font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 16) {
                 Button("Check for updates") {
-                    Task { await notice.run(nil) { try await AdminAPI.post("api/update", ["action": "check"]) }; await load() }
+                    Task { await notice.run(nil) { try await AdminAPI.post("api/server", ["action": "check"]) }; await load() }
                 }
                 Button("MCP token…") {
-                    Task { do { token = try await AdminAPI.post("api/update", ["action": "token"]) } catch { notice.fail(error) } }
+                    Task { do { token = try await AdminAPI.post("api/server", ["action": "token"]) } catch { notice.fail(error) } }
                 }
             }
             .buttonStyle(.borderless)
+            Toggle(isOn: Binding(get: { u.bool("autoCheck") }, set: { on in
+                Task { await notice.run(on ? "\(appName) will check for updates once a day." : "\(appName) will not contact GitHub on its own.") { try await AdminAPI.post("api/server", ["autoCheck": on]); await load() } }
+            })) {
+                Text(u.bool("autoCheckLocked") ? "Check daily (switched off by UPDATE_CHECK=0 in the environment)" : "Check daily (only GitHub's public list of changes is asked; nothing about this install is sent)")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .disabled(u.bool("autoCheckLocked") || u.isEmpty)
             if u.bool("docker") {
                 Text("Docker: update by pulling the image (docker compose pull && docker compose up -d).").font(.caption).foregroundStyle(.secondary)
             } else if u.bool("canRun") {
@@ -739,13 +746,13 @@ struct AdminUpdateRow: View {
             if !t.bool("fromEnv") {
                 Button("Regenerate", role: .destructive) {
                     confirm = AdminConfirm(title: "Generate a new token?", message: "The old one stops working.", button: "Regenerate", destructive: true) {
-                        await notice.run("New token made.") { try await AdminAPI.post("api/update", ["action": "regenerate_token"]) }
+                        await notice.run("New token made.") { try await AdminAPI.post("api/server", ["action": "regenerate_token"]) }
                     }
                 }
             }
             Button("Close", role: .cancel) {}
         } message: { t in
-            Text("\(t["mcpEnabled"] != nil && !t.bool("mcpEnabled") ? "The MCP server is switched off (Settings › MCP server), so this token is not usable until it is turned on.\n\n" : "")\(t.str("token") ?? "")\n\nAn MCP client (e.g. Claude) can run the update with the update_viewer tool and this token; treat it like a password.\(t.bool("fromEnv") ? " Set by MCP_ADMIN_TOKEN in the environment." : "")")
+            Text("\(u["mcpEnabled"] != nil && !u.bool("mcpEnabled") ? "The MCP server is switched off (Settings › MCP server), so this token is not usable until it is turned on.\n\n" : "")\(t.str("token") ?? "")\n\nAn MCP client (e.g. Claude) can run the update with the update_viewer tool and this token; treat it like a password.\(t.bool("fromEnv") ? " Set by MCP_ADMIN_TOKEN in the environment." : "")")
         }
         .adminConfirm($confirm)
         .adminNotice(notice)
@@ -776,7 +783,7 @@ struct AdminUpdateRow: View {
     }
 
     private func load() async {
-        u = (try? await AdminAPI.get("api/update")) ?? u
+        u = (try? await AdminAPI.get("api/server")) ?? u
         poll?.cancel()
         if gone || Task.isCancelled { return }
         if u.dict("progress").bool("running") {
@@ -787,7 +794,7 @@ struct AdminUpdateRow: View {
     /// Starts the update and waits (up to three minutes) for the server to come back with another version.
     private func run() async {
         let was = await versionKey()
-        do { try await AdminAPI.post("api/update", ["action": "run"]) } catch { notice.fail(error); return }
+        do { try await AdminAPI.post("api/server", ["action": "update"]) } catch { notice.fail(error); return }
         waiting = "Updating… \(appName) restarts when it is done."
         let until = Date().addingTimeInterval(180)
         while Date() < until {

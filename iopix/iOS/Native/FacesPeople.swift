@@ -17,6 +17,7 @@ struct FacesPeopleScreen: View {
     @State private var arranging = false
     @State private var search = ""
     @State private var summary: [String: (photos: Int, faces: Int)] = [:]
+    @State private var birthdays: [Birthday] = []
     @State private var openPerson: FacesTag?
     @State private var openFaces: String?
     @State private var asking: Ask?
@@ -24,6 +25,18 @@ struct FacesPeopleScreen: View {
     @State private var deleting: PeopleGroup?
     @State private var note: String?
     @State private var problem: String?
+
+    /// A birthday in the next month, from ioContacts (Settings › ioContacts): nothing shows when it is off or not reached.
+    struct Birthday: Identifiable {
+        let id: Int, turns: Int?, inDays: Int, date: String
+        var when: String {
+            if inDays == 0 { return "today" }
+            if inDays == 1 { return "tomorrow" }
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            guard let d = f.date(from: date) else { return date }
+            return d.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        }
+    }
 
     private enum Ask: Identifiable {
         case newGroup(with: Int?), rename(PeopleGroup)
@@ -53,6 +66,7 @@ struct FacesPeopleScreen: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 todo
+                birthdayPills
                 sections
                 if let problem, tags.isEmpty {
                     Text(problem).foregroundStyle(.secondary).padding(.top, 40)
@@ -114,6 +128,32 @@ struct FacesPeopleScreen: View {
                             .foregroundStyle(Hue.amber).background(Hue.amber.opacity(0.13), in: Capsule())
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var birthdayPills: some View {
+        let byId = Dictionary(tags.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let list = birthdays.filter { byId[$0.id] != nil }
+        if !list.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Birthdays").font(.subheadline).foregroundStyle(.secondary)
+                FlowLayout(spacing: 8) {
+                    ForEach(list) { b in
+                        let hue = b.inDays == 0 ? Hue.amber : Hue.blue
+                        Button { openPerson = byId[b.id] } label: {
+                            HStack(spacing: 6) {
+                                RemoteImage(path: "face/\(b.id)").frame(width: 22, height: 22).clipShape(Circle())
+                                Text(byId[b.id]?.name ?? "")
+                                Text(b.turns.map { "turns \($0) \(b.when)" } ?? b.when).bold()
+                            }
+                            .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 7)
+                            .foregroundStyle(hue).background(hue.opacity(0.13), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Photos of \(byId[b.id]?.name ?? "")")
+                    }
                 }
             }
         }
@@ -323,12 +363,22 @@ struct FacesPeopleScreen: View {
         async let t: Result<[FacesTag], Error> = { do { return .success(try await FacesAPI.tags()) } catch { return .failure(error) } }()
         async let s = FacesAPI.summary()
         async let g: Void = reloadGroups()
+        async let b = loadBirthdays()
         switch await t {
         case .success(let list): tags = list; problem = nil
         case .failure(let e): problem = e.localizedDescription
         }
         summary = await s
         _ = await g
+        birthdays = await b
+    }
+
+    private func loadBirthdays() async -> [Birthday] {
+        guard queue.account?.signedIn == true, let r = try? await IopixClient.shared.json("api/people/birthdays", query: []) else { return [] }
+        return (r["upcoming"] as? [[String: Any]] ?? []).prefix(12).compactMap { b in
+            guard let t = (b["tag"] as? NSNumber)?.intValue else { return nil }
+            return Birthday(id: t, turns: (b["turns"] as? NSNumber)?.intValue, inDays: (b["in"] as? NSNumber)?.intValue ?? 0, date: b["date"] as? String ?? "")
+        }
     }
 
     private func reloadGroups() async {

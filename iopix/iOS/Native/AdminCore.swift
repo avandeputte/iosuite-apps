@@ -16,6 +16,15 @@ enum AdminAPI {
         return try IopixClient.shared.check(data, resp)
     }
 
+    /// DELETE (a session, an app password); the answer, or the server's reason it refused.
+    @discardableResult
+    static func delete(_ path: String) async throws -> [String: Any] {
+        let r = IopixClient.shared.request(path, method: "DELETE")
+        let (data, resp) = try await IopixClient.shared.session.data(for: r)
+        if data.isEmpty, let h = resp as? HTTPURLResponse, (200..<300).contains(h.statusCode) { return [:] }
+        return try IopixClient.shared.check(data, resp)
+    }
+
     /// A form-encoded POST (the consistency check takes the photo filters that way).
     @discardableResult
     static func postForm(_ path: String, _ items: [URLQueryItem]) async throws -> [String: Any] {

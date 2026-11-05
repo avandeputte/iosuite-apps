@@ -180,6 +180,9 @@ struct AdminAccountScreen: View {
                         .disabled(current.isEmpty || newPassword.count < 8)
                     }
                 }
+                Section {
+                    NavigationLink("Where you're signed in") { AdminSessionsScreen() }
+                }
                 if model.me.str("signedInBy") != "proxy" {
                     Section {
                         Button("Sign out everywhere else") {
@@ -403,15 +406,6 @@ struct AdminServerScreen: View {
             digikamDatabase
             albumRoots
             viewerDatabase
-            Section {
-                Toggle("Check daily", isOn: Binding(get: { model.m.bool("updateCheck") }, set: { on in
-                    Task { await notice.run(on ? "\(model.appName) will check for updates once a day." : "\(model.appName) will not contact GitHub on its own.") { try await AdminAPI.post("api/settings", ["update_check": on]); await model.load() } }
-                }))
-                .disabled(model.m.bool("updateCheckLocked"))
-            } header: { Text("Check for updates daily") } footer: {
-                Text(model.m.bool("updateCheckLocked") ? "Switched off by UPDATE_CHECK=0 in the environment: \(model.appName) never contacts GitHub on its own."
-                     : "Once a day \(model.appName) asks GitHub whether a newer version exists and, if so, tells admins. Only the public list of changes is fetched; nothing about this install or its photos is sent.")
-            }
             if model.m["mcpEnabled"] != nil {  // iopix 1.85 and later
                 Section {
                     Toggle("MCP server", isOn: Binding(get: { model.m.bool("mcpEnabled") || model.m.bool("mcpLocked") }, set: { on in
@@ -532,21 +526,20 @@ struct AdminServerScreen: View {
             if viewer.isEmpty {
                 ProgressView()
             } else {
-                Text("Currently: \(viewer.str("type") == "mysql" ? "MySQL \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")" : "SQLite file \(viewer.str("sqlite_file") ?? "")")")
+                Text(viewer.bool("configured") ? "Currently: MariaDB \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")" : "Not set up yet.")
                     .font(.footnote)
                 if let e = viewer.str("error"), !e.isEmpty {
-                    Text("The configured MySQL database could not be used (\(e)); the SQLite file is in use meanwhile.").font(.footnote).foregroundStyle(.orange)
+                    Text("The database could not be used: \(e)").font(.footnote).foregroundStyle(.orange)
+                    Button("Try again") { Task { await notice.run("Restarting…") { try await AdminAPI.post("api/viewerdb/retry") } } }
                 }
-                Picker("Type", selection: $vdb.type) {
-                    Text("SQLite file").tag("sqlite"); Text("MySQL / MariaDB").tag("mysql")
+                if let old = viewer.str("legacy_sqlite") {
+                    Text("A viewer.db from before \(model.appName) 1.113 is at \(old); its rows are imported once the database is reached.").font(.footnote).foregroundStyle(.secondary)
                 }
-                if vdb.type == "mysql" {
-                    TextField("Host", text: $vdb.host).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    TextField("Port", text: $vdb.port).keyboardType(.numberPad)
-                    TextField("Database", text: $vdb.database).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    TextField("User", text: $vdb.user).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    SecureField(viewer.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $vdb.password)
-                }
+                TextField("Host", text: $vdb.host).autocorrectionDisabled().textInputAutocapitalization(.never)
+                TextField("Port", text: $vdb.port).keyboardType(.numberPad)
+                TextField("Database", text: $vdb.database).autocorrectionDisabled().textInputAutocapitalization(.never)
+                TextField("User", text: $vdb.user).autocorrectionDisabled().textInputAutocapitalization(.never)
+                SecureField(viewer.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $vdb.password)
                 Toggle("Copy all the data to the new database", isOn: $vCopy)
                 Toggle("Drop and recreate the tables there first", isOn: $vDrop)
                 Button("Test connection") {
@@ -560,7 +553,7 @@ struct AdminServerScreen: View {
                     }
                 }
                 Button("Switch") {
-                    let target = vdb.type == "mysql" ? "MySQL \(vdb.user)@\(vdb.host):\(vdb.port)/\(vdb.database)" : "the SQLite file"
+                    let target = "MariaDB \(vdb.user)@\(vdb.host):\(vdb.port)/\(vdb.database)"
                     let what = vCopy ? "Every row is copied there first\(vDrop ? ", after dropping and recreating the tables at the target." : " (rows with the same ids are replaced).")"
                                      : "The data is NOT copied; \(model.appName) starts empty there unless the tables already hold data."
                     confirm = AdminConfirm(title: "Switch \(model.appName) to \(target)?", message: "\(what) \(model.appName) restarts when the copy is done.", button: "Switch", destructive: vDrop) {
@@ -576,7 +569,7 @@ struct AdminServerScreen: View {
                 if let vResult { Text(vResult).font(.footnote).foregroundStyle(.secondary) }
             }
         } header: { Text("\(model.appName) database") } footer: {
-            Text("Where \(model.appName) keeps its own data: users, albums, favorites, settings, pending edits and the AI results. SQLite by default, or a MySQL/MariaDB database of its own. Switching copies every row across and restarts \(model.appName).")
+            Text("Where \(model.appName) keeps its own data: users, albums, favorites, settings, pending edits and the AI results, in a MariaDB (or MySQL) database of its own (since \(model.appName) 1.113 the SQLite file is no longer used). Switching copies every row across and restarts \(model.appName).")
         }
     }
 
@@ -627,6 +620,7 @@ struct AdminServerScreen: View {
         guard let v = try? await AdminAPI.get("api/viewerdb") else { return }
         viewer = v
         vdb = DBForm(v)
+        vdb.type = "mysql"  // the only kind since iopix 1.113
     }
 }
 
@@ -874,7 +868,7 @@ struct AdminAboutScreen: View {
         .navigationTitle("About")
         .task {
             if model.status.isEmpty { await model.load() }
-            update = (try? await AdminAPI.get("api/update")) ?? [:]
+            update = (try? await AdminAPI.get("api/server")) ?? [:]
         }
     }
 

@@ -28,6 +28,8 @@ struct PhotoDetail {
     var versions: [Version] = []
     var rating = 0
     var faces: [Face] = []
+    /// How old each named person was in the photo, by tag id, from the birthdays in ioContacts (iopix 1.114).
+    var ages: [Int: String] = [:]
     var tags: [(id: Int, name: String)] = []
     var place: String?, region: String?, country: String?
     var lat: Double?, lon: Double?, alt: Double?
@@ -101,6 +103,9 @@ struct PhotoDetail {
             guard kind != "ignored" else { continue }
             p.faces.append(Face(kind: kind == "suggested" ? .suggested : .unknown, tag: int(f["tag"]), name: str(f["name"]),
                                 rect: ["x", "y", "w", "h"].compactMap { int(f[$0]) }))
+        }
+        for (k, v) in d["ages"] as? [String: Any] ?? [:] {
+            if let tag = Int(k), let text = v as? String, !text.isEmpty { p.ages[tag] = text }
         }
         for t in allTags where (int(t["person"]) ?? 0) != 0 {
             if let tid = int(t["id"]), !faced.contains(tid) { p.faces.append(Face(kind: .tagOnly, tag: tid, name: str(t["name"]), rect: [])) }
@@ -524,7 +529,11 @@ struct PhotoInfoFull: View {
                 FaceThumb(crop: f.rect.count == 4 ? "facecrop/\(d.id)/\(f.rect[0])/\(f.rect[1])/\(f.rect[2])/\(f.rect[3]).jpg" : nil,
                           badge: f.tag.map { "face/\($0)" })
                 switch f.kind {
-                case .confirmed, .tagOnly: Text(f.name ?? "Someone").foregroundStyle(.primary)
+                case .confirmed, .tagOnly:
+                    Text(f.name ?? "Someone").foregroundStyle(.primary)
+                    if let age = f.tag.flatMap({ d.ages[$0] }) {
+                        Text("· \(age)").foregroundStyle(.secondary).accessibilityLabel("age in this photo \(age)")
+                    }
                 case .suggested: Text("Suggestion: ").italic().foregroundStyle(.secondary) + Text(f.name ?? "").foregroundStyle(.primary)
                 case .unknown: Text("Unknown face").italic().foregroundStyle(.secondary)
                 }

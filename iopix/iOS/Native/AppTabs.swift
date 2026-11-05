@@ -3,6 +3,7 @@ import SwiftUI
 /// The app's tabs, all native. Settings, Maintenance and editing a photo open the web app (under More).
 struct AppTabs: View {
     @EnvironmentObject private var router: Router
+    @EnvironmentObject private var queue: UploadQueue
     @Environment(\.horizontalSizeClass) private var width
     var showUploads: () -> Void
 
@@ -15,6 +16,8 @@ struct AppTabs: View {
             }
         }
         .hardTopEdge()
+        // the other ioThing apps, for the mark top left: read again when the account changes
+        .task(id: queue.account?.signedIn == true ? (queue.account?.name ?? "?") : "") { await SuiteApps.shared.load(account: queue.account?.signedIn == true ? (queue.account?.name ?? "?") : nil) }
     }
 
     private var tabs: some View {
@@ -122,6 +125,7 @@ struct SidebarLayout: View {
             }
             .listStyle(.sidebar)
             .navigationTitle("ioPix")
+            .toolbar { ToolbarItem(placement: .topBarLeading) { SuiteMenuButton() } }
         } detail: {
             detail
         }

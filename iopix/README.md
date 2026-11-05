@@ -50,7 +50,10 @@ Duplicate files, Date and Place suggestions, Jersey numbers, Clothing matches, W
 files), and editing a photo (details, tags,
 location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or later for background sending,
 one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
-the slower paths. "Open in iopix" shows the same photo in the web app.
+the slower paths. Maintenance › Updates and logs (the version, updates, restart and the server log) needs iopix
+1.119 or later, which moved those to the suite's shared endpoints; the ages and birthdays from ioContacts, the
+list of where you are signed in and the menu of the other ioThing apps (the ioPix mark top left, when others are
+installed) need 1.114 to 1.117. "Open in iopix" shows the same photo in the web app.
 
 ## How it signs in
 
