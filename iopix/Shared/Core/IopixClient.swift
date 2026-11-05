@@ -90,10 +90,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let host = server.host, let scheme = server.scheme {
             r.setValue("\(scheme)://\(host)\(server.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
         }
-        if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
-            r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
-            r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
-        }
+        ServiceToken.apply(to: &r)
         return r
     }
 
@@ -134,19 +131,30 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     static let log = Logger(subsystem: "net.iothing.iopix", category: "network")
 
     /// Is there an iopix at this address? nil when there is (or a sign-in page in front of it, such as
-    /// Cloudflare Access's), otherwise what went wrong, in plain words.
+    /// Cloudflare Access's), otherwise what went wrong, in plain words. The service token goes along, so with a
+    /// good one Cloudflare lets the check through to iopix; a sign-in page in spite of it means it was refused.
     func probe(_ url: URL) async -> String? {
         var r = URLRequest(url: url.appendingPathComponent("api/status"), timeoutInterval: 15)
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        ServiceToken.apply(to: &r)
+        let refused = { (signIn: URL?) -> String? in
+            ServiceToken.isSet && ServiceToken.isCloudflareSignIn(signIn) ? ServiceToken.rejected : nil
+        }
         do {
             let (data, resp) = try await session.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
-            if http.url?.host?.lowercased() != url.host?.lowercased() { return nil }  // sent to a sign-in page first
+            if http.url?.host?.lowercased() != url.host?.lowercased() { return refused(http.url) }  // sent to a sign-in page first
             // a redirect to another host is not followed (see above): Cloudflare Access's sign-in from outside
             if (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
                let to = URL(string: loc, relativeTo: http.url ?? url)?.absoluteURL,
-               to.host?.lowercased() != url.host?.lowercased() { return nil }
+               to.host?.lowercased() != url.host?.lowercased() { return refused(to) }
             if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["appVersion"] != nil { return nil }
+            // Cloudflare's own "Forbidden" page (a token it knows, but no policy lets in) rather than iopix's answer
+            if http.statusCode == 403, ServiceToken.isSet, (try? JSONSerialization.jsonObject(with: data)) == nil,
+               http.value(forHTTPHeaderField: "Server")?.lowercased() == "cloudflare" {
+                return ServiceToken.rejected
+            }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
             return "That address answers, but it isn't an iopix server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {

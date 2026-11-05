@@ -366,6 +366,9 @@ struct ServerSetupView: View {
     @State private var text = ""
     @State private var checking = false
     @State private var problem: String?
+    @State private var tokenID = ServiceToken.clientID ?? ""
+    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
+    @State private var showToken = ServiceToken.isSet
 
     var body: some View {
         VStack(spacing: 20) {
@@ -383,6 +386,24 @@ struct ServerSetupView: View {
                 .onSubmit(connect)
                 .padding(12)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+            DisclosureGroup("Cloudflare Access service token (optional)", isExpanded: $showToken) {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Client ID", text: $tokenID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    SecureField("Client secret", text: $tokenSecret)
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    Text("Only if iopix sits behind Cloudflare Access. With a service token the app goes straight to iopix's own sign-in, without Cloudflare's. Leave it empty otherwise.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
             if let problem { Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center) }
             Button(action: connect) {
                 Group { if checking { ProgressView() } else { Text("Connect") } }
@@ -399,6 +420,9 @@ struct ServerSetupView: View {
 
     private func connect() {
         guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
+        // kept before the check, which sends it along (the Keychain drops an empty one)
+        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespacesAndNewlines)
+        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         checking = true
         problem = nil
         Task {

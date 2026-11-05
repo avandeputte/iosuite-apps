@@ -62,8 +62,10 @@ password only work at home, as in the browser.
 Cloudflare Access's sign-in expires after the session length set in Cloudflare. To keep the Mac uploading
 unattended, either use the server's home-network address in Settings, or create a Cloudflare **service token**
 (Zero Trust › Access › Service auth), allow it in the iopix application's policy (a *Service Auth* rule), and
-enter its client ID and secret in the app's settings. They are kept in the Keychain. You still sign in to iopix
-once.
+enter its client ID and secret in the app's settings, or on the connect screen the first time (iPhone, iPad, Mac
+and Apple TV). They are kept in the Keychain and sent with every request, so Cloudflare's sign-in page is skipped
+and the app goes straight to iopix's own sign-in; the Apple TV, which can't show Cloudflare's page, needs one to
+connect from outside. If Cloudflare refuses the token, the connect screen says so. You still sign in to iopix once.
 
 ## Building
 

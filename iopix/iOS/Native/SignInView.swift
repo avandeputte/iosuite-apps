@@ -28,7 +28,11 @@ struct SignInView: View {
                     } header: {
                         Text("First, this network's sign-in")
                     } footer: {
-                        Text("From here, iopix sits behind a sign-in page (your reverse proxy's, for example). Sign in there first, then to iopix.")
+                        if ServiceToken.isSet, ServiceToken.isCloudflareSignIn(gate) {
+                            Text(ServiceToken.rejected + " Until then, sign in on Cloudflare's page.")
+                        } else {
+                            Text("From here, iopix sits behind a sign-in page (your reverse proxy's, for example). Sign in there first, then to iopix.")
+                        }
                     }
                 }
                 Section {
