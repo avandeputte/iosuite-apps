@@ -60,7 +60,10 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     /// cookies and the service token never reach anyone but the server; `check` then reports a needed sign-in.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(request.url?.host?.lowercased() == server.host?.lowercased() ? request : nil)
+        // compared with the host this request was sent to, not the saved server: the connect screen probes an
+        // address before it is saved, and its own redirects (http to https) must still be followed
+        let from = (task.originalRequest?.url ?? server).host?.lowercased()
+        completionHandler(request.url?.host?.lowercased() == from ? request : nil)
     }
 
     var server: URL { AppConfig.serverURL }
@@ -139,6 +142,10 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
             let (data, resp) = try await session.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
             if http.url?.host?.lowercased() != url.host?.lowercased() { return nil }  // sent to a sign-in page first
+            // a redirect to another host is not followed (see above): Cloudflare Access's sign-in from outside
+            if (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
+               let to = URL(string: loc, relativeTo: http.url ?? url)?.absoluteURL,
+               to.host?.lowercased() != url.host?.lowercased() { return nil }
             if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["appVersion"] != nil { return nil }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
             return "That address answers, but it isn't an iopix server."
