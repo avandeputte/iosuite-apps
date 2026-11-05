@@ -17,7 +17,7 @@ struct AdminMaintenanceScreen: View {
     @State private var confirm: AdminConfirm?
     @State private var problem: String?
 
-    private var appName: String { status.str("appName") ?? "iopix" }
+    private var appName: String { status.str("appName") ?? "ioPix" }
 
     var body: some View {
         List {
@@ -563,7 +563,7 @@ struct AdminStorageScreen: View {
                 item("Previews", st.dbl("previews"), "Large images, remade on demand.") { Button("Clear") { Task { await act("previews", "Previews cleared; they are remade as you open photos.") } } }
                 item("Face crops", st.dbl("faces"), "Remade on demand.") { Button("Clear") { Task { await act("faces", "Face crops cleared; they are remade as needed.") } } }
                 item("Search index", st.dbl("index"), "Rebuilt from digiKam's database in seconds.") { EmptyView() }
-                item("\(m.str("appName") ?? "iopix") database", st.dbl("viewerDb"), st.str("viewerDbError").map { "MySQL/MariaDB is configured but could not be used (\($0)), so the SQLite file is in use. Fix the cause in Settings and restart." } ?? "Users, albums, favorites, settings, AI results.") { EmptyView() }
+                item("\(m.str("appName") ?? "ioPix") database", st.dbl("viewerDb"), st.str("viewerDbError").map { "MySQL/MariaDB is configured but could not be used (\($0)), so the SQLite file is in use. Fix the cause in Settings and restart." } ?? "Users, albums, favorites, settings, AI results.") { EmptyView() }
                 item("Content embeddings", st.dbl("embeddings"), "The content-search index.") { EmptyView() }
                 item("AI models", st.dbl("models"), nil) { EmptyView() }
                 item("Sidecar backups", st.dbl("backups"), "Each sidecar as it was before it was first changed.") { EmptyView() }
@@ -575,9 +575,9 @@ struct AdminStorageScreen: View {
             }
             Section {
                 Button(downloading == "digikam" ? "Preparing…" : "digiKam database") { Task { await fetch("api/backup/digikam", "digikam-backup", tag: "digikam") } }
-                Button(downloading == "app" ? "Preparing…" : "\(m.str("appName") ?? "iopix") data (zip)") { Task { await fetch("api/backup/app", "iopix-data.zip", tag: "app") } }
+                Button(downloading == "app" ? "Preparing…" : "\(m.str("appName") ?? "ioPix") data (zip)") { Task { await fetch("api/backup/app", "iopix-data.zip", tag: "app") } }
             } header: { Text("Download a backup") } footer: {
-                Text("digiKam's database as it is right now (a consistent copy, or a mysqldump for MariaDB), and \(m.str("appName") ?? "iopix")'s data as a zip. Keep them somewhere else, such as Files or iCloud Drive.")
+                Text("digiKam's database as it is right now (a consistent copy, or a mysqldump for MariaDB), and \(m.str("appName") ?? "ioPix")'s data as a zip. Keep them somewhere else, such as Files or iCloud Drive.")
             }
             .disabled(downloading != nil)
         }

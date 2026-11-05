@@ -26,8 +26,8 @@ enum IopixError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .needsSignIn: return "Sign in to iopix to send photos."
-        case .needsServerUpdate: return "Your iopix server can't put photos in a folder of your choice yet. Update iopix, or pick one of its date layouts in Settings."
+        case .needsSignIn: return "Sign in to ioPix to send photos."
+        case .needsServerUpdate: return "Your ioPix server can't put photos in a folder of your choice yet. Update ioPix, or pick one of its date layouts in Settings."
         case .notAllowed(let why): return why
         case .server(let why): return why
         }
@@ -156,7 +156,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
                 return ServiceToken.rejected
             }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an iopix server."
+            return "That address answers, but it isn't an ioPix server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
             return "No server by that name. Check the address."
         } catch {
@@ -366,9 +366,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let added = result["added"] as? [Any], !added.isEmpty { return .added }
         if let s = (result["skipped"] as? [[String: Any]])?.first {
             if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
-            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+            return .skipped(s["reason"] as? String ?? "ioPix did not add it.")
         }
-        return .skipped("iopix did not add it.")
+        return .skipped("ioPix did not add it.")
     }
 
     /// An upload ready to hand to a background session: the request and its body on disk.
@@ -406,9 +406,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let added = result["added"] as? [Any], !added.isEmpty { return .added }
         if let s = (result["skipped"] as? [[String: Any]])?.first {
             if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
-            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+            return .skipped(s["reason"] as? String ?? "ioPix did not add it.")
         }
-        return .skipped("iopix did not add it.")
+        return .skipped("ioPix did not add it.")
     }
 
     /// iopix 1.78 and later: asks first whether the library already has the file (nothing is sent then), else sends

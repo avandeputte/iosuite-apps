@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>iopix</string>
+	<string>ioPix</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -43,14 +43,14 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>iopix sends the photos and videos added to your Photos library to your iopix library.</string>
+	<string>ioPix sends the photos and videos added to your Photos library to your ioPix library.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Send to iopix</string>
+				<string>Send to ioPix</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>sendToIopix</string>

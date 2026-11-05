@@ -162,7 +162,7 @@ import ServiceManagement
         menu.removeAllItems()
         let name = state["signedIn"] as? String ?? ""
         if name.isEmpty {
-            menu.addItem(entry("Sign in to iopix…", "signin"))
+            menu.addItem(entry("Sign in to ioPix…", "signin"))
         } else {
             menu.addItem(note("Signed in as \(name)"))
         }
@@ -176,8 +176,8 @@ import ServiceManagement
         if reviewing > 0 {
             menu.addItem(entry(reviewing == 1 ? "1 new photo to look at…" : "\(reviewing) new photos to look at…", "review"))
         }
-        menu.addItem(entry("Send photos to iopix…", "send", key: "u"))
-        if let goes = state["goesTo"] as? String, !goes.isEmpty { menu.addItem(note("Goes to \(goes) in iopix")) }
+        menu.addItem(entry("Send photos to ioPix…", "send", key: "u"))
+        if let goes = state["goesTo"] as? String, !goes.isEmpty { menu.addItem(note("Goes to \(goes) in ioPix")) }
         let sending = state["sending"] as? String ?? ""
         let waiting = state["waiting"] as? Int ?? 0
         if !sending.isEmpty || waiting > 0 {
@@ -192,8 +192,8 @@ import ServiceManagement
             menu.addItem(entry("Try again", "retry"))
         }
         menu.addItem(.separator())
-        menu.addItem(entry("Open iopix", "open", key: "o"))
-        menu.addItem(entry("Quit iopix", "quit", key: "q"))
+        menu.addItem(entry("Open ioPix", "open", key: "o"))
+        menu.addItem(entry("Quit ioPix", "quit", key: "q"))
     }
 
     private func entry(_ title: String, _ action: String, key: String = "") -> NSMenuItem {
@@ -219,7 +219,7 @@ import ServiceManagement
     /// The menu bar picture: the app's mark (a photo frame), filled while sending, with a dot when new photos wait.
     private static func icon(busy: Bool, badge: Bool) -> NSImage? {
         let name = busy ? "photo.on.rectangle.angled" : "photo.on.rectangle"
-        let base = NSImage(systemSymbolName: name, accessibilityDescription: "iopix")
+        let base = NSImage(systemSymbolName: name, accessibilityDescription: "ioPix")
         guard badge, let base else { base?.isTemplate = true; return base }
         let size = NSSize(width: 20, height: 16)
         let img = NSImage(size: size, flipped: false) { r in

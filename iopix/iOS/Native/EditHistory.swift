@@ -30,7 +30,7 @@ struct EditHistoryView: View {
                 if let problem {
                     Text("Couldn't load the edit log: \(problem)").foregroundStyle(.secondary)
                 } else if let entries {
-                    if entries.isEmpty { Text("iopix hasn't changed this photo.").foregroundStyle(.secondary) }
+                    if entries.isEmpty { Text("ioPix hasn't changed this photo.").foregroundStyle(.secondary) }
                     ForEach(entries) { e in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(alignment: .firstTextBaseline) {

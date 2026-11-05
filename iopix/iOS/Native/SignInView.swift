@@ -31,7 +31,7 @@ struct SignInView: View {
                         if ServiceToken.isSet, ServiceToken.isCloudflareSignIn(gate) {
                             Text(ServiceToken.rejected + " Until then, sign in on Cloudflare's page.")
                         } else {
-                            Text("From here, iopix sits behind a sign-in page (your reverse proxy's, for example). Sign in there first, then to iopix.")
+                            Text("From here, ioPix sits behind a sign-in page (your reverse proxy's, for example). Sign in there first, then to ioPix.")
                         }
                     }
                 }
@@ -39,7 +39,7 @@ struct SignInView: View {
                     if loading {
                         ProgressView()
                     } else if accounts.isEmpty, gate == nil {
-                        Text(problem ?? "This iopix has no accounts to sign in with.").foregroundStyle(.secondary)
+                        Text(problem ?? "This ioPix has no accounts to sign in with.").foregroundStyle(.secondary)
                     }
                     ForEach(accounts, id: \.name) { a in
                         Button {
@@ -77,7 +77,7 @@ struct SignInView: View {
                     Button("Change server…") { dismiss(); changeServer() }
                 }
             }
-            .navigationTitle("Sign in to iopix")
+            .navigationTitle("Sign in to ioPix")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { CloseLabel("Cancel") } } }
             .task { await loadAccounts() }
@@ -112,7 +112,7 @@ struct SignInView: View {
             accounts = try await IopixClient.shared.accounts()
             if accounts.count == 1, let only = accounts.first { chosen = only.name; if only.needsPassword { passwordFocused = true } }
         } catch {
-            problem = "iopix can't be reached: \(error.localizedDescription)"
+            problem = "ioPix can't be reached: \(error.localizedDescription)"
         }
         loading = false
     }

@@ -113,15 +113,15 @@ struct SidebarLayout: View {
                 }
                 Section("Library") { ForEach(library) { row($0) } }
                 if !management.isEmpty { Section("Library management") { ForEach(management) { row($0) } } }
-                Section("iopix") {
+                Section("ioPix") {
                     ForEach(iopix) { row($0) }
                     Button(action: showUploads) {
-                        Label { Text("Send photos to iopix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
+                        Label { Text("Send photos to ioPix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
                     }
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("iopix")
+            .navigationTitle("ioPix")
         } detail: {
             detail
         }
@@ -248,10 +248,10 @@ struct MoreView: View {
             List {
                 Section("Library") { ForEach(library) { row($0) } }
                 ManageMoreSection()
-                Section("iopix") { ForEach(iopix) { row($0) } }
+                Section("ioPix") { ForEach(iopix) { row($0) } }
                 Section {
                     Button(action: showUploads) {
-                        Label { Text("Send photos to iopix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
+                        Label { Text("Send photos to ioPix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
                     }
                 }
             }
@@ -278,8 +278,8 @@ struct MoreView: View {
         case "maintenance": return "Maintenance"
         case "duplicates": return "Duplicate files"
         case "detected": return "Detected content"
-        case "photos": return "Edit in iopix"
-        default: return "iopix"
+        case "photos": return "Edit in ioPix"
+        default: return "ioPix"
         }
     }
 }

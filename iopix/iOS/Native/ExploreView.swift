@@ -196,7 +196,7 @@ struct ExploreView: View {
                     Button(action: showUploads) {
                         Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")
                     }
-                    .accessibilityLabel("Send photos to iopix")
+                    .accessibilityLabel("Send photos to ioPix")
                 }
             }
             .refreshable { await reload() }
@@ -304,7 +304,7 @@ struct ExploreView: View {
     private var signIn: some View {
         VStack(spacing: 14) {
             Image(systemName: "person.crop.circle.badge.questionmark").font(.system(size: 56)).foregroundStyle(.secondary)
-            Text("Sign in to iopix").font(.title3.bold())
+            Text("Sign in to ioPix").font(.title3.bold())
             Text("Your library shows here once you're signed in.").foregroundStyle(.secondary)
             Button("Sign in") { signingIn = true }.buttonStyle(.borderedProminent)
         }
@@ -316,7 +316,7 @@ struct ExploreView: View {
     private func unreachable(_ why: String) -> some View {
         VStack(spacing: 14) {
             Image("Mark").resizable().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 14))
-            Text("Can't reach iopix").font(.title3.bold())
+            Text("Can't reach ioPix").font(.title3.bold())
             Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Try again") { Task { await reload() } }.buttonStyle(.borderedProminent)
         }
@@ -446,7 +446,7 @@ struct ExploreView: View {
         Button { Task { await store.setFavorite(id, !fav) } } label: {
             Label(fav ? "Remove from Favorites" : "Add to Favorites", systemImage: fav ? "heart.slash" : "heart")
         }
-        Button { router.open("#/photos?p=\(id)") } label: { Label("Open in iopix", systemImage: "safari") }
+        Button { router.open("#/photos?p=\(id)") } label: { Label("Open in ioPix", systemImage: "safari") }
     }
 
     private func rows(_ list: PhotoList, limit: Int) -> some View {

@@ -210,7 +210,7 @@ final class MacNotifier: NSObject, UNUserNotificationCenterDelegate {
         UploadQueue.shared.$items.receive(on: RunLoop.main).sink { [weak self] _ in self?.reviewChanged() }.store(in: &bag)
         NotificationCenter.default.publisher(for: .iopixUploadsDone).sink { note in
             guard MacPrefs.shared.notifyUploads, let n = note.userInfo?["count"] as? Int, n > 0 else { return }
-            Self.post("uploads", title: "Sent to iopix", body: n == 1 ? "1 photo was added to iopix." : "\(n) photos were added to iopix.", open: "main")
+            Self.post("uploads", title: "Sent to ioPix", body: n == 1 ? "1 photo was added to ioPix." : "\(n) photos were added to ioPix.", open: "main")
         }.store(in: &bag)
         Task {
             while !Task.isCancelled {
@@ -231,7 +231,7 @@ final class MacNotifier: NSObject, UNUserNotificationCenterDelegate {
             guard !Task.isCancelled else { return }
             let n = UploadQueue.shared.reviewing.count
             guard n > 0 else { return }
-            Self.post("review", title: "New photos for iopix", body: n == 1 ? "1 new photo to look at." : "\(n) new photos to look at.", open: "review")
+            Self.post("review", title: "New photos for ioPix", body: n == 1 ? "1 new photo to look at." : "\(n) new photos to look at.", open: "review")
         }
     }
 
@@ -300,7 +300,7 @@ final class MacFolderWatcher: ObservableObject {
 
     /// Asks for folders in an open panel.
     func pick() {
-        MacExtras.bridge?.pickFolders("Photos and videos added to these folders from now on are listed for you to send to iopix") { paths in
+        MacExtras.bridge?.pickFolders("Photos and videos added to these folders from now on are listed for you to send to ioPix") { paths in
             Task { @MainActor in for p in paths { MacFolderWatcher.shared.add(URL(fileURLWithPath: p)) } }
         }
     }
@@ -409,7 +409,7 @@ final class MacCardWatcher: ObservableObject {
         let new = Set(files.filter { !imported.contains(key(name, $0)) })
         offer = MacCardOffer(name: name, files: files, new: new)
         guard !new.isEmpty else { return }  // nothing new: Import a card in Settings › Mac is there if wanted
-        MacNotifier.post("card", title: "Photos on \(name)", body: "\(new.count) new photos and videos. Click to import them to iopix.", open: "card")
+        MacNotifier.post("card", title: "Photos on \(name)", body: "\(new.count) new photos and videos. Click to import them to ioPix.", open: "card")
         NotificationCenter.default.post(name: .iopixCards, object: nil)
     }
 
@@ -458,7 +458,7 @@ struct MacCardImportSheet: View {
                     }
                     .safeAreaInset(edge: .bottom) {
                         HStack {
-                            Text("iopix skips photos it already has.").font(.caption).foregroundStyle(.secondary)
+                            Text("ioPix skips photos it already has.").font(.caption).foregroundStyle(.secondary)
                             Spacer()
                             Button("Import \(picked.count)") {
                                 cards.importFiles(offer.files.filter { picked.contains($0) }, from: offer.name)

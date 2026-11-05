@@ -137,10 +137,10 @@ struct PhotoEditSheet: View {
         } message: { Text("The extension stays as it is.") }
         .confirmationDialog("Move this photo to the trash?", isPresented: $confirmTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) { Task { await trash() } }
-        } message: { Text("It can be restored from the trash in iopix.") }
-        .confirmationDialog("Undo the edits iopix made to this photo?", isPresented: $confirmRevert, titleVisibility: .visible) {
+        } message: { Text("It can be restored from the trash in ioPix.") }
+        .confirmationDialog("Undo the edits ioPix made to this photo?", isPresented: $confirmRevert, titleVisibility: .visible) {
             Button("Undo edits", role: .destructive) { Task { await revert() } }
-        } message: { Text("Its sidecar goes back to how it was before iopix first changed it.") }
+        } message: { Text("Its sidecar goes back to how it was before ioPix first changed it.") }
     }
 
     private func close() { if let inPane { inPane() } else { dismiss() } }
@@ -336,7 +336,7 @@ struct PhotoEditSheet: View {
                 tool("Edit log…", "clock.arrow.circlepath") { history = true }
                 tool("All metadata…", "list.bullet.rectangle") { metadata = true }
                 if original?.edited == true {
-                    Button(role: .destructive) { confirmRevert = true } label: { Label("Undo iopix's edits", systemImage: "arrow.uturn.backward") }
+                    Button(role: .destructive) { confirmRevert = true } label: { Label("Undo ioPix's edits", systemImage: "arrow.uturn.backward") }
                 }
                 Button(role: .destructive) { confirmTrash = true } label: { Label("Move to Trash", systemImage: "trash") }
             }

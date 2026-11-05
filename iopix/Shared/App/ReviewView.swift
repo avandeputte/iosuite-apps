@@ -12,7 +12,7 @@ struct ReviewView: View {
         VStack(spacing: 0) {
             if items.isEmpty {
                 ContentUnavailableView("No new photos", systemImage: "photo.on.rectangle",
-                                       description: Text("New photos and videos in your library show up here, for you to send to iopix or ignore."))
+                                       description: Text("New photos and videos in your library show up here, for you to send to ioPix or ignore."))
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 4)], spacing: 4) {

@@ -864,7 +864,7 @@ struct InlineEditLog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let entries {
-                if entries.isEmpty { Text("iopix hasn't changed this photo.").font(.caption).foregroundStyle(.secondary) }
+                if entries.isEmpty { Text("ioPix hasn't changed this photo.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(entries) { e in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {

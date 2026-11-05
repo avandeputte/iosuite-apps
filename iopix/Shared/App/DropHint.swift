@@ -6,7 +6,7 @@ struct DropHint: View {
         RoundedRectangle(cornerRadius: 14)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
             .background(Color.accentColor.opacity(0.08))
-            .overlay(Text("Drop to send to iopix").font(.title2.weight(.semibold)))
+            .overlay(Text("Drop to send to ioPix").font(.title2.weight(.semibold)))
             .padding(8)
             .allowsHitTesting(false)
     }

@@ -8,10 +8,10 @@ enum Brand {
 
     /// The two-colour name as one piece of text, so it fits wherever a Text does.
     static func name(onLight: Bool = false) -> Text {
-        Text("io").foregroundColor(gold).fontWeight(.bold) + Text("pix").foregroundColor(onLight ? indigo : .white).fontWeight(.bold)
+        Text("io").foregroundColor(gold).fontWeight(.bold) + Text("Pix").foregroundColor(onLight ? indigo : .white).fontWeight(.bold)
     }
 
-    /// A sentence with the name in it: "Connect to your iopix".
+    /// A sentence with the name in it: "Connect to your ioPix".
     static func text(_ before: String, _ after: String = "", onLight: Bool = false) -> Text {
         Text(before) + name(onLight: onLight) + Text(after)
     }

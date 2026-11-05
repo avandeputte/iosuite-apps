@@ -69,7 +69,7 @@ enum ServiceToken {
 
     /// Said when Cloudflare still shows its sign-in although a token was sent: a wrong or revoked token, or one
     /// the iopix application's policies don't allow.
-    static let rejected = "Cloudflare Access didn't accept the service token. Check its client ID and secret, and that the iopix application in Cloudflare Zero Trust has a Service Auth policy that allows this token."
+    static let rejected = "Cloudflare Access didn't accept the service token. Check its client ID and secret, and that the ioPix application in Cloudflare Zero Trust has a Service Auth policy that allows this token."
 
     /// Is this the sign-in page of Cloudflare Access (team.cloudflareaccess.com)?
     static func isCloudflareSignIn(_ url: URL?) -> Bool {

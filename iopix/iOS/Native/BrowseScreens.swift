@@ -87,7 +87,7 @@ struct PlacesScreen: View {
         let total = rows.reduce(0) { $0 + $1.count }
         return List {
             if store.places.isEmpty {
-                Text("No place names yet. iopix names places from the photos' locations.").foregroundStyle(.secondary)
+                Text("No place names yet. ioPix names places from the photos' locations.").foregroundStyle(.secondary)
             } else {
                 Section {
                     if level < 2 { crumbs }

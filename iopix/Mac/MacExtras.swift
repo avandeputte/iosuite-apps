@@ -197,7 +197,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UploadQueue.shared.$items.receive(on: RunLoop.main).sink { [weak self] _ in self?.reviewChanged() }.store(in: &bag)
         NotificationCenter.default.publisher(for: .iopixUploadsDone).sink { note in
             guard MacPrefs.shared.notifyUploads, let n = note.userInfo?["count"] as? Int, n > 0 else { return }
-            Self.post("uploads", title: "Sent to iopix", body: n == 1 ? "1 photo was added to iopix." : "\(n) photos were added to iopix.", open: "main")
+            Self.post("uploads", title: "Sent to ioPix", body: n == 1 ? "1 photo was added to ioPix." : "\(n) photos were added to ioPix.", open: "main")
         }.store(in: &bag)
         Task {
             while !Task.isCancelled {
@@ -218,7 +218,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             guard !Task.isCancelled else { return }
             let n = UploadQueue.shared.reviewing.count
             guard n > 0 else { return }
-            Self.post("review", title: "New photos for iopix", body: n == 1 ? "1 new photo to look at." : "\(n) new photos to look at.", open: "review")
+            Self.post("review", title: "New photos for ioPix", body: n == 1 ? "1 new photo to look at." : "\(n) new photos to look at.", open: "review")
         }
     }
 

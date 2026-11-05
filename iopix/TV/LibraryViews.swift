@@ -155,7 +155,7 @@ struct AlbumsView: View {
             .padding(60)
             }
             if store.albums.isEmpty && store.favorites == 0 && store.tags.isEmpty {
-                Text("No albums yet. Albums you make in iopix show up here.").foregroundStyle(.secondary)
+                Text("No albums yet. Albums you make in ioPix show up here.").foregroundStyle(.secondary)
             }
             let top = store.tags(under: nil)
             if !top.isEmpty {
@@ -307,7 +307,7 @@ struct SettingsTV: View {
             }
             Section("Who's watching") {
                 if let name = account?.name { Text("Signed in as \(name)") }
-                Toggle("Ask who's watching when iopix opens", isOn: $prefs.askWhoIsWatching)
+                Toggle("Ask who's watching when ioPix opens", isOn: $prefs.askWhoIsWatching)
                 Button("Switch to someone else", action: switchProfile)
                 Button("Sign out") {
                     Task {

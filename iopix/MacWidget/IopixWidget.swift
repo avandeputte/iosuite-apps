@@ -15,7 +15,7 @@ struct PhotoEntry: TimelineEntry {
 
 struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> PhotoEntry {
-        PhotoEntry(date: Date(), id: nil, image: nil, title: "iopix", year: "")
+        PhotoEntry(date: Date(), id: nil, image: nil, title: "ioPix", year: "")
     }
 
     func snapshot(for configuration: SelectPhotos, in context: Context) async -> PhotoEntry {
@@ -34,7 +34,7 @@ struct Provider: AppIntentTimelineProvider {
         let title = source.id == "random" ? "Rediscover" : source.name
         guard !photos.isEmpty else {
             return [PhotoEntry(date: Date(), id: nil, image: nil, title: title, year: "",
-                               note: "Open iopix and sign in. Its photos appear here within a few minutes.")]
+                               note: "Open ioPix and sign in. Its photos appear here within a few minutes.")]
         }
         // a few entries at a time: each carries its picture, and a widget's schedule must stay small (24 of
         // them made macOS drop the whole schedule and show the placeholder); .atEnd asks for the next few
@@ -86,8 +86,8 @@ private extension Image {
 struct IopixWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "iopix.photos", intent: SelectPhotos.self, provider: Provider()) { PhotoWidgetView(entry: $0) }
-            .configurationDisplayName("iopix")
-            .description("Photos from iopix: Rediscover, your favorites or an album. Right-click it › Edit to choose.")
+            .configurationDisplayName("ioPix")
+            .description("Photos from ioPix: Rediscover, your favorites or an album. Right-click it › Edit to choose.")
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
             .contentMarginsDisabled()           // the photo fills the widget edge to edge
             .containerBackgroundRemovable(false)

@@ -45,21 +45,21 @@ final class ShareModel: ObservableObject {
         BackgroundUploads.sweepOutbox()
         let providers = (context?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
             .filter { p in [UTType.movie, UTType.image].contains { p.hasItemConformingToTypeIdentifier($0.identifier) } }
-        guard !providers.isEmpty else { phase = .failed("Only photos and videos can be sent to iopix."); return }
-        guard AppConfig.hasServer else { phase = .failed("Open the iopix app and connect it to your server first."); return }
+        guard !providers.isEmpty else { phase = .failed("Only photos and videos can be sent to ioPix."); return }
+        guard AppConfig.hasServer else { phase = .failed("Open the ioPix app and connect it to your server first."); return }
 
         do {
             let account = try await IopixClient.shared.account()
             guard account.canWrite else {
-                phase = .failed(account.signedIn ? "\(account.name ?? "This account") can look at photos in iopix but not add them."
-                                                 : "Open the iopix app and sign in first.")
+                phase = .failed(account.signedIn ? "\(account.name ?? "This account") can look at photos in ioPix but not add them."
+                                                 : "Open the ioPix app and sign in first.")
                 return
             }
         } catch IopixError.needsSignIn {
-            phase = .failed("Open the iopix app and sign in first.")
+            phase = .failed("Open the ioPix app and sign in first.")
             return
         } catch {
-            phase = .failed("iopix can't be reached right now. \(error.localizedDescription)")
+            phase = .failed("ioPix can't be reached right now. \(error.localizedDescription)")
             return
         }
 
@@ -99,9 +99,9 @@ final class ShareModel: ObservableObject {
             }
         }
         var lines: [String] = []
-        if added > 0 { lines.append("\(Self.count(added)) sent to iopix.") }
-        if queued > 0 { lines.append("\(Self.count(queued)) on \(queued == 1 ? "its" : "their") way to iopix. It carries on after you close this; the iopix app lists it when done.") }
-        if already > 0 { lines.append("\(Self.count(already)) \(already == 1 ? "was" : "were") already in iopix.") }
+        if added > 0 { lines.append("\(Self.count(added)) sent to ioPix.") }
+        if queued > 0 { lines.append("\(Self.count(queued)) on \(queued == 1 ? "its" : "their") way to ioPix. It carries on after you close this; the ioPix app lists it when done.") }
+        if already > 0 { lines.append("\(Self.count(already)) \(already == 1 ? "was" : "were") already in ioPix.") }
         lines += notAdded
         phase = .finished(lines.joined(separator: "\n"))
         if notAdded.isEmpty {
@@ -176,7 +176,7 @@ struct ShareView: View {
                     Text("Getting ready…")
                 case .sending(let index, let total, let progress):
                     ProgressView(value: progress).frame(maxWidth: 260)
-                    Text(total == 1 ? "Sending to iopix…" : "Sending \(index + 1) of \(total) to iopix…")
+                    Text(total == 1 ? "Sending to ioPix…" : "Sending \(index + 1) of \(total) to ioPix…")
                     Text("Keep this open until it's done.").font(.footnote).foregroundStyle(.secondary)
                 case .finished(let text):
                     Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundStyle(.green)
@@ -188,7 +188,7 @@ struct ShareView: View {
                 Spacer()
             }
             .padding()
-            .navigationTitle("iopix")
+            .navigationTitle("ioPix")
             .toolbar { ToolbarItem(placement: .principal) { Brand.name(onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

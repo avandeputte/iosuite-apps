@@ -179,7 +179,7 @@ struct ManageAlbumsScreen: View {
         }
         .contextMenu {
             Button {
-                copyLink("ualbum=\(a.id)", a.shared ? "Link copied. It works for anyone who can reach iopix." : "Link copied. The album is private: it opens only for you.")
+                copyLink("ualbum=\(a.id)", a.shared ? "Link copied. It works for anyone who can reach ioPix." : "Link copied. The album is private: it opens only for you.")
             } label: { Label("Copy link", systemImage: "link") }
             if a.canEdit {
                 Button { renameText = a.name; renaming = a } label: { Label("Rename…", systemImage: "pencil") }

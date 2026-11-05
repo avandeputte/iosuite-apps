@@ -29,7 +29,7 @@ struct WidgetSourceQuery: EntityQuery {
 
 struct SelectPhotos: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Photos to show"
-    static var description = IntentDescription("Rediscover (random photos), your favorites, or one of your iopix albums.")
+    static var description = IntentDescription("Rediscover (random photos), your favorites, or one of your ioPix albums.")
 
     @Parameter(title: "Show")
     var source: WidgetSourceEntity?

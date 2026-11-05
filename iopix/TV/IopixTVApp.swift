@@ -56,7 +56,7 @@ struct TVServerSetup: View {
         VStack(spacing: 40) {
             Image("Mark").resizable().frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 40))
             Brand.text("Connect to your ").font(.title2.bold())
-            Text("Enter the address of your iopix server, as you use it at home.").foregroundStyle(.secondary)
+            Text("Enter the address of your ioPix server, as you use it at home.").foregroundStyle(.secondary)
             TextField("photos.example.com", text: $text)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
@@ -69,7 +69,7 @@ struct TVServerSetup: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     SecureField("Cloudflare Access client secret", text: $tokenSecret)
-                    Text("With a service token the Apple TV gets through Cloudflare Access to iopix's own sign-in. Leave it empty if iopix isn't behind Cloudflare.")
+                    Text("With a service token the Apple TV gets through Cloudflare Access to ioPix's own sign-in. Leave it empty if ioPix isn't behind Cloudflare.")
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .frame(width: 900)
@@ -158,13 +158,13 @@ struct TVSignIn: View {
             }.map(\.1)
             try? await Task.sleep(nanoseconds: 100_000_000)
             focus = accounts.first?.name
-            if accounts.isEmpty { problem = "This iopix has no accounts to sign in with." }
+            if accounts.isEmpty { problem = "This ioPix has no accounts to sign in with." }
         } catch IopixError.needsSignIn {
             // Cloudflare Access's sign-in page in front of iopix: the TV has no browser to show it
             problem = ServiceToken.isSet ? ServiceToken.rejected
-                : "From here, iopix sits behind a sign-in page the Apple TV can't show. Add a Cloudflare Access service token (Change server), or use the server's address on your home network."
+                : "From here, ioPix sits behind a sign-in page the Apple TV can't show. Add a Cloudflare Access service token (Change server), or use the server's address on your home network."
         } catch {
-            problem = "iopix can't be reached: \(error.localizedDescription)"
+            problem = "ioPix can't be reached: \(error.localizedDescription)"
         }
     }
 

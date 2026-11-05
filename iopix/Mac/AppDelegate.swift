@@ -63,8 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Shortcuts
 
 struct SendToIopix: AppIntent {
-    static var title: LocalizedStringResource = "Send to iopix"
-    static var description = IntentDescription("Sends photos and videos to your iopix library. iopix skips the ones it already has.")
+    static var title: LocalizedStringResource = "Send to ioPix"
+    static var description = IntentDescription("Sends photos and videos to your ioPix library. ioPix skips the ones it already has.")
 
     @Parameter(title: "Photos and videos")
     var files: [IntentFile]
@@ -85,12 +85,12 @@ struct SendToIopix: AppIntent {
             return urls
         }.value
         await UploadQueue.shared.add(files: urls, move: true)
-        return .result(dialog: urls.count == 1 ? "Sending 1 item to iopix." : "Sending \(urls.count) items to iopix.")
+        return .result(dialog: urls.count == 1 ? "Sending 1 item to ioPix." : "Sending \(urls.count) items to ioPix.")
     }
 }
 
 struct ShowOnThisDay: AppIntent {
-    static var title: LocalizedStringResource = "Show On this day in iopix"
+    static var title: LocalizedStringResource = "Show On this day in ioPix"
     static var openAppWhenRun = true
 
     @MainActor
@@ -101,7 +101,7 @@ struct ShowOnThisDay: AppIntent {
 }
 
 struct SearchIopix: AppIntent {
-    static var title: LocalizedStringResource = "Search iopix"
+    static var title: LocalizedStringResource = "Search ioPix"
     static var openAppWhenRun = true
 
     @Parameter(title: "Search for")
@@ -117,7 +117,7 @@ struct SearchIopix: AppIntent {
 }
 
 struct ReviewNewPhotos: AppIntent {
-    static var title: LocalizedStringResource = "Review new photos for iopix"
+    static var title: LocalizedStringResource = "Review new photos for ioPix"
     static var openAppWhenRun = true
 
     @MainActor
@@ -129,9 +129,9 @@ struct ReviewNewPhotos: AppIntent {
 
 struct IopixShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: SendToIopix(), phrases: ["Send to \(.applicationName)"], shortTitle: "Send to iopix", systemImageName: "square.and.arrow.up")
+        AppShortcut(intent: SendToIopix(), phrases: ["Send to \(.applicationName)"], shortTitle: "Send to ioPix", systemImageName: "square.and.arrow.up")
         AppShortcut(intent: ShowOnThisDay(), phrases: ["Show On this day in \(.applicationName)"], shortTitle: "On this day", systemImageName: "calendar")
-        AppShortcut(intent: SearchIopix(), phrases: ["Search \(.applicationName)"], shortTitle: "Search iopix", systemImageName: "magnifyingglass")
+        AppShortcut(intent: SearchIopix(), phrases: ["Search \(.applicationName)"], shortTitle: "Search ioPix", systemImageName: "magnifyingglass")
         AppShortcut(intent: ReviewNewPhotos(), phrases: ["Review new photos in \(.applicationName)"], shortTitle: "Review new photos", systemImageName: "photo.badge.plus")
     }
 }

@@ -15,7 +15,7 @@ final class AdminModel: ObservableObject {
     var isAdmin: Bool { me.bool("isAdmin") || status.bool("isAdmin") }
     var usersExist: Bool { me.bool("usersExist") || status.bool("usersExist") }
     var editing: Bool { status.bool("editing") }
-    var appName: String { status.str("appName") ?? m.str("appName") ?? "iopix" }
+    var appName: String { status.str("appName") ?? m.str("appName") ?? "ioPix" }
     var version: String { status.str("appVersion") ?? "?" }
     /// The account's display settings (theme, units, badges, info_hide), kept on the server for signed-in people.
     var prefs: [String: Any] { me.dict("settings") }
@@ -320,11 +320,11 @@ struct AdminDisplayScreen: View {
             } header: { Text("Info panel") } footer: { Text("The sections the photo info panel shows. \(keptWith)") }
             if model.isAdmin {
                 Section {
-                    TextField("iopix", text: $appName)
+                    TextField("ioPix", text: $appName)
                     Button("Save name") {
                         Task { await notice.run("Name saved.") { try await AdminAPI.post("api/settings", ["app_name": appName]); await model.load() } }
                     }
-                } header: { Text("Name") } footer: { Text("What \(model.appName) calls itself, for everyone: the top bar, the browser tab and the installed app. Leave it empty for iopix.") }
+                } header: { Text("Name") } footer: { Text("What \(model.appName) calls itself, for everyone: the top bar, the browser tab and the installed app. Leave it empty for ioPix.") }
                 Section {
                     Picker("Map provider", selection: $provider) {
                         Text("OpenStreetMap (no account needed)").tag("osm")

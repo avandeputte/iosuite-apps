@@ -38,13 +38,13 @@ struct DestinationSection: View {
                 Text(dest.example(layouts: layouts).isEmpty ? "—" : dest.example(layouts: layouts)).foregroundStyle(.secondary)
             }
             if dest.needsPatterns && patterns == false {
-                Text("Your iopix server needs an update before it can do this. Until then photos wait in the queue.")
+                Text("Your ioPix server needs an update before it can do this. Until then photos wait in the queue.")
                     .font(.caption).foregroundStyle(.orange)
             }
         } header: {
-            Text("Folder in iopix")
+            Text("Folder in ioPix")
         } footer: {
-            Text("Folders that don't exist yet are created in iopix.").font(.caption).foregroundStyle(.secondary)
+            Text("Folders that don't exist yet are created in ioPix.").font(.caption).foregroundStyle(.secondary)
         }
         .task { await loadLayouts() }
         .onChange(of: dest) { _, d in

@@ -336,7 +336,7 @@ struct WebTabView: View {
                 if let why = status.failed {
                     VStack(spacing: 16) {
                         Image("Mark").resizable().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 16))
-                        Text("Can't reach iopix").font(.title3.bold())
+                        Text("Can't reach ioPix").font(.title3.bold())
                         Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         Text("It tries again by itself when the connection changes.").font(.footnote).foregroundStyle(.secondary)
                         Button("Try again") { status.retry() }.buttonStyle(.borderedProminent)
