@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.1.1"  # 1.1.0 is closed for new builds on both iPhone and Apple TV
     CURRENT_PROJECT_VERSION: "1"
     # your Apple team id goes here (Xcode › Settings › Accounts); see README
     DEVELOPMENT_TEAM: 69M2JRAT8P
@@ -236,7 +236,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix
         TARGETED_DEVICE_FAMILY: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
-        MARKETING_VERSION: "1.1.1"  # 1.1.0 is approved on Apple TV; the iPhone app is still in review as 1.1.0
+        MARKETING_VERSION: "1.1.1"
   iopixTopShelf:
     type: app-extension
     platform: tvOS
