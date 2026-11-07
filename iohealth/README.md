@@ -69,4 +69,4 @@ app to iOS, losing the saved sign-in, the sync history and the Health permission
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
