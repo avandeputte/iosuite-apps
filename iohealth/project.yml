@@ -42,11 +42,11 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIBackgroundModes: [fetch]
-        BGTaskSchedulerPermittedIdentifiers: [net.iothing.iohealth.refresh]
+        BGTaskSchedulerPermittedIdentifiers: [net.iothing.ioHealthSync.refresh]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iohealth
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ioHealthSync
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

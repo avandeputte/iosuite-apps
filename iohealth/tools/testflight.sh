@@ -2,7 +2,7 @@
 # Builds the iPhone app and uploads it to TestFlight, the same way as ionotes-apps' and iopix-apps' tools/testflight.sh.
 # Needs an App Store Connect API key: ASC_KEY_ID, ASC_ISSUER_ID and the key file at
 # ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8 (the key never goes in this repo), and the app
-# (bundle id net.iothing.iohealth) created in App Store Connect. The build number is the time of the build,
+# (bundle id net.iothing.ioHealthSync) created in App Store Connect. The build number is the time of the build,
 # so every upload is newer.
 set -euo pipefail
 cd "${0:A:h}/.."

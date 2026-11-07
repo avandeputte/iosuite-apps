@@ -8,7 +8,7 @@ import UIKit
 /// 2. BGAppRefreshTask: an occasional catch-up slot that iOS grants at its discretion.
 /// Both must be re-registered on every launch, which `AppDelegate` does.
 enum BackgroundSync {
-    static let refreshTaskID = "net.iothing.iohealth.refresh" // follows the bundle ID
+    static let refreshTaskID = "net.iothing.ioHealthSync.refresh" // follows the bundle ID
     private static var observers: [HKObserverQuery] = []
 
     static func registerRefreshTask() {
