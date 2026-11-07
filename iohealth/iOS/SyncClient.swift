@@ -177,7 +177,7 @@ enum Gzip {
 /// The account password lives in the Keychain, readable after first unlock so background syncs can use it.
 enum CredentialStore {
     private static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                               kSecAttrService as String: "HealthSync", // the old app name; kept so the entry survives updates
+                                               kSecAttrService as String: "ioHealth",
                                                kSecAttrAccount as String: "password"]
 
     static var password: String {

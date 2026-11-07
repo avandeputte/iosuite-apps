@@ -48,7 +48,7 @@ The account must be an **editor** (or admin) in ioHealth; a viewer can look but 
 
 ## TestFlight
 
-1. In App Store Connect, create the app once (bundle id `com.avandeputte.healthsync`).
+1. In App Store Connect, create the app once (bundle id `net.iothing.iohealth`).
 2. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads it, with the same API key as
    ionotes and iopix. The build number is the build's date and time.
 3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
@@ -72,8 +72,7 @@ and clinical (FHIR) records (a separate entitlement Apple grants per app).
 | `tools/` | `testflight.sh` (build, sign and upload to TestFlight) and its export options |
 | `project.yml` | [XcodeGen](https://github.com/yonaskolb/XcodeGen) spec for the Xcode project |
 
-The bundle ID is still `com.avandeputte.healthsync` from the app's first name, Health Sync: a new one would be a new
-app to iOS, losing the saved sign-in, the sync history and the Health permissions.
+The bundle ID is `net.iothing.iohealth`, as `net.iothing.ionotes` and `net.iothing.iopix`.
 
 ## License
 
