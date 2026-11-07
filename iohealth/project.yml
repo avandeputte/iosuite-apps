@@ -1,5 +1,4 @@
-# XcodeGen spec. Run `xcodegen generate` in this folder to produce ioHealth.xcodeproj.
-# (brew install xcodegen). Or build the project by hand; see README.
+# XcodeGen spec: `xcodegen generate` in this folder makes ioHealth.xcodeproj (brew install xcodegen). See README.
 name: ioHealth
 options:
   bundleIdPrefix: com.avandeputte
