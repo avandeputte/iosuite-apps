@@ -41,6 +41,28 @@ The apps only send files. iopix does everything else on the server: it puts each
 folders, writes the database rows and sidecars, and skips anything that is already in the library (same
 content), so sending a photo twice does no harm.
 
+## Build and run
+
+Needs Xcode 16 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+
+```sh
+xcodegen generate
+open iopix.xcodeproj
+```
+
+The Xcode project is generated from `project.yml` and not kept in git.
+
+### Signing (once)
+
+1. In Xcode › Settings › Accounts, add your Apple ID.
+2. Put your team ID in `project.yml` (`DEVELOPMENT_TEAM`) and run `xcodegen generate` again, or pick the team in
+   each target's *Signing & Capabilities* tab.
+3. The iPhone app and its share extension share an App Group, `group.net.iothing.iopix`, for the sign-in and the
+   queue. Xcode registers it with automatic signing. If the bundle ids `net.iothing.iopix*` are taken on your
+   account, change them and the group in `project.yml`, and the group in `Shared/Core/AppConfig.swift`.
+4. Run the `iopix` scheme on your iPhone, and `iopixUploader` (it builds iopix.app) on the Mac. The Mac app runs signed for this Mac
+   only; turn on *Open at login* in its settings.
+
 ## iPhone and iPad
 
 The iPhone and iPad app is native: Explore, Photos (filters, search, saved searches, selection with bulk
@@ -64,28 +86,6 @@ unattended, either use the server's home-network address in Settings, or create 
 (Zero Trust › Access › Service auth), allow it in the iopix application's policy (a *Service Auth* rule), and
 enter its client ID and secret in the app's settings. They are kept in the Keychain. You still sign in to iopix
 once.
-
-## Building
-
-Needs Xcode 16 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
-
-```sh
-xcodegen generate
-open iopix.xcodeproj
-```
-
-The Xcode project is generated from `project.yml` and not kept in git.
-
-### Signing (once)
-
-1. In Xcode › Settings › Accounts, add your Apple ID.
-2. Put your team ID in `project.yml` (`DEVELOPMENT_TEAM`) and run `xcodegen generate` again, or pick the team in
-   each target's *Signing & Capabilities* tab.
-3. The iPhone app and its share extension share an App Group, `group.net.iothing.iopix`, for the sign-in and the
-   queue. Xcode registers it with automatic signing. If the bundle ids `net.iothing.iopix*` are taken on your
-   account, change them and the group in `project.yml`, and the group in `Shared/Core/AppConfig.swift`.
-4. Run the `iopix` scheme on your iPhone, and `iopixUploader` (it builds iopix.app) on the Mac. The Mac app runs signed for this Mac
-   only; turn on *Open at login* in its settings.
 
 ## TestFlight
 
@@ -135,3 +135,7 @@ only runs on your own Mac.
 | `MacShare`, `MacWidget` | the Mac Share menu entry and widget |
 | `TV` | the Apple TV app |
 | `TopShelf` | the Apple TV home screen row |
+
+## License
+
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
