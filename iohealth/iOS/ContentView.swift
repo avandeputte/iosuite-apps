@@ -87,7 +87,7 @@ struct ContentView: View {
                 }
 
             }
-            .navigationTitle("ioHealth")
+            .navigationTitle("ioHealthSync")
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { autoSyncOnOpen() }

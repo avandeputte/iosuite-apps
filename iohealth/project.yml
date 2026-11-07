@@ -1,5 +1,5 @@
-# XcodeGen spec: `xcodegen generate` in this folder makes ioHealth.xcodeproj (brew install xcodegen). See README.
-name: ioHealth
+# XcodeGen spec: `xcodegen generate` in this folder makes ioHealthSync.xcodeproj (brew install xcodegen). See README.
+name: ioHealthSync
 options:
   bundleIdPrefix: net.iothing
   deploymentTarget:
@@ -14,7 +14,7 @@ settings:
     # your Apple team id (Xcode › Settings › Accounts), the same as ionotes and iopix
     DEVELOPMENT_TEAM: 69M2JRAT8P
 targets:
-  ioHealth:
+  ioHealthSync:
     type: application
     platform: iOS
     sources:
@@ -22,7 +22,7 @@ targets:
         excludes: ["*.entitlements"]
       - Shared/SyncProtocol.swift
     entitlements:
-      path: iOS/ioHealth.entitlements
+      path: iOS/ioHealthSync.entitlements
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: []
@@ -30,14 +30,14 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
-        CFBundleDisplayName: ioHealth
+        CFBundleDisplayName: ioHealthSync
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.healthcare-fitness
-        NSHealthShareUsageDescription: ioHealth reads your Health data so it can be copied to your own server.
-        NSHealthUpdateUsageDescription: ioHealth never writes to Health.
-        NSLocalNetworkUsageDescription: ioHealth sends your Health data to your own server, which may be on your local network.
+        NSHealthShareUsageDescription: ioHealthSync reads your Health data so it can be copied to your own server.
+        NSHealthUpdateUsageDescription: ioHealthSync never writes to Health.
+        NSLocalNetworkUsageDescription: ioHealthSync sends your Health data to your own server, which may be on your local network.
         # https everywhere, except plain http to local addresses (e.g. http://192.168.1.10:8650).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

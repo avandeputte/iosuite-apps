@@ -13,7 +13,7 @@ AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKey
 BUILD=$(date -u +%Y%m%d%H%M)
 ARCHIVE=build/iohealth-ios-$BUILD.xcarchive
 xcodegen generate -q
-xcodebuild -project ioHealth.xcodeproj -scheme ioHealth -configuration Release -destination "generic/platform=iOS" \
+xcodebuild -project ioHealthSync.xcodeproj -scheme ioHealthSync -configuration Release -destination "generic/platform=iOS" \
   -archivePath "$ARCHIVE" CURRENT_PROJECT_VERSION=$BUILD "${AUTH[@]}" archive
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist tools/ExportOptions-TestFlight.plist \
   -exportPath build/export-ios-$BUILD "${AUTH[@]}"

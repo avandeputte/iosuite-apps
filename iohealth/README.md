@@ -1,4 +1,4 @@
-# ioHealth for iPhone
+# ioHealthSync for iPhone
 
 Copies your Apple Health data, all of it or just the types you pick, to your own
 [ioHealth server](https://github.com/avandeputte/iohealth), which keeps it in MariaDB and gives you a fitness web app on
@@ -26,16 +26,16 @@ works, but the app then has to be re-installed every 7 days).
 brew install xcodegen        # once
 git clone https://github.com/avandeputte/iohealth-apps && cd iohealth-apps
 xcodegen generate
-open ioHealth.xcodeproj
+open ioHealthSync.xcodeproj
 ```
 
-In Xcode select the **ioHealth** target › *Signing & Capabilities* › pick your Team (HealthKit and background
+In Xcode select the **ioHealthSync** target › *Signing & Capabilities* › pick your Team (HealthKit and background
 delivery are already enabled through the entitlements in `project.yml`), plug in your iPhone, choose it as the run
 destination, and run.
 
 ### First run
 
-1. Open **ioHealth**, tap **Allow access to Health data**, and on Apple's permission screen turn everything on. (What
+1. Open **ioHealthSync**, tap **Allow access to Health data**, and on Apple's permission screen turn everything on. (What
    you actually sync is chosen separately in step 3, without asking again.)
 2. Under **Server**, enter the server's URL (`https://health.example.com`, or `http://192.168.1.10:8650` at home)
    and your **user name and password**. **Test connection** checks the address; the account is checked at the first
@@ -72,7 +72,7 @@ and clinical (FHIR) records (a separate entitlement Apple grants per app).
 | `tools/` | `testflight.sh` (build, sign and upload to TestFlight) and its export options |
 | `project.yml` | [XcodeGen](https://github.com/yonaskolb/XcodeGen) spec for the Xcode project |
 
-The bundle ID is `net.iothing.ioHealthSync`, in the suite's `net.iothing.` space like `net.iothing.ionotes` and `net.iothing.iopix` (the App Store name ioHealth was taken).
+The bundle ID is `net.iothing.ioHealthSync`, in the suite's `net.iothing.` space like `net.iothing.ionotes` and `net.iothing.iopix` (the App Store name ioHealth was taken, so the app is called ioHealthSync).
 
 ## License
 
