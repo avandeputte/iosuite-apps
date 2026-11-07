@@ -37,7 +37,7 @@ destination, and run.
 
 1. Open **ioHealth**, tap **Allow access to Health data**, and on Apple's permission screen turn everything on. (What
    you actually sync is chosen separately in step 3, without asking again.)
-2. Under **Server**, enter the server's URL (`https://health.example.com`, or `http://192.168.1.10:47800` at home)
+2. Under **Server**, enter the server's URL (`https://health.example.com`, or `http://192.168.1.10:8650` at home)
    and your **user name and password**. **Test connection** checks the address; the account is checked at the first
    sync.
 3. Optionally open **Data types** and switch off what you don't want.

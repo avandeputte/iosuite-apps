@@ -5,7 +5,7 @@ import Foundation
 enum SyncProtocol {
     static let bonjourType = "_iohealth._tcp"
     /// Fixed so the Mac can be reached by typed-in address as well as by Bonjour.
-    static let defaultPort: UInt16 = 47800
+    static let defaultPort: UInt16 = 8650
     static let version = 1
 }
 

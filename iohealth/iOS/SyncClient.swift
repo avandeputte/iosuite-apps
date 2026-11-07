@@ -11,8 +11,8 @@ enum SyncClient {
         /// password in its place).
         let authorization: String
 
-        /// Accepts "https://health.example.com", "http://192.168.1.10:47800" or a bare "host[:port]" (taken as http,
-        /// port 47800 if none is given, which only works on the local network).
+        /// Accepts "https://health.example.com", "http://192.168.1.10:8650" or a bare "host[:port]" (taken as http,
+        /// port 8650 if none is given, which only works on the local network).
         init?(address: String, user: String, password: String) {
             var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !user.isEmpty, !password.isEmpty else { return nil }

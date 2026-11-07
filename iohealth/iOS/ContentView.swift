@@ -44,7 +44,7 @@ struct ContentView: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The ioHealth server's address, e.g. https://health.example.com behind your reverse proxy, or http://192.168.1.10:47800 on your own network (plain http only works for local addresses). Sign in with your own account, the same user name and password as in the web app and the other io apps; the password is kept in the iPhone's Keychain. The account must be an editor in ioHealth.")
+                    Text("The ioHealth server's address, e.g. https://health.example.com behind your reverse proxy, or http://192.168.1.10:8650 on your own network (plain http only works for local addresses). Sign in with your own account, the same user name and password as in the web app and the other io apps; the password is kept in the iPhone's Keychain. The account must be an editor in ioHealth.")
                 }
 
                 Section {

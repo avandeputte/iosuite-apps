@@ -19,7 +19,7 @@ final class SyncEngine: ObservableObject {
     @Published var autoSync = UserDefaults.standard.object(forKey: "autoSync") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoSync, forKey: "autoSync") }
     }
-    /// The server's base URL, e.g. https://health.example.com or http://192.168.1.10:47800.
+    /// The server's base URL, e.g. https://health.example.com or http://192.168.1.10:8650.
     @Published var serverAddress: String = UserDefaults.standard.string(forKey: "serverAddress") ?? "" {
         didSet { UserDefaults.standard.set(serverAddress, forKey: "serverAddress") }
     }
