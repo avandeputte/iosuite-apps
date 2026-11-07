@@ -46,6 +46,13 @@ destination, and run.
 
 The account must be an **editor** (or admin) in ioHealth; a viewer can look but not upload.
 
+## TestFlight
+
+1. In App Store Connect, create the app once (bundle id `com.avandeputte.healthsync`).
+2. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads it, with the same API key as
+   ionotes and iopix. The build number is the build's date and time.
+3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
+
 ## Syncing
 
 The app opens a session (`POST /v1/sessions`), sends gzip NDJSON batches (`POST /v1/sessions/{id}/items`, one line
@@ -62,6 +69,7 @@ and clinical (FHIR) records (a separate entitlement Apple grants per app).
 |---|---|
 | `iOS/` | the iPhone app (SwiftUI): Health reading, type selection, the sync engine and client, background sync |
 | `Shared/` | the upload line format (`SyncProtocol.swift`), the same as the server's |
+| `tools/` | `testflight.sh` (build, sign and upload to TestFlight) and its export options |
 | `project.yml` | [XcodeGen](https://github.com/yonaskolb/XcodeGen) spec for the Xcode project |
 
 The bundle ID is still `com.avandeputte.healthsync` from the app's first name, Health Sync: a new one would be a new

@@ -8,7 +8,10 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "2.20.0"
+    CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
+    # your Apple team id (Xcode › Settings › Accounts), the same as ionotes and iopix
     DEVELOPMENT_TEAM: 69M2JRAT8P
 targets:
   ioHealth:
@@ -28,6 +31,10 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: ioHealth
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.healthcare-fitness
         NSHealthShareUsageDescription: ioHealth reads your Health data so it can be copied to your own server.
         NSHealthUpdateUsageDescription: ioHealth never writes to Health.
         NSLocalNetworkUsageDescription: ioHealth sends your Health data to your own server, which may be on your local network.
