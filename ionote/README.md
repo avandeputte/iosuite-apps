@@ -99,7 +99,7 @@ The `ionotesiOS` target has the same bundle id as the Mac app, so both are one a
 - Moving from the iCloud version: the old SwiftData store stays in `~/Library/Application Support/ionotes/Notes.store`;
   its notes were exported to a zip that imports on the server (admin › Settings › Import), keeping their ids.
 
-## How it is put together
+## Layout
 
 ```
 Shared/            platform-neutral, ready for an iPhone/iPad target
@@ -127,3 +127,7 @@ Local data lives in `~/Library/Application Support/ionotes/` (`index.sqlite`, `N
 
 ionotes is not sandboxed: it needs to read the screenshots folder and the clipboard. That suits a
 Developer ID release like iopix's (`tools/release-mac.sh` in iopix-apps works with the scheme name changed).
+
+## License
+
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
