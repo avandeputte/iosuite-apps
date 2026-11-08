@@ -165,7 +165,7 @@ enum FacesAPI {
     }
 
     /// The index's version (api/status), to tell when a change has been taken in.
-    static func indexVersion() async -> String? { (try? await client.json("api/status"))?["version"] as? String }
+    static func indexVersion() async -> String? { (try? await client.json("api/status"))?["index"] as? String }
 
     /// Waits, up to about five seconds, for the index to move past `seen`: a face change shows in the counts and
     /// lists only once the server has reindexed.

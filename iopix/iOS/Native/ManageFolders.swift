@@ -242,7 +242,7 @@ struct ManageFoldersScreen: View {
                 notice = Notice(text: added > 0 ? "Found \(ManageAPI.plural(added, "new face")). Name \(added == 1 ? "it" : "them") under People."
                                 : found > 0 ? "No new faces: the \(ManageAPI.plural(found, "face")) found \(found == 1 ? "is" : "are") already marked." : "No faces found.")
             } else {
-                notice = Notice(text: "Looking for faces in \(ManageAPI.plural((r["queued"] as? NSNumber)?.intValue ?? 0, "photo")) in the background; progress in Maintenance › AI analysis and models.")
+                notice = Notice(text: "Looking for faces in \(ManageAPI.plural((r["queued"] as? NSNumber)?.intValue ?? 0, "photo")) in the background; progress in Settings › AI.")
             }
         } catch {
             notice = Notice(text: error.localizedDescription, failed: true)

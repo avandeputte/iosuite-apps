@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Calls for the settings and maintenance screens: JSON in and out, the server's own error text on failure.
+/// Calls for the Settings and Tools screens: JSON in and out, the server's own error text on failure.
 enum AdminAPI {
     static func get(_ path: String, _ query: [URLQueryItem] = []) async throws -> [String: Any] {
         try await IopixClient.shared.json(path, query: query)

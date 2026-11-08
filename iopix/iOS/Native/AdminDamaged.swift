@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Maintenance › Damaged files (iopix 1.86): every photo's file read and checked, and the one safe repair (a JPEG whose
+/// Tools › Damaged files (iopix 1.86): every photo's file read and checked, and the one safe repair (a JPEG whose
 /// picture is complete but whose end marker is missing gets the marker, after a copy is kept; undo in the edit log).
 struct AdminDamagedScreen: View {
     @AppStorage(ManageThumbSize.key) private var thumbSize = "list"
@@ -35,7 +35,7 @@ struct AdminDamagedScreen: View {
                         Button("Repair all \(fixable.count)") { ask(fixable) }
                     }
                     if d["jpegtran"] != nil && !d.bool("jpegtran") {
-                        Text("jpegtran is not installed on the server, so a JPEG missing its end marker cannot be checked for completeness or repaired (see Maintenance › Lossless JPEG edits).")
+                        Text("jpegtran is not installed on the server, so a JPEG missing its end marker cannot be checked for completeness or repaired Install it on the server: apt-get install -y libjpeg-turbo-progs, dnf install libjpeg-turbo-utils, or brew install jpeg-turbo.")
                             .font(.footnote).foregroundStyle(.orange)
                     }
                 } else if problem == nil {
