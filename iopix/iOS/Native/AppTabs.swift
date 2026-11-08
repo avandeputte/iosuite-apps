@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The app's tabs, all native. Settings, Maintenance and editing a photo open the web app (under More).
+/// The app's tabs, all native. Editing a photo opens the web app (under More).
 struct AppTabs: View {
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var queue: UploadQueue
@@ -102,7 +102,7 @@ struct SidebarLayout: View {
 
     private var iopix: [Row] {
         var rows = [Row(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, screen: .settings)]
-        if queue.account?.isAdmin == true { rows.append(Row(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, screen: .maintenance)) }
+        if queue.account?.isAdmin == true { rows.append(Row(title: "Tools", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, screen: .tools)) }
         return rows
     }
 
@@ -198,7 +198,7 @@ struct ScreenView: View {
         case .history(let photo): ManageHistoryScreen(photo: photo)
         case .faces(let tab): FacesReviewScreen(tab: tab)
         case .settings: AdminSettingsScreen()
-        case .maintenance: AdminMaintenanceScreen()
+        case .tools: AdminToolsScreen()
         case .consistency: AdminConsistencyScreen()
         case .map:
             PhotoMap { bbox in Router.shared.morePath.append(.photos(PhotoQuery([("bbox", bbox)]), title: "This area")) }
@@ -242,7 +242,7 @@ struct MoreView: View {
     private var iopix: [Item] {
         var list = [Item(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, destination: .settings)]
         if queue.account?.isAdmin == true {
-            list.append(Item(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .maintenance))
+            list.append(Item(title: "Tools", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .tools))
         }
         return list
     }
@@ -279,7 +279,7 @@ struct MoreView: View {
     static func title(of route: String) -> String {
         switch route.dropFirst(2).split(separator: "?").first.map(String.init) ?? "" {
         case "settings": return "Settings"
-        case "maintenance": return "Maintenance"
+        case "tools": return "Tools"
         case "duplicates": return "Duplicate files"
         case "detected": return "Detected content"
         case "photos": return "Edit in ioPix"

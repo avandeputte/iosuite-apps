@@ -283,7 +283,7 @@ struct BulkTemplateSheet: View {
             List {
                 if let templates {
                     if templates.isEmpty {
-                        Text("No templates yet. Define them in Settings › Metadata templates.").foregroundStyle(.secondary)
+                        Text("No templates yet. Define them in Settings › Editing.").foregroundStyle(.secondary)
                     }
                     ForEach(templates, id: \.name) { t in
                         Button { Task { await apply(t.fields) } } label: {

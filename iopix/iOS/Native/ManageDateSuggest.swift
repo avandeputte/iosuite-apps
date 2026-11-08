@@ -85,7 +85,7 @@ struct ManageDateSuggestScreen: View {
                 Text("A year for each photo marked “Date unknown”, from every clue the library has about it: how old the named people in it look, the years those people are photographed in, the photos with a date that look most like it, and the camera. Every suggestion is a range and lists its clues. Nothing is saved until you use a year: it is then saved as a year-only date, with undo in the edit log.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !ready {
-                    Label("Install “MiVOLO v2 (age)” under Maintenance › AI analysis and models to get suggestions.", systemImage: "arrow.down.circle")
+                    Label("Install “MiVOLO v2 (age)” under Settings › AI to get suggestions.", systemImage: "arrow.down.circle")
                         .font(.footnote)
                 } else if faces.0 < faces.1 {
                     Label("Estimating ages: \(faces.0.formatted()) of \(faces.1.formatted()) faces so far; more suggestions appear as it goes.", systemImage: "hourglass")

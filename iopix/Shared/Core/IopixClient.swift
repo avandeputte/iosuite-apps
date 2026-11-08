@@ -149,7 +149,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
             if (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
                let to = URL(string: loc, relativeTo: http.url ?? url)?.absoluteURL,
                to.host?.lowercased() != url.host?.lowercased() { return refused(to) }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["appVersion"] != nil { return nil }
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] != nil, j["version"] != nil { return nil }
             // Cloudflare's own "Forbidden" page (a token it knows, but no policy lets in) rather than iopix's answer
             if http.statusCode == 403, ServiceToken.isSet, (try? JSONSerialization.jsonObject(with: data)) == nil,
                http.value(forHTTPHeaderField: "Server")?.lowercased() == "cloudflare" {

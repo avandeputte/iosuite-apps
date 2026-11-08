@@ -78,7 +78,7 @@ enum Screen: Hashable {
     case placeSuggest, jerseys, clothing, rotation, damaged
     case history(photo: Int?)
     case faces(String)
-    case settings, maintenance, consistency
+    case settings, tools, consistency
     case web(String)
 }
 
@@ -111,7 +111,7 @@ final class Router: ObservableObject {
     }
 
     /// Opens an address of the web app ("#/photos?year=2020") as the native screen for it, in the tab it belongs
-    /// to. Settings, Maintenance, editing a photo (#/photos?p=) and the other admin pages open the web app.
+    /// to. Editing a photo (#/photos?p=) and the pages without a native screen open the web app.
     func open(_ route: String) {
         let body = route.hasPrefix("#/") ? String(route.dropFirst(2)) : route
         let parts = body.split(separator: "?", maxSplits: 1).map(String.init)
@@ -159,7 +159,7 @@ final class Router: ObservableObject {
             morePath = [.events]
             tab = .more
         case "trash", "import", "duplicates", "neardups", "detected", "quality", "history",
-             "settings", "maintenance", "analysis", "consistency", "datesuggest", "placesuggest", "jerseys", "clothing", "rotation", "damaged":
+             "settings", "tools", "consistency", "datesuggest", "placesuggest", "jerseys", "clothing", "rotation", "damaged":
             let screen: Screen
             switch view {
             case "trash": screen = .trash
@@ -177,7 +177,7 @@ final class Router: ObservableObject {
             case "clothing": screen = .clothing
             case "rotation": screen = .rotation
             case "damaged": screen = .damaged
-            default: screen = .maintenance
+            default: screen = .tools
             }
             morePath = [screen]
             tab = .more

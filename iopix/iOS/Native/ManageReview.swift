@@ -270,7 +270,7 @@ struct ManageDetectedScreen: View {
 
 // MARK: - Metadata quality
 
-/// Maintenance › Metadata quality: face boxes stored twice, the same person twice, boxes outside the photo, unnamed
+/// Tools › Metadata quality: face boxes stored twice, the same person twice, boxes outside the photo, unnamed
 /// faces, untagged photos, photos without a location, in the wrong folder or with a doubtful date. Each list opens
 /// its photos; editors can trim boxes, ignore unnamed faces, accept findings, or clean up the doubled boxes.
 struct ManageQualityScreen: View {
