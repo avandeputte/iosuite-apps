@@ -97,7 +97,7 @@ The `ionotesiOS` target has the same bundle id as the Mac app, so both are one a
 - Changing the server address drops what came from the old server (changes not sent yet are kept and go to the
   new one).
 - Moving from the iCloud version: the old SwiftData store stays in `~/Library/Application Support/ionotes/Notes.store`;
-  its notes were exported to a zip that imports on the server (admin › Settings › Import), keeping their ids.
+  its notes were exported to a zip that imports on the server (Import and export in the web app), keeping their ids.
 
 ## Layout
 

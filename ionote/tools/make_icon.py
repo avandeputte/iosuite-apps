@@ -1,14 +1,13 @@
-# Draws the ionotes icon: a clipped note card with a gold-highlighted line on deep teal, with the
-# two-tone wordmark iopix uses ("io" in gold). python3 tools/make_icon.py out.png [Poppins-Bold.ttf] [--ios]
+# Draws the ionotes icon: a clipped note card with a gold-highlighted line on deep teal, without a wordmark
+# (like the other ioThing app icons). python3 tools/make_icon.py out.png [--ios]
 # --ios: a square, opaque 1024 px tile for iPhone and iPad (iOS rounds the corners itself).
 import sys, math
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 S = 2048  # drawn at 2x, then downsampled
 k = S / 1024
 IOS = "--ios" in sys.argv
 sys.argv = [a for a in sys.argv if a != "--ios"]
-FONT = sys.argv[2] if len(sys.argv) > 2 else "Poppins-Bold.ttf"  # github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf
 
 GOLD = (246, 207, 114, 255)          # same gold as iopix
 TEAL_DARK = (18, 72, 78, 255)
@@ -55,7 +54,7 @@ tile.alpha_composite(linear_gradient((256, 256), TEAL_DARK, TEAL_LIGHT, 55).resi
 
 # soft glow behind the card
 glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-ImageDraw.Draw(glow).ellipse([260 * k, 140 * k, 780 * k, 660 * k], fill=(120, 210, 190, 70))
+ImageDraw.Draw(glow).ellipse([260 * k, 232 * k, 780 * k, 752 * k], fill=(120, 210, 190, 70))
 tile.alpha_composite(glow.filter(ImageFilter.GaussianBlur(90 * k)))
 
 # the note card, drawn upright then tilted
@@ -86,7 +85,7 @@ for i, (x1, x2) in enumerate(rows):
                         fill=(92, 112, 108, 255) if i == 1 else INK)
 card = card.rotate(-6, resample=Image.BICUBIC, expand=True)
 
-cx, cy = 512 * k, 420 * k
+cx, cy = 512 * k, 530 * k  # the card and its clip, centred in the tile
 pos = (int(cx - card.size[0] / 2), int(cy - card.size[1] / 2))
 shadow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 alpha = card.split()[3].point(lambda a: int(a * 0.45))
@@ -100,19 +99,6 @@ clip_cx, clip_top = cx - 18 * k, cy - 268 * k
 d.rounded_rectangle([clip_cx - 92 * k, clip_top + 18 * k, clip_cx + 92 * k, clip_top + 92 * k], int(22 * k), fill=CLIP)
 d.rounded_rectangle([clip_cx - 50 * k, clip_top - 14 * k, clip_cx + 50 * k, clip_top + 44 * k], int(28 * k), outline=CLIP, width=int(18 * k))
 d.rounded_rectangle([clip_cx - 70 * k, clip_top + 36 * k, clip_cx + 70 * k, clip_top + 48 * k], int(6 * k), fill=(70, 100, 108, 255))
-
-# wordmark: "io" in gold, "notes" in white, with a soft dark drop shadow, as on the iopix icon
-font = ImageFont.truetype(FONT, int(170 * k))
-w_io = font.getlength("io")
-total = w_io + font.getlength("notes")
-x = (S - total) / 2
-y = 850 * k - font.getmetrics()[0]
-sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-ImageDraw.Draw(sh).text((x + 6 * k, y + 9 * k), "ionotes", font=font, fill=(10, 50, 56, 200))
-tile.alpha_composite(sh)
-d = ImageDraw.Draw(tile)
-d.text((x, y), "io", font=font, fill=GOLD)
-d.text((x + w_io, y), "notes", font=font, fill=(255, 255, 255, 255))
 
 if IOS:
     box = [int(100 * k), int(100 * k), int(924 * k), int(924 * k)]
