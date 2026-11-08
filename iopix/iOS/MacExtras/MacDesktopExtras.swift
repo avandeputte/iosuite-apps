@@ -240,21 +240,21 @@ final class MacDesktopExtras: ObservableObject {
         }
         for t in meta["tags"] as? [[String: Any]] ?? [] {
             guard let id = (t["id"] as? NSNumber)?.intValue, let name = t["name"] as? String, let n = (t["n"] as? NSNumber)?.intValue, n > 0 else { continue }
-            add("#/photos?tag=\(id)", name, (t["person"] as? NSNumber)?.boolValue == true ? "Person in iopix" : "Tag in iopix", n)
+            add("#/photos?tag=\(id)", name, (t["person"] as? NSNumber)?.boolValue == true ? "Person in ioPix" : "Tag in ioPix", n)
         }
         for a in meta["albums"] as? [[String: Any]] ?? [] {
             guard let id = (a["id"] as? NSNumber)?.intValue, let name = a["name"] as? String, let n = (a["nAll"] as? NSNumber)?.intValue, n > 0 else { continue }
-            add("#/photos?album=\(id)", name, "Folder in iopix", n)
+            add("#/photos?album=\(id)", name, "Folder in ioPix", n)
         }
         for p in meta["places"] as? [[Any]] ?? [] {
             guard p.count >= 4, let name = p[0] as? String, let n = (p[3] as? NSNumber)?.intValue else { continue }
             var q = URLComponents(); q.queryItems = [URLQueryItem(name: "place", value: name)]
-            add("#/photos?\(q.percentEncodedQuery ?? "")", name, "Place in iopix", n)
+            add("#/photos?\(q.percentEncodedQuery ?? "")", name, "Place in ioPix", n)
         }
         if let st = try? await IopixClient.shared.json("api/state") {
             for a in st["albums"] as? [[String: Any]] ?? [] {
                 guard let id = (a["id"] as? NSNumber)?.intValue, let name = a["name"] as? String else { continue }
-                add("#/photos?ualbum=\(id)", name, "Album in iopix", (a["n"] as? NSNumber)?.intValue)
+                add("#/photos?ualbum=\(id)", name, "Album in ioPix", (a["n"] as? NSNumber)?.intValue)
             }
         }
         let index = CSSearchableIndex.default()

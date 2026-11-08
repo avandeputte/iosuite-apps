@@ -56,4 +56,23 @@ enum ServiceToken {
         get { Keychain.get("cf-client-secret") }
         set { Keychain.set(newValue, for: "cf-client-secret") }
     }
+
+    static var isSet: Bool { clientID != nil && clientSecret != nil }
+
+    /// Cloudflare checks these two headers before anything else: with a token its policy allows, the request goes
+    /// straight through to iopix, without Cloudflare's sign-in page.
+    static func apply(to r: inout URLRequest) {
+        guard let id = clientID, let secret = clientSecret else { return }
+        r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+        r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+    }
+
+    /// Said when Cloudflare still shows its sign-in although a token was sent: a wrong or revoked token, or one
+    /// the iopix application's policies don't allow.
+    static let rejected = "Cloudflare Access didn't accept the service token. Check its client ID and secret, and that the ioPix application in Cloudflare Zero Trust has a Service Auth policy that allows this token."
+
+    /// Is this the sign-in page of Cloudflare Access (team.cloudflareaccess.com)?
+    static func isCloudflareSignIn(_ url: URL?) -> Bool {
+        url?.host?.lowercased().hasSuffix(".cloudflareaccess.com") == true
+    }
 }

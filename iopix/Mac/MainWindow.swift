@@ -31,7 +31,7 @@ struct MainWindow: View {
                     Button { queue.add(files: MacFiles.choose()) } label: {
                         Label("Send Files", systemImage: "square.and.arrow.up")
                     }
-                    .help("Choose photos and videos to send to iopix")
+                    .help("Choose photos and videos to send to ioPix")
                     .disabled(!queue.canSend && queue.account != nil)
 
                     if !queue.reviewing.isEmpty {
@@ -46,7 +46,7 @@ struct MainWindow: View {
                         Label(queue.pending.isEmpty ? "Uploads" : "\(queue.pending.count) Sending",
                               systemImage: queue.pending.isEmpty ? "tray.and.arrow.up" : "arrow.up.circle")
                     }
-                    .help("What is being sent to iopix")
+                    .help("What is being sent to ioPix")
                     .popover(isPresented: $showUploads, arrowEdge: .bottom) {
                         MenuView().environmentObject(queue).environmentObject(watcher)
                     }
@@ -57,7 +57,7 @@ struct MainWindow: View {
                     .help("Reload the page")
                 }
             }
-            .navigationTitle("iopix")
+            .navigationTitle("ioPix")
             .task { await queue.refreshAccount() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
                 if AppConfig.serverURL != server.baseServer { server = AppConfig.serverURL }  // changed in Settings (host, port or scheme)
@@ -85,7 +85,7 @@ enum MacFiles {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = true
         panel.allowedContentTypes = [.image, .movie, .folder]
-        panel.message = "Choose photos and videos to send to iopix"
+        panel.message = "Choose photos and videos to send to ioPix"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK else { return [] }
         return panel.urls.flatMap(MenuView.expand)

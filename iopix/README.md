@@ -67,12 +67,15 @@ The Xcode project is generated from `project.yml` and not kept in git.
 
 The iPhone and iPad app is native: Explore, Photos (filters, search, saved searches, selection with bulk
 actions), People and Faces, Places with a map, Folders, Albums, Tags, Trash, Import, Detected content,
-History, Settings and Maintenance (with the check and suggestion pages under Library: Metadata quality,
-Duplicate files, Date and Place suggestions, Jersey numbers, Clothing matches, Wrongly rotated and Damaged
-files), and editing a photo (details, tags,
+History, Settings (Account, Display, Editing, Library, AI, Server and Security, as in the web app), Tools for
+admins (the checks and suggestion pages: Metadata consistency and quality, Duplicate and Damaged files, Date and
+Place suggestions, Jersey numbers, Clothing matches, Wrongly rotated, Place tags), and editing a photo (details, tags,
 location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or later for background sending,
 one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
-the slower paths. "Open in iopix" shows the same photo in the web app.
+the slower paths. Settings and Tools follow the web app of ioPix 1.143 or later (one Settings menu, Settings ›
+Server through the suite's shared endpoints, app passwords under Account); the ages and birthdays from ioContacts
+and the menu of the other ioThing apps (the ioPix mark top left, when others are installed) need 1.114 to 1.117.
+"Open in iopix" shows the same photo in the web app.
 
 ## How it signs in
 
@@ -84,8 +87,10 @@ password only work at home, as in the browser.
 Cloudflare Access's sign-in expires after the session length set in Cloudflare. To keep the Mac uploading
 unattended, either use the server's home-network address in Settings, or create a Cloudflare **service token**
 (Zero Trust › Access › Service auth), allow it in the iopix application's policy (a *Service Auth* rule), and
-enter its client ID and secret in the app's settings. They are kept in the Keychain. You still sign in to iopix
-once.
+enter its client ID and secret in the app's settings, or on the connect screen the first time (iPhone, iPad, Mac
+and Apple TV). They are kept in the Keychain and sent with every request, so Cloudflare's sign-in page is skipped
+and the app goes straight to iopix's own sign-in; the Apple TV, which can't show Cloudflare's page, needs one to
+connect from outside. If Cloudflare refuses the token, the connect screen says so. You still sign in to iopix once.
 
 ## TestFlight
 

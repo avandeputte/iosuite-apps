@@ -45,29 +45,51 @@ struct TVRoot: View {
 
 struct TVServerSetup: View {
     let done: (URL) -> Void
-    @State private var text = ""
+    @State private var text = AppConfig.hasServer ? AppConfig.serverURL.absoluteString : ""
     @State private var checking = false
     @State private var problem: String?
+    @State private var tokenID = ServiceToken.clientID ?? ""
+    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
+    @State private var showToken = ServiceToken.isSet
 
     var body: some View {
         VStack(spacing: 40) {
             Image("Mark").resizable().frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 40))
             Brand.text("Connect to your ").font(.title2.bold())
-            Text("Enter the address of your iopix server, as you use it at home.").foregroundStyle(.secondary)
+            Text("Enter the address of your ioPix server, as you use it at home.").foregroundStyle(.secondary)
             TextField("photos.example.com", text: $text)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .frame(width: 900)
                 .onSubmit(connect)
-            if let problem { Text(problem).foregroundStyle(.red) }
-            Button(checking ? "Checking…" : "Connect", action: connect)
-                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || checking)
+            if showToken {
+                VStack(spacing: 20) {
+                    TextField("Cloudflare Access client ID", text: $tokenID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Cloudflare Access client secret", text: $tokenSecret)
+                    Text("With a service token the Apple TV gets through Cloudflare Access to ioPix's own sign-in. Leave it empty if ioPix isn't behind Cloudflare.")
+                        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(width: 900)
+            }
+            if let problem { Text(problem).foregroundStyle(.red).multilineTextAlignment(.center).frame(maxWidth: 1200) }
+            HStack(spacing: 40) {
+                Button(checking ? "Checking…" : "Connect", action: connect)
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || checking)
+                if !showToken {
+                    Button("Cloudflare Access service token…") { showToken = true }
+                }
+            }
         }
     }
 
     private func connect() {
         guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
+        // kept before the check, which sends it along (the Keychain drops an empty one)
+        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespacesAndNewlines)
+        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         checking = true
         problem = nil
         Task {
@@ -136,9 +158,13 @@ struct TVSignIn: View {
             }.map(\.1)
             try? await Task.sleep(nanoseconds: 100_000_000)
             focus = accounts.first?.name
-            if accounts.isEmpty { problem = "This iopix has no accounts to sign in with." }
+            if accounts.isEmpty { problem = "This ioPix has no accounts to sign in with." }
+        } catch IopixError.needsSignIn {
+            // Cloudflare Access's sign-in page in front of iopix: the TV has no browser to show it
+            problem = ServiceToken.isSet ? ServiceToken.rejected
+                : "From here, ioPix sits behind a sign-in page the Apple TV can't show. Add a Cloudflare Access service token (Change server), or use the server's address on your home network."
         } catch {
-            problem = "iopix can't be reached: \(error.localizedDescription)"
+            problem = "ioPix can't be reached: \(error.localizedDescription)"
         }
     }
 

@@ -170,7 +170,7 @@ struct RootView: View {
                     }
                 }
         }
-        .accessibilityLabel("Send photos to iopix")
+        .accessibilityLabel("Send photos to ioPix")
         .padding(.trailing, 16)
         .padding(.bottom, 64)
     }
@@ -231,7 +231,7 @@ struct UploadsView: View {
                         Button("Also list the last 7 days") { watcher.sendRecent(days: 7) }
                     }
                 } footer: {
-                    Text(watcher.note ?? "Photos and videos you take from now on are listed here when you open iopix, and you pick which ones to send. Photos already in iopix are skipped.")
+                    Text(watcher.note ?? "Photos and videos you take from now on are listed here when you open ioPix, and you pick which ones to send. Photos already in ioPix are skipped.")
                 }
 
                 if !queue.pending.isEmpty {
@@ -289,7 +289,7 @@ struct UploadsView: View {
                     Text("Only if your server is behind Cloudflare Access; leave it empty otherwise. With a service token, uploads get through even when Cloudflare's sign-in has run out.")
                 }
             }
-            .navigationTitle("Send to iopix")
+            .navigationTitle("Send to ioPix")
             .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -307,10 +307,10 @@ struct UploadsView: View {
         } else if let a = queue.account, a.signedIn {
             Label("\(a.name ?? "This account") can look at photos but not add them.", systemImage: "person.crop.circle.badge.exclamationmark")
         } else if queue.offline {
-            Label("iopix can't be reached right now.", systemImage: "wifi.exclamationmark")
+            Label("ioPix can't be reached right now.", systemImage: "wifi.exclamationmark")
         } else {
             Button { signingIn = true } label: {
-                Label("Sign in to iopix… Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
+                Label("Sign in to ioPix… Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
             }
             .sheet(isPresented: $signingIn) { SignInView() }
         }
@@ -366,13 +366,16 @@ struct ServerSetupView: View {
     @State private var text = ""
     @State private var checking = false
     @State private var problem: String?
+    @State private var tokenID = ServiceToken.clientID ?? ""
+    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
+    @State private var showToken = ServiceToken.isSet
 
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
             Image("Mark").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
             Brand.text("Connect to your ", onLight: true).font(.title2.bold())
-            Text("Enter the address you use for iopix in the browser.")
+            Text("Enter the address you use for ioPix in the browser.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
             TextField("photos.example.com", text: $text)
                 .textInputAutocapitalization(.never)
@@ -383,6 +386,24 @@ struct ServerSetupView: View {
                 .onSubmit(connect)
                 .padding(12)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+            DisclosureGroup("Cloudflare Access service token (optional)", isExpanded: $showToken) {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Client ID", text: $tokenID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    SecureField("Client secret", text: $tokenSecret)
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    Text("Only if ioPix sits behind Cloudflare Access. With a service token the app goes straight to ioPix's own sign-in, without Cloudflare's. Leave it empty otherwise.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
             if let problem { Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center) }
             Button(action: connect) {
                 Group { if checking { ProgressView() } else { Text("Connect") } }
@@ -399,6 +420,9 @@ struct ServerSetupView: View {
 
     private func connect() {
         guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
+        // kept before the check, which sends it along (the Keychain drops an empty one)
+        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespacesAndNewlines)
+        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         checking = true
         problem = nil
         Task {

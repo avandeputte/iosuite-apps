@@ -121,7 +121,7 @@ enum EditAPI {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 409 {
             let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            throw Failure(message: j?["detail"] as? String ?? "iopix can't change this right now (is digiKam open?). Try again in a moment.")
+            throw Failure(message: j?["detail"] as? String ?? "ioPix can't change this right now (is digiKam open?). Try again in a moment.")
         }
         // the server says why it refuses (editing turned off): that reason, not "could not connect"
         if code == 503, let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let why = j["detail"] as? String {

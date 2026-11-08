@@ -45,20 +45,20 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>iopix can take a photo for your iopix library.</string>
+	<string>ioPix can take a photo for your ioPix library.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>iopix connects to your photo server on your home network.</string>
+	<string>ioPix connects to your photo server on your home network.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>iopix can record a video for your iopix library.</string>
+	<string>ioPix can record a video for your ioPix library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>iopix sends the photos and videos you choose, and new ones if you turn that on, to your iopix library.</string>
+	<string>ioPix sends the photos and videos you choose, and new ones if you turn that on, to your ioPix library.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Send to iopix Native</string>
+				<string>Send to ioPix Native</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>sendToIopixNative</string>

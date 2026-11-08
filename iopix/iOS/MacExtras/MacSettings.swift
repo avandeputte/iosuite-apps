@@ -24,7 +24,7 @@ struct MacSettingsScreen: View {
                     }
                 if let loginNote { Text(loginNote).font(.caption).foregroundStyle(.orange) }
             } footer: {
-                Text("Closing the window keeps iopix in the menu bar, still sending and watching.")
+                Text("Closing the window keeps ioPix in the menu bar, still sending and watching.")
             }
 
             Section {
@@ -44,18 +44,18 @@ struct MacSettingsScreen: View {
             }
 
             Section {
-                Text("Insert a memory card or connect a camera that shows up as a drive: iopix lists its photos and offers to import the new ones.")
+                Text("Insert a memory card or connect a camera that shows up as a drive: ioPix lists its photos and offers to import the new ones.")
                 Button("Import from a card…") { NotificationCenter.default.post(name: .iopixCards, object: nil) }
             } header: { Text("Cameras and memory cards") }
 
             Section {
-                Text("Right-click photos or folders in Finder › Quick Actions or Services › Send to iopix Native. The Share button in Photos, Preview, Finder and Safari has iopix too.")
+                Text("Right-click photos or folders in Finder › Quick Actions or Services › Send to ioPix Native. The Share button in Photos, Preview, Finder and Safari has ioPix too.")
                 Button("Turn on the Share menu entry…") { MacExtras.bridge?.openPath("x-apple.systempreferences:com.apple.ExtensionsPreferences?Sharing") }
-            } header: { Text("Send to iopix") }
+            } header: { Text("Send to ioPix") }
 
             Section("Notifications") {
                 Toggle("New photos to look at", isOn: $prefs.notifyReview)
-                Toggle("Photos sent to iopix", isOn: $prefs.notifyUploads)
+                Toggle("Photos sent to ioPix", isOn: $prefs.notifyUploads)
                 Toggle("On this day, once a day", isOn: $prefs.notifyOnThisDay)
             }
 
@@ -78,11 +78,11 @@ struct MacSettingsScreen: View {
             } header: {
                 Text("Screen saver")
             } footer: {
-                Text("iopix keeps up to 100 photos in Pictures › iopix Screen Saver. In Screen Saver settings, pick a photo screen saver and choose that folder as its source.")
+                Text("ioPix keeps up to 100 photos in Pictures › iopix Screen Saver. In Screen Saver settings, pick a photo screen saver and choose that folder as its source.")
             }
 
             Section {
-                Text("Right-click the desktop › Edit Widgets, and add iopix. It shows Rediscover, your favorites or an album.")
+                Text("Right-click the desktop › Edit Widgets, and add ioPix. It shows Rediscover, your favorites or an album.")
                 Button(busy ? "Refreshing…" : "Refresh the widget now") { run { await extras.refreshWidget() } }.disabled(busy)
             } header: { Text("Widget") }
 
@@ -113,7 +113,7 @@ struct MacSettingsScreen: View {
             } header: {
                 Text("Offline folders")
             } footer: {
-                Text("The originals are kept in Pictures › iopix Offline, one folder each, and kept up to date every few hours while iopix runs. Photos taken out of an album are removed from its folder.")
+                Text("The originals are kept in Pictures › iopix Offline, one folder each, and kept up to date every few hours while ioPix runs. Photos taken out of an album are removed from its folder.")
             }
         }
         .navigationTitle("Mac")

@@ -136,7 +136,7 @@ final class CardWatcher: ObservableObject {
         let new = Set(files.filter { !imported.contains(key(name, $0)) })
         offer = CardOffer(name: name, files: files, new: new)
         guard !new.isEmpty else { return }  // nothing new: the Import window is there from the menu if wanted
-        Notifier.post("card", title: "Photos on \(name)", body: "\(new.count) new photos and videos. Click to import them to iopix.", open: "card")
+        Notifier.post("card", title: "Photos on \(name)", body: "\(new.count) new photos and videos. Click to import them to ioPix.", open: "card")
         Router.open("card")
     }
 
@@ -182,7 +182,7 @@ struct CardImportView: View {
                 }
                 Divider()
                 HStack {
-                    Text("iopix skips photos it already has.").font(.caption).foregroundStyle(.secondary)
+                    Text("ioPix skips photos it already has.").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Cancel") { cards.offer = nil; dismissWindow(id: "card") }
                     Button("Import \(picked.count)") {

@@ -10,7 +10,7 @@ struct IopixMenuApp: App {
     @StateObject private var watcher = PhotosWatcher.shared
 
     var body: some Scene {
-        Window("iopix", id: "main") {
+        Window("ioPix", id: "main") {
             MainWindow()
                 .environmentObject(queue)
                 .environmentObject(watcher)
@@ -39,7 +39,7 @@ struct IopixMenuApp: App {
         .defaultSize(width: 760, height: 560)
         .commandsRemoved()
 
-        Window("Sign in to iopix", id: "signin") {
+        Window("Sign in to ioPix", id: "signin") {
             SignInView().environmentObject(queue)
         }
         .defaultSize(width: 520, height: 720)
@@ -50,7 +50,7 @@ struct IopixMenuApp: App {
         }
         .defaultSize(width: 640, height: 560)
 
-        Window("iopix Settings", id: "settings") {
+        Window("ioPix Settings", id: "settings") {
             SettingsView().environmentObject(queue).environmentObject(watcher)
         }
         .windowResizability(.contentSize)
@@ -95,7 +95,7 @@ struct MenuView: View {
             Toggle(isOn: Binding(get: { watcher.enabled }, set: { on in Task { await watcher.setEnabled(on) } })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Look for new photos in Photos")
-                    Text(watcher.note ?? "Photos and videos added to your library from now on are listed here, and you pick which ones go to iopix.")
+                    Text(watcher.note ?? "Photos and videos added to your library from now on are listed here, and you pick which ones go to ioPix.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -115,7 +115,7 @@ struct MenuView: View {
             if let why = queue.blocked {
                 Text(why).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Goes to \(Destination.current.example()) in iopix").font(.caption).foregroundStyle(.secondary)
+                Text("Goes to \(Destination.current.example()) in ioPix").font(.caption).foregroundStyle(.secondary)
             }
 
             if let item = queue.current {
@@ -148,7 +148,7 @@ struct MenuView: View {
 
             Divider()
             HStack {
-                Button("Open iopix") { show("main") }
+                Button("Open ioPix") { show("main") }
                 Button("Settings…") { show("settings") }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
@@ -164,7 +164,7 @@ struct MenuView: View {
         } else if let a = queue.account, a.signedIn {
             Text("\(a.name ?? "This account") can't add photos").font(.caption).foregroundStyle(.orange)
         } else if queue.offline {
-            Text("Can't reach iopix").font(.caption).foregroundStyle(.orange)
+            Text("Can't reach ioPix").font(.caption).foregroundStyle(.orange)
         } else {
             Button("Sign in…") { show("signin") }.buttonStyle(.link).font(.caption)
         }
@@ -297,7 +297,7 @@ struct SettingsView: View {
             } header: {
                 Text("Cloudflare Access service token (only if you use Cloudflare Access)")
             } footer: {
-                Text("Cloudflare's sign-in runs out after a while. With a service token, photos keep going through Cloudflare without it; you still sign in to iopix once. You can also use the server's address on your home network instead.")
+                Text("Cloudflare's sign-in runs out after a while. With a service token, photos keep going through Cloudflare without it; you still sign in to ioPix once. You can also use the server's address on your home network instead.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -344,7 +344,7 @@ struct SettingsView: View {
         guard on != (service.status == .enabled) else { return }  // the toggle was only put back after a failure
         do {
             if on { try service.register() } else { try service.unregister() }
-            loginNote = service.status == .requiresApproval ? "Allow iopix under System Settings › General › Login Items." : nil
+            loginNote = service.status == .requiresApproval ? "Allow ioPix under System Settings › General › Login Items." : nil
             if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         } catch {
             loginNote = "macOS did not allow it: \(error.localizedDescription)"

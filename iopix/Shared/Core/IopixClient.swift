@@ -26,8 +26,8 @@ enum IopixError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .needsSignIn: return "Sign in to iopix to send photos."
-        case .needsServerUpdate: return "Your iopix server can't put photos in a folder of your choice yet. Update iopix, or pick one of its date layouts in Settings."
+        case .needsSignIn: return "Sign in to ioPix to send photos."
+        case .needsServerUpdate: return "Your ioPix server can't put photos in a folder of your choice yet. Update ioPix, or pick one of its date layouts in Settings."
         case .notAllowed(let why): return why
         case .server(let why): return why
         }
@@ -60,7 +60,10 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     /// cookies and the service token never reach anyone but the server; `check` then reports a needed sign-in.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(request.url?.host?.lowercased() == server.host?.lowercased() ? request : nil)
+        // compared with the host this request was sent to, not the saved server: the connect screen probes an
+        // address before it is saved, and its own redirects (http to https) must still be followed
+        let from = (task.originalRequest?.url ?? server).host?.lowercased()
+        completionHandler(request.url?.host?.lowercased() == from ? request : nil)
     }
 
     var server: URL { AppConfig.serverURL }
@@ -87,10 +90,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let host = server.host, let scheme = server.scheme {
             r.setValue("\(scheme)://\(host)\(server.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
         }
-        if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret {
-            r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
-            r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
-        }
+        ServiceToken.apply(to: &r)
         return r
     }
 
@@ -131,17 +131,32 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     static let log = Logger(subsystem: "net.iothing.iopix", category: "network")
 
     /// Is there an iopix at this address? nil when there is (or a sign-in page in front of it, such as
-    /// Cloudflare Access's), otherwise what went wrong, in plain words.
+    /// Cloudflare Access's), otherwise what went wrong, in plain words. The service token goes along, so with a
+    /// good one Cloudflare lets the check through to iopix; a sign-in page in spite of it means it was refused.
     func probe(_ url: URL) async -> String? {
         var r = URLRequest(url: url.appendingPathComponent("api/status"), timeoutInterval: 15)
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        ServiceToken.apply(to: &r)
+        let refused = { (signIn: URL?) -> String? in
+            ServiceToken.isSet && ServiceToken.isCloudflareSignIn(signIn) ? ServiceToken.rejected : nil
+        }
         do {
             let (data, resp) = try await session.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
-            if http.url?.host?.lowercased() != url.host?.lowercased() { return nil }  // sent to a sign-in page first
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["appVersion"] != nil { return nil }
+            if http.url?.host?.lowercased() != url.host?.lowercased() { return refused(http.url) }  // sent to a sign-in page first
+            // a redirect to another host is not followed (see above): Cloudflare Access's sign-in from outside
+            if (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
+               let to = URL(string: loc, relativeTo: http.url ?? url)?.absoluteURL,
+               to.host?.lowercased() != url.host?.lowercased() { return refused(to) }
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] != nil, j["version"] != nil { return nil }
+            // Cloudflare's own "Forbidden" page (a token it knows, but no policy lets in) rather than iopix's answer
+            if http.statusCode == 403, ServiceToken.isSet, (try? JSONSerialization.jsonObject(with: data)) == nil,
+               http.value(forHTTPHeaderField: "Server")?.lowercased() == "cloudflare" {
+                return ServiceToken.rejected
+            }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an iopix server."
+            return "That address answers, but it isn't an ioPix server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
             return "No server by that name. Check the address."
         } catch {
@@ -351,9 +366,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let added = result["added"] as? [Any], !added.isEmpty { return .added }
         if let s = (result["skipped"] as? [[String: Any]])?.first {
             if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
-            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+            return .skipped(s["reason"] as? String ?? "ioPix did not add it.")
         }
-        return .skipped("iopix did not add it.")
+        return .skipped("ioPix did not add it.")
     }
 
     /// An upload ready to hand to a background session: the request and its body on disk.
@@ -391,9 +406,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         if let added = result["added"] as? [Any], !added.isEmpty { return .added }
         if let s = (result["skipped"] as? [[String: Any]])?.first {
             if s["duplicate_of"] != nil && !(s["duplicate_of"] is NSNull) { return .alreadyThere }
-            return .skipped(s["reason"] as? String ?? "iopix did not add it.")
+            return .skipped(s["reason"] as? String ?? "ioPix did not add it.")
         }
-        return .skipped("iopix did not add it.")
+        return .skipped("ioPix did not add it.")
     }
 
     /// iopix 1.78 and later: asks first whether the library already has the file (nothing is sent then), else sends

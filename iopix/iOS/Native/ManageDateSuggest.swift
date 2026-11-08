@@ -51,6 +51,21 @@ struct ManageDateSuggestScreen: View {
     @StateObject private var rights = ManageRights()
     @State private var items: [DateSuggestion] = []
     @State private var people: [Person] = []
+    /// The earliest and latest year anything in a folder (subfolders included) can be from (iopix 1.98).
+    struct Hint: Identifiable {
+        let id: Int, path: String, n: Int, notBefore: Int?, notAfter: Int?
+        var detail: String {
+            var parts: [String] = []
+            if n > 0 { parts.append("\(n.formatted()) undated") }
+            parts.append("not before \(notBefore.map(String.init) ?? "–")")
+            parts.append("not after \(notAfter.map(String.init) ?? "–")")
+            return parts.joined(separator: " · ")
+        }
+    }
+    @State private var hints: [Hint] = []
+    @State private var askingHint: Hint?
+    @State private var hintBefore = ""
+    @State private var hintAfter = ""
     @State private var ready = true
     @State private var faces = (0, 0)
     @State private var loaded = false
@@ -70,13 +85,32 @@ struct ManageDateSuggestScreen: View {
                 Text("A year for each photo marked “Date unknown”, from every clue the library has about it: how old the named people in it look, the years those people are photographed in, the photos with a date that look most like it, and the camera. Every suggestion is a range and lists its clues. Nothing is saved until you use a year: it is then saved as a year-only date, with undo in the edit log.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !ready {
-                    Label("Install “MiVOLO v2 (age)” under Maintenance › AI analysis and models to get suggestions.", systemImage: "arrow.down.circle")
+                    Label("Install “MiVOLO v2 (age)” under Settings › AI to get suggestions.", systemImage: "arrow.down.circle")
                         .font(.footnote)
                 } else if faces.0 < faces.1 {
                     Label("Estimating ages: \(faces.0.formatted()) of \(faces.1.formatted()) faces so far; more suggestions appear as it goes.", systemImage: "hourglass")
                         .font(.footnote)
                 }
                 if let problem { Text(problem).foregroundStyle(.secondary) }
+            }
+            if !hints.isEmpty {
+                Section {
+                    ForEach(hints) { f in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(f.path.isEmpty ? "/" : f.path).font(.body.weight(.semibold))
+                                Text(f.detail).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            if rights.canWrite {
+                                Button("Edit") { hintBefore = f.notBefore.map(String.init) ?? ""; hintAfter = f.notAfter.map(String.init) ?? ""; askingHint = f }
+                                    .buttonStyle(.borderless).font(.callout)
+                            }
+                        }
+                    }
+                } header: { Text("Folder hints") } footer: {
+                    Text("The earliest and latest year anything in a folder can be from, subfolders included: every suggestion in it keeps to those years.")
+                }
             }
             if !people.isEmpty {
                 Section("People") {
@@ -144,6 +178,23 @@ struct ManageDateSuggestScreen: View {
             Button("Cancel", role: .cancel) {}
             Button("Save") { if let p = askingBirth { Task { await setBirth(p) } } }
         } message: { Text("Leave it empty to work it out from photos with a date.") }
+        .alert(askingHint.map { "Years for \($0.path.isEmpty ? "/" : $0.path)" } ?? "", isPresented: Binding(get: { askingHint != nil }, set: { if !$0 { askingHint = nil } })) {
+            TextField("Not before (e.g. 1974)", text: $hintBefore).keyboardType(.numberPad)
+            TextField("Not after (e.g. 1992)", text: $hintAfter).keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { if let f = askingHint { Task { await setHint(f) } } }
+        } message: { Text("Leave a field empty for no bound.") }
+    }
+
+    private func setHint(_ f: Hint) async {
+        do {
+            try await ManageAPI.post("api/datehints", ["album": f.id, "not_before": Int(hintBefore.trimmingCharacters(in: .whitespaces)) ?? NSNull(),
+                                                      "not_after": Int(hintAfter.trimmingCharacters(in: .whitespaces)) ?? NSNull()])
+            notice = Notice(text: "Hint saved.")
+            await load()
+        } catch {
+            notice = Notice(text: error.localizedDescription, failed: true)
+        }
     }
 
     private func load() async {
@@ -154,6 +205,13 @@ struct ManageDateSuggestScreen: View {
                 guard let t = (p["tag"] as? NSNumber)?.intValue, let n = p["name"] as? String else { return nil }
                 return Person(id: t, name: n, birth: (p["birth"] as? NSNumber)?.intValue, entered: (p["entered"] as? Bool) ?? ((p["entered"] as? NSNumber)?.boolValue ?? false),
                               basis: p["basis"] as? String, n: (p["n"] as? NSNumber)?.intValue ?? 0)
+            }
+            if let h = try? await ManageAPI.get("api/datehints") {  // shown without, on an older iopix
+                hints = (h["folders"] as? [[String: Any]] ?? []).compactMap { f in
+                    guard let a = (f["album"] as? NSNumber)?.intValue else { return nil }
+                    return Hint(id: a, path: f["path"] as? String ?? "", n: (f["n"] as? NSNumber)?.intValue ?? 0,
+                                notBefore: (f["not_before"] as? NSNumber)?.intValue, notAfter: (f["not_after"] as? NSNumber)?.intValue)
+                }
             }
             ready = (j["ready"] as? Bool) ?? true
             let f = (j["faces"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }

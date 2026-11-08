@@ -217,9 +217,9 @@ struct IopixWebView: PlatformViewRepresentable {
             let why: String
             switch (e.domain, e.code) {
             case (NSURLErrorDomain, NSURLErrorNotConnectedToInternet): why = "You're offline."
-            case (NSURLErrorDomain, NSURLErrorTimedOut): why = "iopix took too long to answer."
+            case (NSURLErrorDomain, NSURLErrorTimedOut): why = "ioPix took too long to answer."
             case (NSURLErrorDomain, NSURLErrorCannotFindHost), (NSURLErrorDomain, NSURLErrorDNSLookupFailed): why = "The server's address can't be found on this network."
-            case (NSURLErrorDomain, NSURLErrorCannotConnectToHost), (NSURLErrorDomain, NSURLErrorNetworkConnectionLost): why = "iopix can't be reached from this network."
+            case (NSURLErrorDomain, NSURLErrorCannotConnectToHost), (NSURLErrorDomain, NSURLErrorNetworkConnectionLost): why = "ioPix can't be reached from this network."
             default: why = e.localizedDescription
             }
             status?.failed = why

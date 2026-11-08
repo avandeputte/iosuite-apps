@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.3.0"  # the iPhone, iPad and Mac app; the Apple TV app has its own below
     CURRENT_PROJECT_VERSION: "1"
     # your Apple team id goes here (Xcode › Settings › Accounts); see README
     DEVELOPMENT_TEAM: 69M2JRAT8P
@@ -41,15 +41,15 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        NSPhotoLibraryUsageDescription: iopix sends the photos and videos you choose, and new ones if you turn that on, to your iopix library.
-        NSCameraUsageDescription: iopix can take a photo for your iopix library.
-        NSMicrophoneUsageDescription: iopix can record a video for your iopix library.
-        NSLocalNetworkUsageDescription: iopix connects to your photo server on your home network.
+        NSPhotoLibraryUsageDescription: ioPix sends the photos and videos you choose, and new ones if you turn that on, to your ioPix library.
+        NSCameraUsageDescription: ioPix can take a photo for your ioPix library.
+        NSMicrophoneUsageDescription: ioPix can record a video for your ioPix library.
+        NSLocalNetworkUsageDescription: ioPix connects to your photo server on your home network.
         CFBundleURLTypes:  # the widget's links (Mac); not iopix:// which the separate Mac app answers
           - CFBundleURLName: net.iothing.iopix.native
             CFBundleURLSchemes: [iopix-native]
         NSServices:  # Finder › right-click › Services › Send to iopix Native (Mac; the plug-in answers it)
-          - NSMenuItem: {default: Send to iopix Native}
+          - NSMenuItem: {default: Send to ioPix Native}
             NSMessage: sendToIopixNative
             NSPortName: iopix Native
             NSRequiredContext: {}
@@ -64,8 +64,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2,6"
         SUPPORTS_MACCATALYST: YES
         # on a Mac it sits beside the original Mac app (iopix.app), so it has its own name there
-        APP_DISPLAY_NAME: iopix
-        "APP_DISPLAY_NAME[sdk=macosx*]": iopix Native
+        APP_DISPLAY_NAME: ioPix
+        "APP_DISPLAY_NAME[sdk=macosx*]": ioPix Native
         "PRODUCT_NAME[sdk=macosx*]": iopix Native
         PRODUCT_MODULE_NAME: iopix
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO  # one app on iPhone, iPad and Mac (one App Store record)
@@ -94,7 +94,7 @@ targets:
     info:
       path: NativeWidget/Info.plist
       properties:
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -138,7 +138,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
@@ -178,19 +178,19 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         LSUIElement: false
         CFBundleURLTypes:
           - CFBundleURLName: net.iothing.iopix.uploader
             CFBundleURLSchemes: [iopix]
         NSServices:
-          - NSMenuItem: {default: Send to iopix}
+          - NSMenuItem: {default: Send to ioPix}
             NSMessage: sendToIopix
             NSPortName: iopix
             NSRequiredContext: {}
             NSSendFileTypes: [public.image, public.movie, public.folder]
         LSApplicationCategoryType: public.app-category.photography
-        NSPhotoLibraryUsageDescription: iopix sends the photos and videos added to your Photos library to your iopix library.
+        NSPhotoLibraryUsageDescription: ioPix sends the photos and videos added to your Photos library to your ioPix library.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoadsInWebContent: true
@@ -220,10 +220,10 @@ targets:
         UIRequiredDeviceCapabilities: [arm64]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
-        NSLocalNetworkUsageDescription: iopix connects to your photo server on your home network.
+        NSLocalNetworkUsageDescription: ioPix connects to your photo server on your home network.
         CFBundleURLTypes:
           - CFBundleURLName: net.iothing.iopix
             CFBundleURLSchemes: [iopix]
@@ -236,7 +236,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iopix
         TARGETED_DEVICE_FAMILY: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
-        MARKETING_VERSION: "1.1.1"  # 1.1.0 is approved on Apple TV; the iPhone app is still in review as 1.1.0
+        MARKETING_VERSION: "1.1.1"  # the Apple TV app: nothing changed there since
   iopixTopShelf:
     type: app-extension
     platform: tvOS
@@ -254,7 +254,7 @@ targets:
         UIRequiredDeviceCapabilities: [arm64]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSExtension:
@@ -281,7 +281,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -310,7 +310,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: iopix
+        CFBundleDisplayName: ioPix
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

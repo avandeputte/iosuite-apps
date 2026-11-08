@@ -164,7 +164,7 @@ struct PhotoPager: View {
         .sheet(isPresented: $album) { BulkAlbumSheet(ids: [current]).environmentObject(store) }
         .confirmationDialog("Move this photo to the trash?", isPresented: $confirmTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) { Task { await trash() } }
-        } message: { Text("It can be restored from the trash in iopix.") }
+        } message: { Text("It can be restored from the trash in ioPix.") }
         .editToast($toast)
         .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { if $0 == nil { removeShared() } })) { f in
             ShareSheet(items: [f.url])
@@ -234,7 +234,7 @@ struct PhotoPager: View {
                     Button(role: .destructive) { confirmTrash = true } label: { Label("Move to Trash", systemImage: "trash") }
                 }
                 Divider()
-                Button { openInWeb() } label: { Label("Open in iopix", systemImage: "safari") }
+                Button { openInWeb() } label: { Label("Open in ioPix", systemImage: "safari") }
             } label: {
                 ViewerIcon(symbol: "ellipsis")
             }

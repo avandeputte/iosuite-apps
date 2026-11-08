@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Calls for the settings and maintenance screens: JSON in and out, the server's own error text on failure.
+/// Calls for the Settings and Tools screens: JSON in and out, the server's own error text on failure.
 enum AdminAPI {
     static func get(_ path: String, _ query: [URLQueryItem] = []) async throws -> [String: Any] {
         try await IopixClient.shared.json(path, query: query)
@@ -11,6 +11,15 @@ enum AdminAPI {
         var r = IopixClient.shared.request(path, method: "POST")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await IopixClient.shared.session.data(for: r)
+        if data.isEmpty, let h = resp as? HTTPURLResponse, (200..<300).contains(h.statusCode) { return [:] }
+        return try IopixClient.shared.check(data, resp)
+    }
+
+    /// DELETE (a session, an app password); the answer, or the server's reason it refused.
+    @discardableResult
+    static func delete(_ path: String) async throws -> [String: Any] {
+        let r = IopixClient.shared.request(path, method: "DELETE")
         let (data, resp) = try await IopixClient.shared.session.data(for: r)
         if data.isEmpty, let h = resp as? HTTPURLResponse, (200..<300).contains(h.statusCode) { return [:] }
         return try IopixClient.shared.check(data, resp)

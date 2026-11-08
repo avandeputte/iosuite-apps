@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The app's tabs, all native. Settings, Maintenance and editing a photo open the web app (under More).
+/// The app's tabs, all native. Editing a photo opens the web app (under More).
 struct AppTabs: View {
     @EnvironmentObject private var router: Router
+    @EnvironmentObject private var queue: UploadQueue
     @Environment(\.horizontalSizeClass) private var width
     var showUploads: () -> Void
 
@@ -15,6 +16,8 @@ struct AppTabs: View {
             }
         }
         .hardTopEdge()
+        // the other ioThing apps, for the mark top left: read again when the account changes
+        .task(id: queue.account?.signedIn == true ? (queue.account?.name ?? "?") : "") { await SuiteApps.shared.load(account: queue.account?.signedIn == true ? (queue.account?.name ?? "?") : nil) }
     }
 
     private var tabs: some View {
@@ -99,7 +102,7 @@ struct SidebarLayout: View {
 
     private var iopix: [Row] {
         var rows = [Row(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, screen: .settings)]
-        if queue.account?.isAdmin == true { rows.append(Row(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, screen: .maintenance)) }
+        if queue.account?.isAdmin == true { rows.append(Row(title: "Tools", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, screen: .tools)) }
         return rows
     }
 
@@ -113,15 +116,16 @@ struct SidebarLayout: View {
                 }
                 Section("Library") { ForEach(library) { row($0) } }
                 if !management.isEmpty { Section("Library management") { ForEach(management) { row($0) } } }
-                Section("iopix") {
+                Section("ioPix") {
                     ForEach(iopix) { row($0) }
                     Button(action: showUploads) {
-                        Label { Text("Send photos to iopix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
+                        Label { Text("Send photos to ioPix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
                     }
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("iopix")
+            .navigationTitle("ioPix")
+            .toolbar { ToolbarItem(placement: .topBarLeading) { SuiteMenuButton() } }
         } detail: {
             detail
         }
@@ -194,7 +198,7 @@ struct ScreenView: View {
         case .history(let photo): ManageHistoryScreen(photo: photo)
         case .faces(let tab): FacesReviewScreen(tab: tab)
         case .settings: AdminSettingsScreen()
-        case .maintenance: AdminMaintenanceScreen()
+        case .tools: AdminToolsScreen()
         case .consistency: AdminConsistencyScreen()
         case .map:
             PhotoMap { bbox in Router.shared.morePath.append(.photos(PhotoQuery([("bbox", bbox)]), title: "This area")) }
@@ -238,7 +242,7 @@ struct MoreView: View {
     private var iopix: [Item] {
         var list = [Item(title: "Settings", symbol: "gearshape.fill", hue: Hue.slate, destination: .settings)]
         if queue.account?.isAdmin == true {
-            list.append(Item(title: "Maintenance", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .maintenance))
+            list.append(Item(title: "Tools", symbol: "wrench.and.screwdriver.fill", hue: Hue.slate, destination: .tools))
         }
         return list
     }
@@ -248,10 +252,10 @@ struct MoreView: View {
             List {
                 Section("Library") { ForEach(library) { row($0) } }
                 ManageMoreSection()
-                Section("iopix") { ForEach(iopix) { row($0) } }
+                Section("ioPix") { ForEach(iopix) { row($0) } }
                 Section {
                     Button(action: showUploads) {
-                        Label { Text("Send photos to iopix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
+                        Label { Text("Send photos to ioPix").foregroundStyle(.primary) } icon: { icon("square.and.arrow.up", Hue.blue) }
                     }
                 }
             }
@@ -275,11 +279,11 @@ struct MoreView: View {
     static func title(of route: String) -> String {
         switch route.dropFirst(2).split(separator: "?").first.map(String.init) ?? "" {
         case "settings": return "Settings"
-        case "maintenance": return "Maintenance"
+        case "tools": return "Tools"
         case "duplicates": return "Duplicate files"
         case "detected": return "Detected content"
-        case "photos": return "Edit in iopix"
-        default: return "iopix"
+        case "photos": return "Edit in ioPix"
+        default: return "ioPix"
         }
     }
 }

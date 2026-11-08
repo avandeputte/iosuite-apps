@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What the settings screens read from the server: the account (/api/auth/me), the server's state (/api/status)
-/// and, for admins, everything Maintenance knows (/api/maintenance).
+/// and the library facts (/api/maintenance; paths and databases for admins only).
 @MainActor
 final class AdminModel: ObservableObject {
     @Published var me: [String: Any] = [:]
@@ -15,8 +15,8 @@ final class AdminModel: ObservableObject {
     var isAdmin: Bool { me.bool("isAdmin") || status.bool("isAdmin") }
     var usersExist: Bool { me.bool("usersExist") || status.bool("usersExist") }
     var editing: Bool { status.bool("editing") }
-    var appName: String { status.str("appName") ?? m.str("appName") ?? "iopix" }
-    var version: String { status.str("appVersion") ?? "?" }
+    var appName: String { status.str("appName") ?? m.str("appName") ?? "ioPix" }
+    var version: String { status.str("version") ?? "?" }
     /// The account's display settings (theme, units, badges, info_hide), kept on the server for signed-in people.
     var prefs: [String: Any] { me.dict("settings") }
 
@@ -26,7 +26,7 @@ final class AdminModel: ObservableObject {
             async let b = AdminAPI.get("api/status")
             me = try await a
             status = try await b
-            m = (try? await AdminAPI.get("api/maintenance")) ?? m  // everyone gets the counts; admins the paths and storage too
+            m = (try? await AdminAPI.get("api/maintenance")) ?? m  // everyone gets the counts; admins the paths and databases too
             // the app's colors follow the account's theme (IopixApp reads it from UserDefaults)
             if signedIn, let t = prefs.str("theme") { UserDefaults.standard.set(t, forKey: "iopix.pref.theme") }
             problem = nil
@@ -53,8 +53,8 @@ final class AdminModel: ObservableObject {
     }
 }
 
-/// Settings, as the web app groups them: your account and display for everyone; the server, editing, AI and
-/// users for admins. Maintenance and About sit at the end.
+/// Settings, in the web app's tab order: Account and Display for everyone; Editing, Library, AI, Server and Security
+/// for admins. The checks and clean-up pages are under Tools, not here.
 struct AdminSettingsScreen: View {
     @StateObject private var model = AdminModel()
     @StateObject private var notice = AdminNotice()
@@ -83,15 +83,15 @@ struct AdminSettingsScreen: View {
             }
             if model.isAdmin {
                 Section("Admin") {
-                    NavigationLink { AdminServerScreen(model: model) } label: { Label("digiKam and server", systemImage: "server.rack") }
                     if model.editing {
                         NavigationLink { AdminEditingScreen(model: model) } label: { Label("Editing", systemImage: "pencil") }
                     }
-                    NavigationLink { AdminAISettingsScreen(model: model) } label: { Label("AI and search", systemImage: "sparkles") }
+                    NavigationLink { AdminLibraryScreen(model: model) } label: { Label("Library", systemImage: "photo.stack") }
+                    NavigationLink { AdminAISettingsScreen(model: model) } label: { Label("AI", systemImage: "sparkles") }
+                    NavigationLink { AdminServerScreen(model: model) } label: { Label("Server", systemImage: "server.rack") }
                     if model.usersExist {
-                        NavigationLink { AdminUsersScreen(model: model) } label: { Label("Users and sign-in", systemImage: "person.2") }
+                        NavigationLink { AdminUsersScreen(model: model) } label: { Label("Security", systemImage: "lock.shield") }
                     }
-                    NavigationLink { AdminMaintenanceScreen() } label: { Label("Maintenance", systemImage: "wrench.and.screwdriver") }
                 }
             }
             #if targetEnvironment(macCatalyst)
@@ -130,7 +130,6 @@ struct AdminAccountScreen: View {
     @State private var current = ""
     @State private var newPassword = ""
     @State private var picking = false
-    @State private var confirm: AdminConfirm?
 
     private var role: String { model.user.str("role") ?? "" }
     private var person: Person? { model.user.int("person").flatMap { id in store.people.first { $0.id == id } } }
@@ -159,7 +158,7 @@ struct AdminAccountScreen: View {
                         if model.isAdmin { Button(person == nil ? "Link to a person" : "Change") { picking = true } }
                     }
                     if !model.isAdmin && person == nil {
-                        Text("An admin can link your account in Settings › Users.").font(.footnote).foregroundStyle(.secondary)
+                        Text("An admin can link your account in Settings › Security.").font(.footnote).foregroundStyle(.secondary)
                     }
                     if let person {
                         Button("Photos of me") { router.open("#/photos?tag=\(person.id)") }
@@ -180,15 +179,11 @@ struct AdminAccountScreen: View {
                         .disabled(current.isEmpty || newPassword.count < 8)
                     }
                 }
+                if !model.user.bool("passwordless") {
+                    AdminAppPasswordsSection()
+                }
                 if model.me.str("signedInBy") != "proxy" {
                     Section {
-                        Button("Sign out everywhere else") {
-                            confirm = AdminConfirm(title: "Sign out everywhere else?",
-                                                   message: "Every other browser and phone signed in as \(model.user.str("name") ?? "you") will have to sign in again. This one stays signed in.",
-                                                   button: "Sign out everywhere") {
-                                await notice.run("Signed out everywhere else.") { try await AdminAPI.post("api/auth/logout_all") }
-                            }
-                        }
                         Button(model.me.str("signedInBy") == "cloudflare" && model.me.bool("throughCloudflare") ? "Sign out (of Cloudflare too)" : "Sign out", role: .destructive) {
                             Task {
                                 await IopixClient.shared.signOut()
@@ -214,7 +209,6 @@ struct AdminAccountScreen: View {
                 }
             }
         }
-        .adminConfirm($confirm)
         .adminNotice(notice)
     }
 
@@ -320,11 +314,11 @@ struct AdminDisplayScreen: View {
             } header: { Text("Info panel") } footer: { Text("The sections the photo info panel shows. \(keptWith)") }
             if model.isAdmin {
                 Section {
-                    TextField("iopix", text: $appName)
+                    TextField("ioPix", text: $appName)
                     Button("Save name") {
                         Task { await notice.run("Name saved.") { try await AdminAPI.post("api/settings", ["app_name": appName]); await model.load() } }
                     }
-                } header: { Text("Name") } footer: { Text("What \(model.appName) calls itself, for everyone: the top bar, the browser tab and the installed app. Leave it empty for iopix.") }
+                } header: { Text("Name") } footer: { Text("What \(model.appName) calls itself, for everyone: the top bar, the browser tab and the installed app. Leave it empty for ioPix.") }
                 Section {
                     Picker("Map provider", selection: $provider) {
                         Text("OpenStreetMap (no account needed)").tag("osm")
@@ -365,9 +359,10 @@ struct AdminDisplayScreen: View {
     }
 }
 
-// MARK: - digiKam and server
+// MARK: - Library
 
-struct AdminServerScreen: View {
+/// Settings › Library: the digiKam database, album roots, the ioPix database, sync with digiKam and the file scanner.
+struct AdminLibraryScreen: View {
     @ObservedObject var model: AdminModel
     @StateObject private var notice = AdminNotice()
     @State private var confirm: AdminConfirm?
@@ -400,41 +395,14 @@ struct AdminServerScreen: View {
 
     var body: some View {
         Form {
+            Section { Text(intro).font(.footnote).foregroundStyle(.secondary) }
             digikamDatabase
             albumRoots
             viewerDatabase
-            Section {
-                Toggle("Check daily", isOn: Binding(get: { model.m.bool("updateCheck") }, set: { on in
-                    Task { await notice.run(on ? "\(model.appName) will check for updates once a day." : "\(model.appName) will not contact GitHub on its own.") { try await AdminAPI.post("api/settings", ["update_check": on]); await model.load() } }
-                }))
-                .disabled(model.m.bool("updateCheckLocked"))
-            } header: { Text("Check for updates daily") } footer: {
-                Text(model.m.bool("updateCheckLocked") ? "Switched off by UPDATE_CHECK=0 in the environment: \(model.appName) never contacts GitHub on its own."
-                     : "Once a day \(model.appName) asks GitHub whether a newer version exists and, if so, tells admins. Only the public list of changes is fetched; nothing about this install or its photos is sent.")
-            }
-            if model.m["mcpEnabled"] != nil {  // iopix 1.85 and later
-                Section {
-                    Toggle("MCP server", isOn: Binding(get: { model.m.bool("mcpEnabled") || model.m.bool("mcpLocked") }, set: { on in
-                        Task { await notice.run(on ? "The MCP server at /mcp is on." : "The MCP server is off: /mcp does not answer.") { try await AdminAPI.post("api/settings", ["mcp_enabled": on]); await model.load() } }
-                    }))
-                    .disabled(model.m.bool("mcpLocked"))
-                } header: { Text("MCP server") } footer: {
-                    Text(model.m.bool("mcpLocked") ? "Switched on by MCP=1 in the environment."
-                         : "The endpoint at /mcp that lets an AI assistant (Claude, for example) search and read this library. Off: /mcp does not answer at all. With Require sign-in on, an assistant must also send the admin token.")
-                }
-            }
-            Section {
-                Toggle("Read-only", isOn: Binding(get: { model.m.bool("readOnly") }, set: { on in
-                    Task { await notice.run(on ? "Read-only mode on." : "Read-only mode off.") { try await AdminAPI.post("api/settings", ["read_only": on]); await model.load() } }
-                }))
-                .disabled(model.m.bool("readOnlyLocked"))
-            } header: { Text("Read-only mode") } footer: {
-                Text(model.m.bool("readOnlyLocked") ? "Locked on by READ_ONLY=1 in the environment: nothing in the library can be changed from \(model.appName)."
-                     : "When on, \(model.appName) only browses: editing, tagging, face naming, place tags, GPS tracks, metadata sync and database updates are refused by the server. Favorites and albums keep working.")
-            }
-            digikamSync
+            if !dk.bool("none") { digikamSync }  // no digiKam at all: nothing to sync with
+            fileScanner
         }
-        .navigationTitle("digiKam and server")
+        .navigationTitle("Library")
         .task {
             db = DBForm(d)
             await loadRoots()
@@ -527,57 +495,105 @@ struct AdminServerScreen: View {
         }
     }
 
+    /// ioPix's own database: MariaDB or MySQL only (the web app's ioPix database box).
     private var viewerDatabase: some View {
         Section {
             if viewer.isEmpty {
                 ProgressView()
             } else {
-                Text("Currently: \(viewer.str("type") == "mysql" ? "MySQL \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")" : "SQLite file \(viewer.str("sqlite_file") ?? "")")")
+                Text(!viewer.bool("configured") ? "No database yet: \(model.appName) needs a MariaDB (or MySQL) database of its own."
+                     : "\(viewer.str("error") == nil ? "Currently" : "Configured"): MariaDB \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")")
                     .font(.footnote)
-                if let e = viewer.str("error"), !e.isEmpty {
-                    Text("The configured MySQL database could not be used (\(e)); the SQLite file is in use meanwhile.").font(.footnote).foregroundStyle(.orange)
+                if let e = viewer.str("error"), !e.isEmpty, viewer.bool("configured") {
+                    Text("Not answering: \(e)").font(.footnote).foregroundStyle(.orange)
+                    Button("Retry the configured database") {
+                        vResult = "Trying…"
+                        Task {
+                            do { try await AdminAPI.post("api/viewerdb/retry"); vResult = "It answers now. Restarting…" } catch { vResult = error.localizedDescription }
+                        }
+                    }
                 }
-                Picker("Type", selection: $vdb.type) {
-                    Text("SQLite file").tag("sqlite"); Text("MySQL / MariaDB").tag("mysql")
+                TextField("Host", text: $vdb.host).autocorrectionDisabled().textInputAutocapitalization(.never)
+                TextField("Port", text: $vdb.port).keyboardType(.numberPad)
+                TextField("Database", text: $vdb.database).autocorrectionDisabled().textInputAutocapitalization(.never)
+                TextField("User", text: $vdb.user).autocorrectionDisabled().textInputAutocapitalization(.never)
+                SecureField(viewer.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $vdb.password)
+                if viewer.bool("configured") && viewer.str("error") == nil {
+                    Toggle("Copy all the data from the current database to the new one", isOn: $vCopy)
                 }
-                if vdb.type == "mysql" {
-                    TextField("Host", text: $vdb.host).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    TextField("Port", text: $vdb.port).keyboardType(.numberPad)
-                    TextField("Database", text: $vdb.database).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    TextField("User", text: $vdb.user).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    SecureField(viewer.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $vdb.password)
-                }
-                Toggle("Copy all the data to the new database", isOn: $vCopy)
-                Toggle("Drop and recreate the tables there first", isOn: $vDrop)
+                Toggle("Drop and recreate \(model.appName)’s tables at the target first", isOn: $vDrop)
                 Button("Test connection") {
                     vResult = "Testing…"
                     Task {
                         do {
-                            let r = try await AdminAPI.post("api/viewerdb/test", vdb.payload)
+                            let r = try await AdminAPI.post("api/viewerdb/test", viewerPayload)
                             let t = r.dict("tables")
-                            vResult = "OK: \(r.str("version") ?? ""). " + (t.isEmpty ? "No \(model.appName) tables there yet." : "Tables already there: " + t.map { "\($0.key) (\(AdminFormat.n(($0.value as? NSNumber)?.intValue)))" }.sorted().joined(separator: ", "))
+                            vResult = "OK: \(r.str("version") ?? ""). " + (t.isEmpty ? "An empty database." : "\(model.appName) tables already there: " + t.map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", "))
                         } catch { vResult = error.localizedDescription }
                     }
                 }
-                Button("Switch") {
-                    let target = vdb.type == "mysql" ? "MySQL \(vdb.user)@\(vdb.host):\(vdb.port)/\(vdb.database)" : "the SQLite file"
-                    let what = vCopy ? "Every row is copied there first\(vDrop ? ", after dropping and recreating the tables at the target." : " (rows with the same ids are replaced).")"
-                                     : "The data is NOT copied; \(model.appName) starts empty there unless the tables already hold data."
-                    confirm = AdminConfirm(title: "Switch \(model.appName) to \(target)?", message: "\(what) \(model.appName) restarts when the copy is done.", button: "Switch", destructive: vDrop) {
+                Button(viewer.bool("configured") ? "Switch" : "Use this database") {
+                    let copy = vCopy && viewer.bool("configured") && viewer.str("error") == nil
+                    let target = "MariaDB \(vdb.user)@\(vdb.host):\(vdb.port)/\(vdb.database)"
+                    let what = copy ? "Every row is copied there first\(vDrop ? ", after dropping and recreating the tables there." : ".")"
+                                    : vDrop ? "The tables there are dropped and created again." : ""
+                    confirm = AdminConfirm(title: "\(viewer.bool("configured") ? "Switch" : "Set up") \(model.appName) on \(target)?", message: "\(what) \(model.appName) restarts on the new database.", button: viewer.bool("configured") ? "Switch" : "Use it", destructive: vDrop) {
                         vResult = "Copying… this can take a minute on a large library."
                         do {
-                            var body = vdb.payload
-                            body["copy"] = vCopy; body["drop"] = vDrop
+                            var body = viewerPayload
+                            body["copy"] = copy; body["drop"] = vDrop
                             let r = try await AdminAPI.post("api/viewerdb/switch", body)
-                            vResult = "Switched to \(r.str("database") ?? ""): " + r.dict("copied").map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", ") + ". Restarting…"
+                            vResult = "Set up on \(r.str("database") ?? ""): " + r.dict("copied").map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", ") + ". Restarting…"
                         } catch { vResult = error.localizedDescription }
                     }
                 }
                 if let vResult { Text(vResult).font(.footnote).foregroundStyle(.secondary) }
             }
         } header: { Text("\(model.appName) database") } footer: {
-            Text("Where \(model.appName) keeps its own data: users, albums, favorites, settings, pending edits and the AI results. SQLite by default, or a MySQL/MariaDB database of its own. Switching copies every row across and restarts \(model.appName).")
+            Text("Where \(model.appName) keeps its own data (users, albums, settings, AI results). Switching copies every row across and restarts \(model.appName).")
         }
+    }
+
+    private var viewerPayload: [String: Any] {
+        ["host": vdb.host, "port": vdb.port, "database": vdb.database, "user": vdb.user, "password": vdb.password]
+    }
+
+    private var intro: String {
+        let p = model.m.dict("paths")
+        guard let lib = p.str("library") else { return "\(AdminFormat.n(model.m.int("photos"))) photos in the library." }
+        return "\(lib) (\(AdminFormat.n(model.m.int("photos"))) photos and videos). \(model.appName)'s own files are in \(p.str("data") ?? "?")."
+    }
+
+    /// The file scanner: finds what changes in the album folders outside ioPix.
+    private var fileScanner: some View {
+        let sc = model.m.dict("scanner")
+        return Section {
+            Toggle("File scanner", isOn: Binding(get: { sc.bool("enabled") }, set: { on in
+                Task { await notice.run(on ? "File scanner on: a first pass starts now." : "File scanner off.") { try await AdminAPI.post("api/settings", ["file_scanner": on]); await model.load() } }
+            }))
+            Picker("How often", selection: Binding(get: { sc.int("interval") ?? 15 }, set: { v in
+                Task { await notice.run("Saved") { try await AdminAPI.post("api/settings", ["scan_interval": v]); await model.load() } }
+            })) {
+                Text("Every 5 minutes").tag(5); Text("Every 15 minutes").tag(15); Text("Every hour").tag(60)
+                Text("Every 6 hours").tag(360); Text("Once a day").tag(1440)
+            }
+            Button("Scan now") {
+                Task { await notice.run("Scanning the album folders…") { try await AdminAPI.post("api/scan"); try? await Task.sleep(nanoseconds: 4_000_000_000); await model.load() } }
+            }
+        } header: { Text("File scanner") } footer: {
+            Text("Finds photos added, changed or removed outside \(model.appName). \(dk.bool("none") ? "Without digiKam, this is how copied photos get in." : "Not needed if everything comes in through Upload or Import.") \(scannerText(sc))")
+        }
+    }
+
+    private func scannerText(_ sc: [String: Any]) -> String {
+        if sc.bool("running") { return "Scanning now…" }
+        let last = sc.dict("last")
+        guard !last.isEmpty else { return "No pass yet." }
+        let parts = [last.int("added").flatMap { $0 > 0 ? AdminFormat.plural($0, "new file") : nil },
+                     last.int("modified").flatMap { $0 > 0 ? AdminFormat.plural($0, "changed file") : nil },
+                     last.int("removed").flatMap { $0 > 0 ? AdminFormat.plural($0, "file") + " gone" : nil },
+                     last.int("folders").flatMap { $0 > 0 ? AdminFormat.plural($0, "new folder") : nil }].compactMap { $0 }
+        return "Last pass \(AdminFormat.when(last.dbl("finished"))): \(parts.isEmpty ? "nothing new" : parts.joined(separator: ", ")).\(last.str("error").map { " Error: \($0)" } ?? "")"
     }
 
     @ViewBuilder private var digikamSync: some View {
@@ -627,6 +643,7 @@ struct AdminServerScreen: View {
         guard let v = try? await AdminAPI.get("api/viewerdb") else { return }
         viewer = v
         vdb = DBForm(v)
+        vdb.type = "mysql"  // the only kind since iopix 1.113
     }
 }
 
@@ -635,11 +652,9 @@ struct AdminServerScreen: View {
 struct AdminEditingScreen: View {
     @ObservedObject var model: AdminModel
     @StateObject private var notice = AdminNotice()
-    @State private var placeTags: [String: Any]?
     @State private var templates: [Template] = []
     @State private var editing: Template?
     @State private var confirm: AdminConfirm?
-    @State private var poll: Task<Void, Never>?
 
     struct Template: Identifiable, Equatable {
         var id = UUID()
@@ -673,33 +688,6 @@ struct AdminEditingScreen: View {
                 }
             } header: { Text("Sidecar file names") } footer: { Text("Existing sidecars are read either way; pick what your digiKam is set to.") }
             Section {
-                if let p = placeTags {
-                    let prog = p.dict("progress")
-                    Text("\(AdminFormat.n(p.int("to_tag"))) of \(AdminFormat.n(p.int("photos"))) geotagged photos would get a place tag they do not have yet.").font(.footnote)
-                    if (p.int("to_untag") ?? 0) > 0 { Text("\(AdminFormat.n(p.int("to_untag"))) photos have a place tag from an earlier position, which would be removed.").font(.footnote) }
-                    let missing = p.strings("missing_tags")
-                    Text(missing.isEmpty ? "All the needed tags already exist." : "\(AdminFormat.n(missing.count)) new tags would be created under “\(p.str("root") ?? "Places")”, for example: \(missing.prefix(5).joined(separator: ", ")).").font(.footnote)
-                    if !missing.isEmpty && p.bool("digikamRunning") { Text("digiKam is running. Quit it first; the new tags go into its database.").font(.footnote).foregroundStyle(.orange) }
-                    if prog.bool("running") { AdminProgress(done: prog.int("done") ?? 0, total: prog.int("total") ?? 0, label: "Tagging") }
-                    if let e = prog.str("error"), !e.isEmpty { Text(e).font(.footnote).foregroundStyle(.red) }
-                    Button("Create and assign") {
-                        Task {
-                            await notice.run(nil) {
-                                let r = try await AdminAPI.post("api/placetags", ["ids": [Int]()])
-                                notice.say("Tagging \(AdminFormat.n(r.int("to_tag"))) photos\((r.int("creating") ?? 0) > 0 ? ", creating \(r.int("creating")!) tags" : "") in the background.")
-                                poll?.cancel()
-                                poll = Task { await pollPlaceTags() }
-                            }
-                        }
-                    }
-                    .disabled((p.int("to_tag") ?? 0) == 0 || prog.bool("running") || (!missing.isEmpty && p.bool("digikamRunning")))
-                } else {
-                    Button("Review place tags") { Task { placeTags = try? await AdminAPI.get("api/placetags") } }
-                }
-            } header: { Text("Place tags from GPS positions") } footer: {
-                Text("Turns each geotagged photo's town into real digiKam tags under “Places/Country/Region/Town”, so places are searchable in digiKam too. Town names come from the offline place lookup and can be a neighboring town.")
-            }
-            Section {
                 ForEach(templates) { t in
                     Button { editing = t } label: {
                         VStack(alignment: .leading, spacing: 2) {
@@ -724,7 +712,6 @@ struct AdminEditingScreen: View {
         }
         .navigationTitle("Editing")
         .onAppear { templates = Self.parse(model.m["templates"]) }
-        .onDisappear { poll?.cancel() }
         .sheet(item: $editing) { t in
             AdminTemplateSheet(template: t) { saved in
                 if let i = templates.firstIndex(where: { $0.id == saved.id }) { templates[i] = saved } else { templates.append(saved) }
@@ -746,16 +733,6 @@ struct AdminEditingScreen: View {
             try await AdminAPI.post("api/settings", ["templates": templates.map { ["name": $0.name, "fields": $0.fields] }])
             await model.load()
             templates = Self.parse(model.m["templates"])
-        }
-    }
-
-    private func pollPlaceTags() async {
-        for _ in 0..<200 {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            if Task.isCancelled { return }  // the screen is gone
-            guard let p = try? await AdminAPI.get("api/placetags") else { return }
-            placeTags = p
-            if !p.dict("progress").bool("running") { return }
         }
     }
 }
@@ -793,7 +770,7 @@ struct AdminTemplateSheet: View {
     }
 }
 
-// MARK: - AI and search (the preferences; the jobs and models are in Maintenance)
+// MARK: - AI (the background work, the search model, then the analysis jobs and their models)
 
 struct AdminAISettingsScreen: View {
     @ObservedObject var model: AdminModel
@@ -828,12 +805,12 @@ struct AdminAISettingsScreen: View {
                         }
                     }
                 }
-                NavigationLink("AI analysis and models") { AdminModelsScreen() }
+                NavigationLink("Analysis and models") { AdminModelsScreen() }
             } header: { Text("Search model") } footer: {
-                Text("Which model content search uses. More models, and the analysis jobs, are in Maintenance › AI analysis and models.")
+                Text("Which model content search uses. The other models and the analysis jobs are under Analysis and models.")
             }
         }
-        .navigationTitle("AI and search")
+        .navigationTitle("AI")
         .task { await load() }
         .adminConfirm($confirm)
         .adminNotice(notice)
@@ -850,7 +827,6 @@ struct AdminAISettingsScreen: View {
 
 struct AdminAboutScreen: View {
     @ObservedObject var model: AdminModel
-    @State private var update: [String: Any] = [:]
 
     var body: some View {
         List {
@@ -858,7 +834,6 @@ struct AdminAboutScreen: View {
                 AdminRow(title: "Address") { Text(AppConfig.serverURL.host ?? AppConfig.serverURL.absoluteString).foregroundStyle(.secondary) }
                 AdminRow(title: "\(model.appName) version") { Text("v\(model.version)").foregroundStyle(.secondary) }
                 if let c = model.status.str("commit") { AdminRow(title: "Build") { Text(c).font(.body.monospaced()).foregroundStyle(.secondary) } }
-                if !update.isEmpty { Text(updateText).font(.footnote).foregroundStyle(.secondary) }
                 AdminRow(title: "Photos and videos") { Text(AdminFormat.n(model.m.int("photos"))).foregroundStyle(.secondary) }
             }
             Section("This app") {
@@ -867,25 +842,9 @@ struct AdminAboutScreen: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if model.isAdmin {
-                Section { NavigationLink("Check for updates in Maintenance") { AdminMaintenanceScreen() } }
-            }
         }
         .navigationTitle("About")
-        .task {
-            if model.status.isEmpty { await model.load() }
-            update = (try? await AdminAPI.get("api/update")) ?? [:]
-        }
-    }
-
-    private var updateText: String {
-        let c = update.dict("check")
-        switch c.str("status") {
-        case "current": return "This is the latest version."
-        case "update": return "\(c.str("remoteVersion").map { "v\($0)" } ?? "A newer build") is available\(c.str("remoteDate").map { " (\($0))" } ?? "")."
-        case nil: return "Not checked for updates yet."
-        default: return "Couldn't check for updates\(c.str("error").map { ": \($0)" } ?? "")."
-        }
+        .task { if model.status.isEmpty { await model.load() } }
     }
 }
 

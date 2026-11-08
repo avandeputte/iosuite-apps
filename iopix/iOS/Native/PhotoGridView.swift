@@ -237,7 +237,7 @@ struct PhotoGridScreen: View {
             Button { Task { await store.setFavorite(id, !fav) } } label: {
                 Label(fav ? "Remove from Favorites" : "Add to Favorites", systemImage: fav ? "heart.slash" : "heart")
             }
-            Button { router.open("#/photos?p=\(id)") } label: { Label("Open in iopix", systemImage: "safari") }
+            Button { router.open("#/photos?p=\(id)") } label: { Label("Open in ioPix", systemImage: "safari") }
         }
     }
 
@@ -288,7 +288,7 @@ struct PhotoGridScreen: View {
                 Button("Select") { selecting = true }
                 if isRoot {
                     Button(action: showUploads) { Image(systemName: queue.pending.isEmpty ? "square.and.arrow.up" : "arrow.up.circle") }
-                        .accessibilityLabel("Send photos to iopix")
+                        .accessibilityLabel("Send photos to ioPix")
                 }
             }
         }

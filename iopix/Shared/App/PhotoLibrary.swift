@@ -77,9 +77,9 @@ final class PhotosWatcher: NSObject, ObservableObject, PHPhotoLibraryChangeObser
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else {
             #if os(macOS)
-            note = "iopix may not see your photos. Allow it in System Settings › Privacy & Security › Photos."
+            note = "ioPix may not see your photos. Allow it in System Settings › Privacy & Security › Photos."
             #else
-            note = "iopix may not see your photos. Allow it in Settings › iopix › Photos."
+            note = "ioPix may not see your photos. Allow it in Settings › ioPix › Photos."
             #endif
             enabled = false
             return

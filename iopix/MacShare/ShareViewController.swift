@@ -26,7 +26,7 @@ final class ShareViewController: NSViewController {
 
 @MainActor
 final class ShareModel: ObservableObject {
-    @Published var text = "Handing to iopix…"
+    @Published var text = "Handing to ioPix…"
 
     weak var extensionContext: NSExtensionContext?
 
@@ -45,7 +45,7 @@ final class ShareModel: ObservableObject {
     func hand(_ providers: [NSItemProvider]) async -> Int {
         guard let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "69M2JRAT8P.net.iothing.iopix")?
             .appendingPathComponent("Inbox", isDirectory: true) else {
-            text = "iopix can't be reached from here. Open the iopix app and try again."
+            text = "ioPix can't be reached from here. Open the ioPix app and try again."
             return 0
         }
         // written as "<id>.tmp" and renamed when complete, so the app never picks up a half-copied batch
@@ -58,14 +58,14 @@ final class ShareModel: ObservableObject {
         }
         if n == 0 {
             try? FileManager.default.removeItem(at: inbox)
-            text = "Only photos and videos can be sent to iopix."
+            text = "Only photos and videos can be sent to ioPix."
             return 0
         }
         try? FileManager.default.moveItem(at: inbox, to: folder.appendingPathComponent(id, isDirectory: true))
         if let url = URL(string: "iopix://inbox") {
             extensionContext?.open(url) { ok in if !ok { NSWorkspace.shared.open(url) } }
         }
-        text = n == 1 ? "1 item handed to iopix." : "\(n) items handed to iopix."
+        text = n == 1 ? "1 item handed to ioPix." : "\(n) items handed to ioPix."
         return n
     }
 

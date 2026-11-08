@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Users and sign-in: whether visitors must sign in, the accounts (role, password, email, person, sign-in list),
+/// Settings › Security: whether visitors must sign in, the accounts (role, password, email, person, sign-in list),
 /// adding one, and sign-in at a reverse proxy.
 struct AdminUsersScreen: View {
     @ObservedObject var model: AdminModel
@@ -24,7 +24,7 @@ struct AdminUsersScreen: View {
                     }
                 }))
             } footer: {
-                Text("Visitors see only the sign-in screen; nothing from the library (not even thumbnails) is served without an account. Viewers keep settings, favorites and albums; editors can also change the library; admins can also change settings, run maintenance and manage users.")
+                Text("Visitors see only the sign-in screen; nothing from the library (not even thumbnails) is served without an account. Viewers keep settings, favorites and albums; editors can also change the library; admins can also change settings, use Tools and manage users.")
             }
             Section("Accounts") {
                 ForEach(Array(users.enumerated()), id: \.offset) { _, u in
@@ -50,7 +50,7 @@ struct AdminUsersScreen: View {
                 Text("Someone signed in at your reverse proxy (Cloudflare Access, Authelia, Authentik, oauth2-proxy) is signed in here too, matched to an account by email, then name.")
             }
         }
-        .navigationTitle("Users and sign-in")
+        .navigationTitle("Security")
         .task { requireLogin = model.status.bool("requireLogin"); await load() }
         .refreshable { await load() }
         .sheet(isPresented: $adding) { AdminAddUserSheet(roles: roles) { name in notice.say("Added \(name)."); Task { await load() } } }

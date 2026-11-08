@@ -31,8 +31,8 @@ struct UploadItem: Codable, Identifiable, Equatable {
         case .review: return "New"
         case .waiting: return message ?? "Waiting"
         case .sending: return "Sending"
-        case .done: return "In iopix"
-        case .duplicate: return "Already in iopix"
+        case .done: return "In ioPix"
+        case .duplicate: return "Already in ioPix"
         case .failed: return message ?? "Not sent"
         }
     }
@@ -209,7 +209,7 @@ final class UploadQueue: ObservableObject {
         #if os(iOS)
         // iOS allows a short while in the background; when that runs out the upload in flight is stopped and the
         // item stays waiting, so it starts again the next time the app is open (nothing is lost, just time)
-        bgTask = UIApplication.shared.beginBackgroundTask(withName: "iopix uploads") { [weak self] in
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "ioPix uploads") { [weak self] in
             Task { @MainActor in self?.backgroundTimeRanOut() }
         }
         defer { endBackgroundTask() }
@@ -276,7 +276,7 @@ final class UploadQueue: ObservableObject {
             } catch let e as PhotoLibrary.Gone {
                 update(id) { $0.state = .failed; $0.message = e.localizedDescription }
             } catch is CancellationError {
-                update(id) { $0.state = .waiting; $0.message = "Continues when iopix is open" }
+                update(id) { $0.state = .waiting; $0.message = "Continues when ioPix is open" }
                 return
             } catch let e where !(e is URLError) && (e as NSError).domain != NSURLErrorDomain && (e as NSError).domain != NSPOSIXErrorDomain {
                 // the file itself (unreadable copy, a photo iCloud will not give, no space): this item, not the connection
@@ -287,7 +287,7 @@ final class UploadQueue: ObservableObject {
                 update(id) {
                     $0.attempts = tries
                     $0.state = tries >= 6 ? .failed : .waiting
-                    $0.message = tries >= 6 ? "Could not reach iopix" : "Waiting for a connection"
+                    $0.message = tries >= 6 ? "Could not reach ioPix" : "Waiting for a connection"
                 }
                 offline = true
                 scheduleRetry(after: Double(min(tries, 5)) * 60)

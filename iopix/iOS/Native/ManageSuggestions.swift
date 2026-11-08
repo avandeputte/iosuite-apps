@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The suggestion pages the web keeps under Maintenance › Library (iopix 1.94 and later): Place suggestions, Jersey
+/// The suggestion pages the web keeps under Tools (iopix 1.94 and later): Place suggestions, Jersey
 /// numbers, Clothing matches and Wrongly rotated. Nothing is written until a suggestion is used, and each use is in
 /// the edit log with undo.
 
@@ -213,8 +213,8 @@ struct ManagePersonSuggestScreen: View {
     private var waiting: String? {
         if !ready {
             return kind == .jersey
-                ? "Install text recognition (RapidOCR) and an object detection model under Maintenance › AI analysis and models to read jersey numbers."
-                : "Install a content-search model and an object detection model under Maintenance › AI analysis and models to match people by their clothes."
+                ? "Install text recognition (RapidOCR) and an object detection model under Settings › AI to read jersey numbers."
+                : "Install a content-search model and an object detection model under Settings › AI to match people by their clothes."
         }
         guard cover.0 < cover.1 else { return nil }
         return kind == .jersey
@@ -376,7 +376,7 @@ struct ManageRotationScreen: View {
     @State private var confirmAll = false
 
     private var waiting: String? {
-        if !ready { return "Install a content-search model under Maintenance › AI analysis and models: the check learns what upright looks like from its embeddings of your own photos." }
+        if !ready { return "Install a content-search model under Settings › AI: the check learns what upright looks like from its embeddings of your own photos." }
         if running, let phase {
             let what = phase == "learning" ? "Learning what upright looks like from your photos" : phase == "checking" ? "Checking the photos that read as turned" : "Reading every photo"
             return "\(what): \(cover.0.formatted()) of \(cover.1.formatted()) so far."
