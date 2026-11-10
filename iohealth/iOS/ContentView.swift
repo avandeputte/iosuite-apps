@@ -41,10 +41,14 @@ struct ContentView: View {
                     if let connectionCheck {
                         Text(connectionCheck).font(.footnote).foregroundStyle(.secondary)
                     }
+                    if let server = engine.server, server.isPlainRemote {
+                        Text("This address is plain http outside your own network: your sign-in would travel unencrypted. Use an https address.")
+                            .font(.footnote).foregroundStyle(.red)
+                    }
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The ioHealth server's address, e.g. https://health.example.com behind your reverse proxy, or http://192.168.1.10:8650 on your own network (plain http only works for local addresses). Sign in with your own account, the same user name and password as in the web app and the other io apps; the password is kept in the iPhone's Keychain. The account must be an editor in ioHealth.")
+                    Text("The ioHealth server's address, e.g. https://health.example.com behind your reverse proxy, or http://192.168.1.10:8650 on your own network (an address without http:// or https:// is taken as https, or as http on port 8650 when it is a local one). Sign in with your own account, the same user name and password as in the web app and the other io apps. The first sync trades the password for an app password of this iPhone, and only that is kept in the Keychain; revoke it in the web app under Settings › Account › App passwords. The account must be an editor in ioHealth.")
                 }
 
                 Section {
