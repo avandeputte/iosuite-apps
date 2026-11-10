@@ -18,6 +18,14 @@ enum Prefs {
     static let skipPasswordLikeText = "skipPasswordLikeText"
     /// Bundle ids of apps whose copies never go into the Inbox (password managers).
     static let ignoredApps = "ignoredApps"
+    /// Inbox items older than this many days go (0: kept until the Inbox is full).
+    static let inboxMaxDays = "inboxMaxDays"
+    /// The note's text drawn as Markdown (true) or shown as the text to edit.
+    static let formattedText = "formattedText"
+    /// The Mac's quick note shortcut: "ctrlOptN", "optCmdN", "ctrlOptCmdN", "ctrlOptSpace" or "off".
+    static let quickNoteHotKey = "quickNoteHotKey"
+    /// The Inbox rules (InboxRules), as JSON.
+    static let inboxRules = "inboxRules"
 
     /// Password managers that don't all mark what they copy as private, so copies made while they are
     /// in front are skipped. Editable in Settings.
@@ -43,6 +51,9 @@ enum Prefs {
             appearance: "system",
             ignoredApps: defaultIgnoredApps,
             skipPasswordLikeText: true,
+            inboxMaxDays: 0,
+            formattedText: true,
+            quickNoteHotKey: "ctrlOptN",
         ])
     }
 
@@ -97,6 +108,12 @@ final class NotesStore: ObservableObject {
     @Published private(set) var folders: [Folder] = []
     /// Lowercased tag name -> colour.
     @Published private(set) var tagColors: [String: LabelColor] = [:]
+    /// Note id -> the files attached to it on the server.
+    @Published private(set) var attachments: [String: [Attachment]] = [:]
+    /// Templates for new notes (made in the web app).
+    @Published private(set) var templates: [NoteTemplate] = []
+    /// Attached files being sent or fetched right now (by note id, or attachment id).
+    @Published var transferring: Set<String> = []
     /// Show only notes filed in this folder (picked in the sidebar). New notes go there too.
     @Published var selectedFolder: String? {
         didSet { reloadNotes() }
@@ -126,6 +143,7 @@ final class NotesStore: ObservableObject {
     var syncAgain = false
     var syncTask: Task<Void, Never>?
     var downloading = false
+    var importingShares = false
     var pollTimer: Timer?
     var pathMonitor: AnyObject?
     var wasOnline = true
@@ -177,6 +195,8 @@ final class NotesStore: ObservableObject {
                               color: $0.color.flatMap(LabelColor.init(rawValue:))) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             tagColors = try db.tagColors().compactMapValues(LabelColor.init(rawValue:))
+            attachments = try db.allAttachments()
+            templates = try db.templates()
             pendingChanges = try db.pendingCount()
         } catch {
             report(error)
@@ -259,6 +279,27 @@ final class NotesStore: ObservableObject {
         changed()
         runOCR(on: note)
         return note
+    }
+
+    /// A new note from a template: its title and text with {{date}} and the like filled in, its tags, and its folder
+    /// (or the folder you're looking at).
+    @discardableResult
+    func createNote(from template: NoteTemplate) -> Note? {
+        var note = Self.newNote(title: Markdown.expand(template.title), body: Markdown.expand(template.body), source: "manual")
+        note.tags = Note.cleanTags(template.tags)
+        note.folderID = template.folderID.flatMap { id in folders.contains { $0.id == id } ? id : nil } ?? selectedFolder
+        return save(note)
+    }
+
+    /// Ticks or unticks a checklist item (the line of the note's text it is on).
+    func toggleTask(noteID: String, line: Int, checked: Bool) {
+        edit(noteID) { $0.body = Markdown.toggleTask($0.body, line: line, checked: checked) }
+    }
+
+    /// A note with this title and text as they are (from the share sheet).
+    @discardableResult
+    func createNote(title: String, body: String, source: String) -> Note? {
+        save(Self.newNote(title: title, body: body, source: source))
     }
 
     func createBlankNote() -> Note? {
@@ -438,11 +479,42 @@ final class NotesStore: ObservableObject {
     }
 
     private func addInbox(kind: InboxItem.Kind, text: String, imagePath: String?, source: String, sourceApp: String?, hash: String) {
+        // Inbox rules (Settings): skip it, or save it as a note straight away
+        if let rule = InboxRules.match(kind: kind, text: text, source: source, sourceApp: sourceApp) {
+            switch rule.action {
+            case .skip:
+                if let imagePath, (try? db.allInboxImagePaths().contains(imagePath)) != true {
+                    try? FileManager.default.removeItem(atPath: imagePath)
+                }
+                return
+            case .saveAsNote:
+                var made: Note?
+                if kind == .image, let imagePath, let data = try? Data(contentsOf: URL(fileURLWithPath: imagePath)) {
+                    let title: String? = (source == "screenshot" || text.isEmpty) ? nil : text
+                    made = createImageNote(data: data, title: title, source: source, sourceApp: sourceApp)
+                    if (try? db.allInboxImagePaths().contains(imagePath)) != true { try? FileManager.default.removeItem(atPath: imagePath) }
+                } else if kind == .text {
+                    made = createTextNote(text, source: source, sourceApp: sourceApp)
+                }
+                if let made {
+                    if let folder = rule.folderID, folders.contains(where: { $0.id == folder }) { moveNote(id: made.id, toFolder: folder) }
+                    let tags = rule.tagList
+                    if !tags.isEmpty { setTags(made.tags + tags, for: made.id) }
+                    return
+                }
+            }
+        }
         do {
             try db.addInboxItem(kind: kind, text: text, imagePath: imagePath, source: source, sourceApp: sourceApp, hash: hash)
             let limit = max(UserDefaults.standard.integer(forKey: Prefs.inboxLimit), 10)
             for path in try db.trimInbox(keep: limit) {
                 try? FileManager.default.removeItem(atPath: path)
+            }
+            let days = UserDefaults.standard.integer(forKey: Prefs.inboxMaxDays)
+            if days > 0 {
+                for path in try db.trimInbox(olderThan: Date().timeIntervalSince1970 - Double(days) * 86400) {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
             }
         } catch {
             report(error)

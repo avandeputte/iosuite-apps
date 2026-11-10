@@ -62,7 +62,7 @@ struct Note: Identifiable, Hashable {
     }
 
     var preview: String {
-        let text = body.isEmpty ? ocrText : body
+        let text = body.isEmpty ? ocrText : Markdown.plain(body)
         return String(text.replacingOccurrences(of: "\n", with: " ").prefix(160))
     }
 
@@ -84,6 +84,36 @@ struct Note: Identifiable, Hashable {
             .first { !$0.isEmpty }
         return line.map { String($0.prefix(limit)) }
     }
+}
+
+/// A file attached to a note on the server (a PDF, another picture, a document). Its bytes are fetched when it is
+/// opened; the list of them comes with the note when it syncs.
+struct Attachment: Identifiable, Hashable {
+    let id: String
+    let noteID: String
+    var name: String
+    var mime: String
+    var bytes: Int
+    var sha: String?
+    var width: Int?
+    var height: Int?
+    var createdAt: Double
+
+    var isImage: Bool { mime.hasPrefix("image/") }
+    var isPDF: Bool { mime == "application/pdf" }
+    var symbol: String { isPDF ? "doc.richtext" : isImage ? "photo" : mime.hasPrefix("text/") ? "doc.text" : "doc" }
+    var sizeText: String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
+}
+
+/// A starting point for new notes, made in the web app (Manage › Templates) and synced here. {{date}} and the like
+/// are filled in when a note is made from it (Markdown.expand).
+struct NoteTemplate: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var title: String
+    var body: String
+    var tags: [String]
+    var folderID: String?
 }
 
 /// Something that showed up on the clipboard or in the screenshots folder, waiting in the
@@ -129,6 +159,15 @@ enum AppPaths {
     }
 
     static func noteImageURL(_ id: String) -> URL { noteImagesDir.appendingPathComponent(id) }
+
+    /// Attached files fetched from the server to be opened, one folder per file (its id and version), the file in it
+    /// under its own name. A cache: they can always be fetched again.
+    static var attachmentsDir: URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("ionotes-attachments", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 
     /// Local SQLite database: the notes (an offline copy of the server's, plus changes not sent yet), their
     /// search index, and the inbox.

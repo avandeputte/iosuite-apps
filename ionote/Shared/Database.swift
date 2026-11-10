@@ -120,6 +120,29 @@ final class Database {
     );
     CREATE INDEX IF NOT EXISTS inbox_created ON inbox(created_at DESC);
     CREATE INDEX IF NOT EXISTS inbox_hash ON inbox(hash);
+
+    CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        mime TEXT NOT NULL DEFAULT '',
+        bytes INTEGER NOT NULL DEFAULT 0,
+        sha TEXT,
+        width INTEGER,
+        height INTEGER,
+        created_at REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS attachments_note ON attachments(note_id);
+
+    CREATE TABLE IF NOT EXISTS templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '',
+        folder_id TEXT,
+        updated_at REAL NOT NULL DEFAULT 0
+    );
     """
 
     func transaction(_ body: () throws -> Void) throws {
@@ -297,6 +320,8 @@ final class Database {
             DELETE FROM tag_colors WHERE dirty = 0;
             UPDATE tag_colors SET dirty = 1 WHERE dirty = 2;
             DELETE FROM meta WHERE key = 'rev';
+            DELETE FROM attachments;
+            DELETE FROM templates;
             """)
         return ids
     }
@@ -551,6 +576,69 @@ final class Database {
 
     func clearInbox() throws {
         try exec("DELETE FROM inbox;")
+    }
+
+    // MARK: - Attachments (the server's list, with each note)
+
+    /// The files attached to a note, as the server listed them with the note.
+    func setAttachments(noteID: String, _ list: [Attachment]) throws {
+        try run("DELETE FROM attachments WHERE note_id = ?", [noteID])
+        for a in list {
+            try run("""
+                INSERT OR REPLACE INTO attachments (id, note_id, name, mime, bytes, sha, width, height, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [a.id, noteID, a.name, a.mime, a.bytes, a.sha, a.width, a.height, a.createdAt])
+        }
+    }
+
+    /// note id -> its attached files, oldest first.
+    func allAttachments() throws -> [String: [Attachment]] {
+        var result: [String: [Attachment]] = [:]
+        try query("SELECT id, note_id, name, mime, bytes, sha, width, height, created_at FROM attachments ORDER BY created_at, id", []) { stmt in
+            let a = Attachment(id: Database.string(stmt, 0), noteID: Database.string(stmt, 1), name: Database.string(stmt, 2),
+                               mime: Database.string(stmt, 3), bytes: Int(sqlite3_column_int64(stmt, 4)), sha: Database.optionalString(stmt, 5),
+                               width: sqlite3_column_type(stmt, 6) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(stmt, 6)),
+                               height: sqlite3_column_type(stmt, 7) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(stmt, 7)),
+                               createdAt: sqlite3_column_double(stmt, 8))
+            result[a.noteID, default: []].append(a)
+        }
+        return result
+    }
+
+    // MARK: - Templates (made in the web app, synced here)
+
+    func saveTemplate(_ t: NoteTemplate, updatedAt: Double) throws {
+        try run("""
+            INSERT INTO templates (id, name, title, body, tags, folder_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET name = excluded.name, title = excluded.title, body = excluded.body,
+                tags = excluded.tags, folder_id = excluded.folder_id, updated_at = excluded.updated_at
+            """, [t.id, t.name, t.title, t.body, t.tags.joined(separator: "\n"), t.folderID, updatedAt])
+    }
+
+    func removeTemplate(id: String) throws {
+        try run("DELETE FROM templates WHERE id = ?", [id])
+    }
+
+    func templates() throws -> [NoteTemplate] {
+        var result: [NoteTemplate] = []
+        try query("SELECT id, name, title, body, tags, folder_id FROM templates ORDER BY name COLLATE NOCASE", []) { stmt in
+            result.append(NoteTemplate(id: Database.string(stmt, 0), name: Database.string(stmt, 1), title: Database.string(stmt, 2),
+                                       body: Database.string(stmt, 3), tags: Database.string(stmt, 4).split(separator: "\n").map(String.init),
+                                       folderID: Database.optionalString(stmt, 5)))
+        }
+        return result
+    }
+
+    // MARK: - Inbox upkeep
+
+    /// Deletes inbox items older than the given time, returning their image paths so files can be removed.
+    func trimInbox(olderThan time: Double) throws -> [String] {
+        var paths: [String] = []
+        try query("SELECT image_path FROM inbox WHERE created_at < ? AND image_path IS NOT NULL", [time]) {
+            paths.append(Database.string($0, 0))
+        }
+        try run("DELETE FROM inbox WHERE created_at < ?", [time])
+        return paths
     }
 
     // MARK: - SQLite plumbing

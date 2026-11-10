@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // The open Settings form doesn't pick up the app-level change by itself.
         for window in NSApp.windows { window.appearance = NSApp.appearance }
+        HotKey.shared.apply()
         if Prefs.bool(Prefs.clipboardEnabled) { clipboard?.start() } else { clipboard?.stop() }
         if Prefs.bool(Prefs.screenshotsEnabled) {
             if screenshots?.isRunning == false { screenshots?.start() }

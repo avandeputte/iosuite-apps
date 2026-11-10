@@ -11,12 +11,15 @@ struct NoteEditor: View {
     @State private var showOCR = false
     @State private var showImage = false
     @State private var saveTask: Task<Void, Never>?
+    /// Typing in the text (true) or looking at it drawn as Markdown, with boxes to tick.
+    @State private var editing: Bool
 
     init(note: Note, onDelete: @escaping () -> Void) {
         self.note = note
         self.onDelete = onDelete
         _title = State(initialValue: note.title)
         _text = State(initialValue: note.body)
+        _editing = State(initialValue: !Prefs.bool(Prefs.formattedText) || note.body.isEmpty)
     }
 
     var body: some View {
@@ -41,10 +44,21 @@ struct NoteEditor: View {
                     imageSection
                 }
 
-                TextField(note.hasImage ? "Add a comment…" : "Write something…", text: $text, axis: .vertical)
-                    .lineLimit(6...)
+                if editing {
+                    TextField(note.hasImage ? "Add a comment…" : "Write something…", text: $text, axis: .vertical)
+                        .lineLimit(6...)
+                        .padding(10)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+                } else {
+                    MarkdownView(text: text) { line, checked in
+                        text = Markdown.toggleTask(text, line: line, checked: checked)
+                    }
                     .padding(10)
+                    .frame(minHeight: 120, alignment: .topLeading)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+                }
+
+                AttachmentsSection(note: note)
 
                 if note.hasImage {
                     ocrSection
@@ -57,12 +71,19 @@ struct NoteEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { editing.toggle() } label: {
+                    Label(editing ? "Show Formatted" : "Edit Text", systemImage: editing ? "eye" : "pencil")
+                }
                 if note.hasImage {
                     ShareLink(item: NoteImage(note: note), preview: SharePreview(note.displayTitle))
                 } else {
                     ShareLink(item: text.isEmpty ? note.displayTitle : text)
                 }
                 Menu {
+                    Button("Add Checklist Item", systemImage: "checklist") {
+                        text = text.addingChecklistItem()
+                        editing = true
+                    }
                     NoteActions(note: note, onDelete: delete)
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")

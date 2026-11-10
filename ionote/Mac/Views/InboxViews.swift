@@ -22,6 +22,14 @@ struct InboxList: View {
                                 }
                             }
                         }
+                        if let app = item.sourceApp {
+                            Button("Always Save Copies From \(app) as Notes") {
+                                var rules = InboxRules.all
+                                rules.append(InboxRule(app: app, kind: .any, action: .saveAsNote))
+                                InboxRules.all = rules
+                                save(item)
+                            }
+                        }
                         Button("Copy") { store.copyToPasteboard(item) }
                         if item.kind == .image {
                             Button("Save Image As…") { if let url = store.imageFileURL(for: item) { ImageFiles.saveAs(url) } }

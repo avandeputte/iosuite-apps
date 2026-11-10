@@ -107,6 +107,7 @@ struct NoteRow: View {
                     Image(systemName: NoteRow.icon(for: note.source))
                     Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
                     ForEach(note.tags.prefix(3), id: \.self) { TagChip(name: $0) }
+                    NoteBadges(note: note)
                 }
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -268,11 +269,14 @@ struct NoteEditor: View {
     @State private var imageURL: URL?
     @State private var showOCR = true
     @State private var saveTask: Task<Void, Never>?
+    /// Typing in the text (true) or looking at it drawn as Markdown, with boxes to tick.
+    @State private var editing: Bool
 
     init(note: Note) {
         self.note = note
         _title = State(initialValue: note.title)
         _text = State(initialValue: note.body)
+        _editing = State(initialValue: !Prefs.bool(Prefs.formattedText) || note.body.isEmpty)
     }
 
     var body: some View {
@@ -295,21 +299,36 @@ struct NoteEditor: View {
                 imageSection
             }
 
-            TextEditor(text: $text)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(alignment: .topLeading) {
-                    if text.isEmpty {
-                        Text(note.hasImage ? "Add a comment…" : "Write something…")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
-                            .allowsHitTesting(false)
+            if editing {
+                TextEditor(text: $text)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topLeading) {
+                        if text.isEmpty {
+                            Text(note.hasImage ? "Add a comment…" : "Write something… (Markdown: # heading, **bold**, - [ ] checklist)")
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .allowsHitTesting(false)
+                        }
                     }
+                    .frame(minHeight: 120)
+            } else {
+                ScrollView {
+                    MarkdownView(text: text) { line, checked in
+                        text = Markdown.toggleTask(text, line: line, checked: checked)
+                    }
+                    .padding(10)
                 }
                 .frame(minHeight: 120)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                .onTapGesture(count: 2) { editing = true }
+                .help("Double-click to edit the text")
+            }
+
+            AttachmentsSection(note: note)
 
             if note.hasImage {
                 ocrSection
@@ -319,6 +338,19 @@ struct NoteEditor: View {
         .navigationTitle(note.displayTitle)
         .toolbar {
             ToolbarItemGroup {
+                Button { editing.toggle() } label: {
+                    Label(editing ? "Show Formatted" : "Edit Text", systemImage: editing ? "eye" : "pencil")
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .help(editing ? "Show the text formatted, with boxes to tick (⇧⌘E)" : "Edit the text (⇧⌘E)")
+                Button {
+                    text = text.addingChecklistItem()
+                    editing = true
+                } label: {
+                    Label("Checklist Item", systemImage: "checklist")
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .help("Add a checklist item (⇧⌘L)")
                 Button { store.togglePin(note) } label: {
                     Label(note.pinned ? "Unpin" : "Pin", systemImage: note.pinned ? "pin.slash" : "pin")
                 }

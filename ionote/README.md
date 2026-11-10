@@ -21,6 +21,17 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
 - **Sync with your server**: notes, folders, tags and colours live on a self-hosted ionotes server (FastAPI and
   MariaDB, with its own web app). Each device keeps a full copy in local SQLite, so reading, searching and writing
   work offline; changes are sent when the server is back.
+- **Markdown and checklists**: notes are drawn formatted (# headings, **bold**, links, lists, quotes, code) and
+  `- [ ] ` items get boxes you tick right in the note, on every device and in the web app. ⇧⌘E switches between
+  the formatted note and its text, ⇧⌘L adds a checklist item. The list shows checklist progress (3/5).
+- **Files**: attach PDFs, more pictures and documents to a note (Attach File, or drop them on the Files row).
+  They live on the server, which reads a PDF's text so search finds it; a file is fetched when you open it.
+- **Templates**: make templates in the web app (Manage › Templates); New Note ▾ starts a note from one, with
+  {{date}}, {{weekday}} and the like filled in.
+- **Quick note**: ⌃⌥N in any app (change it in Settings) opens a small window to type a note; ⌘Return saves it.
+- **Inbox rules** (Settings › Inbox Rules): save copies from an app, or containing some text, as notes straight
+  away (into a folder, with tags), or leave them out of the Inbox. Settings can also clear Inbox items after a
+  number of days.
 - **Menu bar**: click the icon to open ionotes; right-click it to pause clipboard capture, open Settings or quit.
   Quit from the Dock (or ⌘Q) just closes the window: ionotes keeps running in the menu bar.
   ionotes starts at login in the menu bar only (a launch agent passes `--background`); the Dock icon appears
@@ -28,7 +39,9 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
 
 On **iPhone and iPad**, ionotes shows the same notes, folders, tags and colours. Paste with the clipboard button at
 the bottom of the list (iOS doesn't ask permission for that button), or add photos and screenshots with the photo
-button; their text is read on the device so search finds it. The clipboard Inbox stays on the Mac.
+button; their text is read on the device so search finds it. **Share to ioNotes** from any app's share sheet
+(text, links, pictures, PDFs and other files, with a comment): the note is made when ionotes next opens, and its
+files are sent to the server once it can be reached. The clipboard Inbox stays on the Mac.
 
 Passwords never go into the Inbox: copies that apps mark as private (concealed or transient) are skipped, and so is
 anything copied while a password manager is in front (Proton Pass, 1Password, Bitwarden, KeePassXC, Passwords and

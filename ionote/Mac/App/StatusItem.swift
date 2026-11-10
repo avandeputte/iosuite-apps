@@ -28,6 +28,7 @@ final class StatusItem: NSObject {
     private func showMenu() {
         let menu = NSMenu()
         menu.addItem(withTitle: "Open ionotes", action: #selector(open), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Quick Note…", action: #selector(quickNote), keyEquivalent: "").target = self
         menu.addItem(.separator())
         let capture = menu.addItem(withTitle: "Keep What I Copy", action: #selector(toggleClipboard), keyEquivalent: "")
         capture.target = self
@@ -42,6 +43,8 @@ final class StatusItem: NSObject {
     }
 
     @objc private func open() { Router.showMain() }
+
+    @objc private func quickNote() { QuickNote.show() }
 
     @objc private func toggleClipboard() {
         UserDefaults.standard.set(!Prefs.bool(Prefs.clipboardEnabled), forKey: Prefs.clipboardEnabled)

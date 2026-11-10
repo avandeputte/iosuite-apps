@@ -51,7 +51,16 @@ struct NotesList: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: newNote) { Label("New Note", systemImage: "square.and.pencil") }
+                Menu {
+                    TemplateMenuItems { note in
+                        store.searchText = ""
+                        selection = note.id
+                    }
+                } label: {
+                    Label("New Note", systemImage: "square.and.pencil")
+                } primaryAction: {
+                    newNote()
+                }
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 PhotosPicker(selection: $photos, maxSelectionCount: 20, matching: .images) {
@@ -161,6 +170,7 @@ struct NoteRow: View {
                     Image(systemName: NoteRow.icon(for: note.source))
                     Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
                     ForEach(note.tags.prefix(3), id: \.self) { TagChip(name: $0) }
+                    NoteBadges(note: note)
                 }
                 .font(.caption)
                 .foregroundStyle(.tertiary)

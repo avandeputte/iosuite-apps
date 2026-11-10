@@ -86,10 +86,14 @@ struct MainWindow: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: newNote) {
+                Menu {
+                    TemplateMenuItems { showNote($0.id) }
+                } label: {
                     Label("New Note", systemImage: "square.and.pencil")
+                } primaryAction: {
+                    newNote()
                 }
-                .help("Write a new note (⌘N)")
+                .help("Write a new note (⌘N), or start one from a template")
             }
         }
         .alert("Something went wrong", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {

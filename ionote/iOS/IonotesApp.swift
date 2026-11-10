@@ -18,6 +18,8 @@ struct IonotesApp: App {
         .onChange(of: scenePhase) { _, phase in
             // Pick up notes changed elsewhere while ionotes was in the background; sync every minute while in use.
             store.setActive(phase == .active)
+            // what was shared to ioNotes from other apps while it was away
+            if phase == .active { Task { await store.importShares() } }
         }
     }
 

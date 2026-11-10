@@ -209,6 +209,7 @@ extension NotesStore {
                     } else {
                         try db.markSent(id: id, updatedAt: sentAt, rev: (item["rev"] as? NSNumber)?.int64Value ?? rev,
                                         imageSHA: item["imageSHA"] as? String, hasImage: item["hasImage"] as? Bool ?? false)
+                        if let files = Self.attachments(of: item, noteID: id) { try db.setAttachments(noteID: id, files) }
                     }
                 case "stale":
                     if let item = result["item"] as? [String: Any] {
@@ -283,18 +284,48 @@ extension NotesStore {
 
     private func pull() async throws {
         var since = Int64(try db.meta("rev") ?? "") ?? 0
+        // once, after the update that brought attached files and templates: everything again, so notes synced
+        // before then get their lists of files (changes made here and not sent yet are kept as always)
+        let fullOnce = try db.meta("fetched-v2") != "1"
+        if fullOnce { since = 0 }
         while true {
             let page = try await client.changes(since: since)
             try db.transaction {
                 for item in page["folders"] as? [[String: Any]] ?? [] { try applyFolder(item, force: false) }
                 for item in page["notes"] as? [[String: Any]] ?? [] { try applyNote(item, force: false) }
                 for item in page["tags"] as? [[String: Any]] ?? [] { try applyTag(item, force: false) }
+                for item in page["templates"] as? [[String: Any]] ?? [] { try applyTemplate(item) }
                 since = (page["rev"] as? NSNumber)?.int64Value ?? since
                 try db.setMeta("rev", String(since))
             }
             guard page["more"] as? Bool == true else { break }
         }
+        if fullOnce { try db.setMeta("fetched-v2", "1") }
         reloadNotes()
+    }
+
+    private func applyTemplate(_ item: [String: Any]) throws {
+        guard let id = item["id"] as? String else { return }
+        if item["deleted"] as? Bool == true {
+            try db.removeTemplate(id: id)
+            return
+        }
+        try db.saveTemplate(NoteTemplate(id: id, name: item["name"] as? String ?? "", title: item["title"] as? String ?? "",
+                                         body: item["body"] as? String ?? "", tags: item["tags"] as? [String] ?? [],
+                                         folderID: item["folderID"] as? String),
+                            updatedAt: (item["updatedAt"] as? NSNumber)?.doubleValue ?? 0)
+    }
+
+    /// The server's list of a note's attached files, as it comes with the note.
+    static func attachments(of item: [String: Any], noteID: String) -> [Attachment]? {
+        guard let list = item["attachments"] as? [[String: Any]] else { return nil }
+        return list.compactMap { a in
+            guard let id = a["id"] as? String else { return nil }
+            return Attachment(id: id, noteID: noteID, name: a["name"] as? String ?? "file", mime: a["mime"] as? String ?? "",
+                              bytes: (a["bytes"] as? NSNumber)?.intValue ?? 0, sha: a["sha"] as? String,
+                              width: (a["width"] as? NSNumber)?.intValue, height: (a["height"] as? NSNumber)?.intValue,
+                              createdAt: (a["createdAt"] as? NSNumber)?.doubleValue ?? 0)
+        }
     }
 
     /// The server's copy of a note. Unless `force` (the server refused our edit as older), a change made here
@@ -308,6 +339,7 @@ extension NotesStore {
                 try db.removeNote(id: id)
                 try? FileManager.default.removeItem(at: AppPaths.noteImageURL(id))
             }
+            try db.setAttachments(noteID: id, [])
             return
         }
         let pending = local?.imagePending == true
@@ -324,6 +356,7 @@ extension NotesStore {
                         pinned: item["pinned"] as? Bool ?? false,
                         folderID: item["folderID"] as? String)
         try db.saveFromServer(note, imageSHA: item["imageSHA"] as? String, rev: (item["rev"] as? NSNumber)?.int64Value ?? 0)
+        if let files = Self.attachments(of: item, noteID: id) { try db.setAttachments(noteID: id, files) }
         if !note.hasImage, local != nil {
             try db.clearImage(id: id)
             try? FileManager.default.removeItem(at: AppPaths.noteImageURL(id))

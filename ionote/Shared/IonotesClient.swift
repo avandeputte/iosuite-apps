@@ -217,4 +217,45 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         _ = try check(data, resp)  // throws the reason (a sign-in page, an error)
         throw IonotesError.server("The server sent no picture.")
     }
+
+    // MARK: - Attached files
+
+    /// Sends a file to attach to a note (the note must be on the server) under the id this device chose; `text`: what
+    /// this device read from it (a picture's text), sent along so the server needn't. Answers the note.
+    func uploadAttachment(_ data: Data, id: String, noteID: String, name: String, mime: String, text: String?) async throws -> [String: Any] {
+        var r = try request("api/notes/\(noteID)/attachments/\(id)", method: "PUT", query: [URLQueryItem(name: "name", value: name)])
+        r.setValue(mime.isEmpty ? "application/octet-stream" : mime, forHTTPHeaderField: "Content-Type")
+        if let text, let encoded = String(text.prefix(3000)).addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+            r.setValue(encoded, forHTTPHeaderField: "X-Ionotes-Text")
+        }
+        r.timeoutInterval = 300
+        let (body, resp) = try await session.upload(for: r, from: data)
+        if (resp as? HTTPURLResponse)?.statusCode == 400 {
+            let detail = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["detail"] as? String
+            throw IonotesError.notAllowed(detail ?? "The server did not take this file.")
+        }
+        return try check(body, resp)
+    }
+
+    /// An attached file's bytes, or nil when it is gone from the server.
+    func downloadAttachment(id: String, noteID: String) async throws -> Data? {
+        var r = try request("api/notes/\(noteID)/attachments/\(id)")
+        r.setValue("*/*", forHTTPHeaderField: "Accept")
+        r.timeoutInterval = 300
+        let (data, resp) = try await session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw IonotesError.server("The server did not answer.") }
+        if http.statusCode == 404 { return nil }
+        let sameHost = http.url?.host?.lowercased() == ServerConfig.serverURL?.host?.lowercased()
+        let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+        if sameHost, http.statusCode == 200, http.value(forHTTPHeaderField: "Content-Disposition") != nil || !type.contains("html") {
+            return data
+        }
+        _ = try check(data, resp)
+        throw IonotesError.server("The server sent no file.")
+    }
+
+    /// Takes a file off a note; answers the note.
+    func deleteAttachment(id: String, noteID: String) async throws -> [String: Any] {
+        try await send(try request("api/notes/\(noteID)/attachments/\(id)", method: "DELETE"))
+    }
 }
