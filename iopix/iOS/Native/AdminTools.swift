@@ -106,12 +106,12 @@ struct AdminToolsScreen: View {
     ]
 
     private func action(_ a: String, _ done: String) {
-        Task { await notice.run(done) { try await AdminAPI.post("api/maintenance", ["action": a]); try? await Task.sleep(nanoseconds: 1_500_000_000); await load() } }
+        Task { await notice.run(done) { try await AdminAPI.post("api/tools", ["action": a]); try? await Task.sleep(nanoseconds: 1_500_000_000); await load() } }
     }
 
     private func load() async {
         do {
-            async let a = AdminAPI.get("api/maintenance")
+            async let a = AdminAPI.get("api/tools")
             async let b = AdminAPI.get("api/status")
             let got = try await a
             status = (try? await b) ?? status

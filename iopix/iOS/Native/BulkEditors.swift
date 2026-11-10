@@ -307,7 +307,7 @@ struct BulkTemplateSheet: View {
     }
 
     private func load() async {
-        guard let m = try? await IopixClient.shared.json("api/maintenance") else { templates = []; return }
+        guard let m = try? await IopixClient.shared.json("api/tools") else { templates = []; return }
         fieldKeys = m["templateFields"] as? [String] ?? Array(Self.labels.keys)
         templates = (m["templates"] as? [[String: Any]] ?? []).compactMap { t in
             guard let name = t["name"] as? String else { return nil }

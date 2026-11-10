@@ -171,10 +171,11 @@ struct AdminServerScreen: View {
         return "\(v)|\(st.str("commit") ?? "")"
     }
 
+    /// The server makes the backup when asked with a POST (it writes a large dump), and sends it back.
     private func fetch(_ path: String, _ name: String, tag: String) async {
         downloading = tag
         defer { downloading = nil }
-        do { sharing = AdminSharedFile(url: try await AdminAPI.download(path, fallbackName: name)) } catch { notice.fail(error) }
+        do { sharing = AdminSharedFile(url: try await AdminAPI.download(path, fallbackName: name, method: "POST")) } catch { notice.fail(error) }
     }
 }
 

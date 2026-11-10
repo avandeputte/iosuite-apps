@@ -208,7 +208,7 @@ final class EditCatalog: ObservableObject {
         }
         folders = raw.map { Entry(id: $0.0, name: $0.2, full: path($0.0), parent: $0.1, count: $0.3) }
             .sorted { $0.full.localizedStandardCompare($1.full) == .orderedAscending }
-        if let mt = try? await IopixClient.shared.json("api/maintenance") {
+        if let mt = try? await IopixClient.shared.json("api/tools") {
             recent = (mt["recentTags"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
         }
     }
