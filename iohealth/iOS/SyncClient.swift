@@ -155,8 +155,8 @@ enum SyncClient {
                 switch http.statusCode {
                 case 200..<300: return json
                 case 401: throw SyncError.unauthorized
-                case 400..<500: throw SyncError.server(http.statusCode, json["error"] as? String ?? "")
-                default: throw SyncError.retryable(http.statusCode, json["error"] as? String ?? "")
+                case 400..<500: throw SyncError.server(http.statusCode, json["detail"] as? String ?? "")  // the suite's error replies: {"detail": "…"}
+                default: throw SyncError.retryable(http.statusCode, json["detail"] as? String ?? "")
                 }
             } catch let error as SyncError {
                 guard case .retryable = error, attempt < 3 else { throw error }
