@@ -7,23 +7,46 @@ import Security
 enum SyncClient {
     struct Server {
         let baseURL: URL
-        /// HTTP Basic: the account's user name and password, as for the web app (the server also takes an app
-        /// password in its place).
+        /// HTTP Basic: the account's user name with the app password made for this iPhone (SyncEngine trades the
+        /// typed password for one at the first sync), or with what was typed until then.
         let authorization: String
 
-        /// Accepts "https://health.example.com", "http://192.168.1.10:8650" or a bare "host[:port]" (taken as http,
-        /// port 8650 if none is given, which only works on the local network).
+        /// Accepts "https://health.example.com", "http://192.168.1.10:8650" or a bare "host[:port]": taken as https,
+        /// or, when the host is on the local network, as http on port 8650 if none is given.
         init?(address: String, user: String, password: String) {
             var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !user.isEmpty, !password.isEmpty else { return nil }
             if !text.contains("://") {
-                text = "http://" + text
-                if URL(string: text)?.port == nil { text += ":\(SyncProtocol.defaultPort)" }
+                if Server.isLocal(URL(string: "http://" + text)?.host ?? "") {
+                    text = "http://" + text
+                    if URL(string: text)?.port == nil { text += ":\(SyncProtocol.defaultPort)" }
+                } else {
+                    text = "https://" + text
+                }
             }
             while text.hasSuffix("/") { text.removeLast() }
             guard let url = URL(string: text), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
             baseURL = url
             authorization = "Basic " + Data("\(user):\(password)".utf8).base64EncodedString()
+        }
+
+        /// Plain http to an address that is not on the local network: the sign-in would travel unencrypted.
+        var isPlainRemote: Bool { baseURL.scheme == "http" && !Server.isLocal(baseURL.host ?? "") }
+
+        /// A host on the local network: localhost, a .local name, a name without a dot, or a private, link-local or
+        /// carrier-grade (VPN) address.
+        static func isLocal(_ host: String) -> Bool {
+            let h = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            if h.isEmpty { return false }
+            if h == "localhost" || h.hasSuffix(".local") { return true }
+            if h.contains(":") { return h == "::1" || h.hasPrefix("fe80:") || h.hasPrefix("fc") || h.hasPrefix("fd") }  // IPv6
+            let parts = h.split(separator: ".", omittingEmptySubsequences: false).map { Int($0) }
+            if parts.count == 4, !parts.contains(nil) {
+                let a = parts[0] ?? 0, b = parts[1] ?? 0
+                return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && (16...31).contains(b))
+                    || (a == 169 && b == 254) || (a == 100 && (64...127).contains(b))
+            }
+            return !h.contains(".")
         }
     }
 
@@ -95,6 +118,24 @@ enum SyncClient {
         return json["schemaVersion"] as? Int ?? 0
     }
 
+    /// Trades the password that was typed for an app password of this iPhone (POST /api/auth/app-passwords, signed
+    /// in with HTTP Basic), so the account password is neither kept nor sent with every batch. nil when the server
+    /// does not make one (an older server, an account that cannot have app passwords): the sync goes on as before.
+    static func appPassword(_ server: Server, label: String) async throws -> String? {
+        var request = URLRequest(url: server.baseURL.appending(path: "api/auth/app-passwords"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["label": label])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(server.authorization, forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SyncError.badReply }
+        if http.statusCode == 401 { throw SyncError.unauthorized }
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard http.statusCode == 200, let made = json["password"] as? String, !made.isEmpty else { return nil }
+        return made
+    }
+
     /// POSTs with up to three retries (1, 2, 4 s apart) on network errors and 5xx; a 4xx is reported straight away.
     private static func post(_ server: Server, path: String, body: Data, contentType: String,
                              headers: [String: String] = [:]) async throws -> [String: Any] {
@@ -139,7 +180,7 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .badReply: return "The server sent an unexpected reply. Is the address right?"
-        case .unauthorized: return "The server rejected the user name or password. They are the same as for the web app; an account without a password cannot sync."
+        case .unauthorized: return "The server rejected the user name or password. They are the same as for the web app; an account without a password cannot sync. Type the password again if this iPhone's app password was revoked."
         case .server(let code, let message), .retryable(let code, let message):
             return "The server answered \(code)\(message.isEmpty ? "" : ": \(message)")."
         case .outOfTime: return "iOS ended the background window before the sync finished."
@@ -174,7 +215,8 @@ enum Gzip {
     }
 }
 
-/// The account password lives in the Keychain, readable after first unlock so background syncs can use it.
+/// What the app signs in with lives in the Keychain, readable after first unlock so background syncs can use it:
+/// the app password made for this iPhone, or the password as typed until the first sync has traded it for one.
 enum CredentialStore {
     private static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                                kSecAttrService as String: "ioHealthSync",

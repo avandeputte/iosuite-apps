@@ -14,8 +14,10 @@ why the app is iPhone only.
   server has acknowledged); **Send everything again** for a new or emptied database.
 - **Automatic**: syncs when the app opens, when iOS reports new Health data (background delivery, about hourly while
   the phone is unlocked) and in background-refresh slots.
-- **The suite's accounts**: signs in with the same user name and password as the web app and the other io apps
-  (kept in the Keychain). Each person in the household uploads into their own account.
+- **The suite's accounts**: signs in with the same user name and password as the web app and the other io apps.
+  The first sync trades the password for an app password of this iPhone, and only that is kept (in the Keychain)
+  and sent; it is listed, and can be revoked, in the web app under Settings › Account › App passwords. Each person
+  in the household uploads into their own account.
 
 ## Build and run
 
@@ -37,9 +39,10 @@ destination, and run.
 
 1. Open **ioHealthSync**, tap **Allow access to Health data**, and on Apple's permission screen turn everything on. (What
    you actually sync is chosen separately in step 3, without asking again.)
-2. Under **Server**, enter the server's URL (`https://health.example.com`, or `http://192.168.1.10:8650` at home)
-   and your **user name and password**. **Test connection** checks the address; the account is checked at the first
-   sync.
+2. Under **Server**, enter the server's URL (`https://health.example.com`, or `http://192.168.1.10:8650` at home;
+   an address without a scheme is taken as https, or as http on port 8650 when it is a local one) and your
+   **user name and password**. **Test connection** checks the address; the account is checked at the first sync.
+   Plain http to an address outside your network is flagged: the sign-in would travel unencrypted.
 3. Optionally open **Data types** and switch off what you don't want.
 4. Tap **Sync now**. A decade of Apple Watch data (a few million samples) takes a few minutes; keep the app open for
    the first sync.

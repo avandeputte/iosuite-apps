@@ -24,13 +24,22 @@ final class SyncEngine: ObservableObject {
         didSet { UserDefaults.standard.set(serverAddress, forKey: "serverAddress") }
     }
     /// The account: the same user name and password as in the web app (and ioPix, ioNotes, ioContacts). The
-    /// password is kept in the Keychain, not UserDefaults.
+    /// password is typed once: the first sync after that trades it for an app password of this iPhone, which is
+    /// what the Keychain keeps and what every request carries from then on.
     @Published var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "" {
         didSet { UserDefaults.standard.set(userName, forKey: "userName") }
     }
     @Published var password: String = CredentialStore.password {
-        didSet { CredentialStore.password = password }
+        didSet {
+            CredentialStore.password = password
+            if !storingAppPassword { hasAppPassword = false }  // typed: the account's own, traded at the next sync
+        }
     }
+    /// Whether the Keychain holds the app password made for this iPhone (true) or what was typed (false).
+    private var hasAppPassword = UserDefaults.standard.bool(forKey: "hasAppPassword") {
+        didSet { UserDefaults.standard.set(hasAppPassword, forKey: "hasAppPassword") }
+    }
+    private var storingAppPassword = false
     @Published private(set) var lastSynced: Date? = UserDefaults.standard.object(forKey: "lastSynced") as? Date
     @Published private(set) var lastTrigger: Trigger? = UserDefaults.standard.string(forKey: "lastTrigger").flatMap(Trigger.init)
     @Published private(set) var lastBackgroundAttempt: Date?
@@ -95,6 +104,19 @@ final class SyncEngine: ObservableObject {
         let foreground = trigger == .manual || trigger == .launch
         if foreground { UIApplication.shared.isIdleTimerDisabled = true }
         defer { if foreground { UIApplication.shared.isIdleTimerDisabled = false } }
+
+        // The password was typed since the last sync: trade it for an app password of this iPhone and keep only
+        // that. In the foreground only (a background wake has seconds); a server that makes none is used as before.
+        var server = server
+        if foreground, !hasAppPassword,
+           let made = try? await SyncClient.appPassword(server, label: "ioHealthSync on \(UIDevice.current.name)"),
+           let traded = SyncClient.Server(address: serverAddress, user: userName.trimmingCharacters(in: .whitespacesAndNewlines), password: made) {
+            storingAppPassword = true
+            password = made
+            storingAppPassword = false
+            hasAppPassword = true
+            server = traded
+        }
 
         do {
             let upload = try await SyncClient.Upload.start(server: server, hello: .init(
