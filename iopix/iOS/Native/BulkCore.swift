@@ -119,7 +119,7 @@ final class BulkCatalog: ObservableObject {
     }
 
     func loadRecentTags() async {
-        guard let m = try? await IopixClient.shared.json("api/maintenance") else { return }
+        guard let m = try? await IopixClient.shared.json("api/tools") else { return }
         recentTags = BulkAPI.ints(m["recentTags"])
     }
 

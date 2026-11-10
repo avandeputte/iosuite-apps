@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What the settings screens read from the server: the account (/api/auth/me), the server's state (/api/status)
-/// and the library facts (/api/maintenance; paths and databases for admins only).
+/// and the library facts (/api/tools; paths and databases for admins only).
 @MainActor
 final class AdminModel: ObservableObject {
     @Published var me: [String: Any] = [:]
@@ -26,7 +26,7 @@ final class AdminModel: ObservableObject {
             async let b = AdminAPI.get("api/status")
             me = try await a
             status = try await b
-            m = (try? await AdminAPI.get("api/maintenance")) ?? m  // everyone gets the counts; admins the paths and databases too
+            m = (try? await AdminAPI.get("api/tools")) ?? m  // everyone gets the counts; admins the paths and databases too
             // the app's colors follow the account's theme (IopixApp reads it from UserDefaults)
             if signedIn, let t = prefs.str("theme") { UserDefaults.standard.set(t, forKey: "iopix.pref.theme") }
             problem = nil
@@ -509,7 +509,7 @@ struct AdminLibraryScreen: View {
                     Button("Retry the configured database") {
                         vResult = "Trying…"
                         Task {
-                            do { try await AdminAPI.post("api/viewerdb/retry"); vResult = "It answers now. Restarting…" } catch { vResult = error.localizedDescription }
+                            do { try await AdminAPI.post("api/database/retry"); vResult = "It answers now. Restarting…" } catch { vResult = error.localizedDescription }
                         }
                     }
                 }
@@ -526,7 +526,7 @@ struct AdminLibraryScreen: View {
                     vResult = "Testing…"
                     Task {
                         do {
-                            let r = try await AdminAPI.post("api/viewerdb/test", viewerPayload)
+                            let r = try await AdminAPI.post("api/database/test", viewerPayload)
                             let t = r.dict("tables")
                             vResult = "OK: \(r.str("version") ?? ""). " + (t.isEmpty ? "An empty database." : "\(model.appName) tables already there: " + t.map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", "))
                         } catch { vResult = error.localizedDescription }
@@ -542,7 +542,7 @@ struct AdminLibraryScreen: View {
                         do {
                             var body = viewerPayload
                             body["copy"] = copy; body["drop"] = vDrop
-                            let r = try await AdminAPI.post("api/viewerdb/switch", body)
+                            let r = try await AdminAPI.post("api/database/switch", body)
                             vResult = "Set up on \(r.str("database") ?? ""): " + r.dict("copied").map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", ") + ". Restarting…"
                         } catch { vResult = error.localizedDescription }
                     }
@@ -640,7 +640,7 @@ struct AdminLibraryScreen: View {
     }
 
     private func loadViewer() async {
-        guard let v = try? await AdminAPI.get("api/viewerdb") else { return }
+        guard let v = try? await AdminAPI.get("api/database") else { return }
         viewer = v
         vdb = DBForm(v)
         vdb.type = "mysql"  // the only kind since iopix 1.113

@@ -50,8 +50,8 @@ enum AdminAPI {
 
     /// A file from the server (a backup, the log), saved under its own name for the share sheet.
     @MainActor
-    static func download(_ path: String, fallbackName: String) async throws -> URL {
-        let (tmp, resp) = try await IopixClient.shared.session.download(for: IopixClient.shared.request(path))
+    static func download(_ path: String, fallbackName: String, method: String = "GET") async throws -> URL {
+        let (tmp, resp) = try await IopixClient.shared.session.download(for: IopixClient.shared.request(path, method: method))
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw IopixError.server("The server could not make the file (error \((resp as? HTTPURLResponse)?.statusCode ?? 0)).")
         }
