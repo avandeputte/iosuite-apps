@@ -104,6 +104,8 @@ final class NotesStore: ObservableObject {
     @Published var lastSync: Date?
     @Published var pendingChanges = 0
     @Published var lastError: String?
+    /// The server's sign-in page is open (Settings).
+    @Published var showingSignIn = false
     @Published private(set) var tags: [TagCount] = []
     @Published private(set) var folders: [Folder] = []
     /// Lowercased tag name -> colour.

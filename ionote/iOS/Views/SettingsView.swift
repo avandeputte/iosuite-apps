@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject private var store: NotesStore
     @Environment(\.dismiss) private var dismiss
     @AppStorage(Prefs.appearance) private var appearance = "system"
 
@@ -31,5 +32,6 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
         }
+        .signInSheet(store)
     }
 }

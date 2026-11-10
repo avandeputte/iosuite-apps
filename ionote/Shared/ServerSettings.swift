@@ -7,7 +7,6 @@ struct ServerSettings: View {
     @State private var address = ServerConfig.serverURL?.absoluteString ?? ""
     @State private var addressProblem: String?
     @State private var checking = false
-    @State private var signingIn = false
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ""
     @State private var hasToken = ServiceToken.isSet
@@ -55,12 +54,8 @@ struct ServerSettings: View {
                 } else {
                     Text("Sign in on the server's own page, the way you do in the browser.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Sign In…") { signingIn = true }
+                    Button("Sign In…") { store.showingSignIn = true }
                 }
-            }
-            .sheet(isPresented: $signingIn) {
-                SignInView()
-                    .environmentObject(store)
             }
 
             Section {
@@ -130,8 +125,20 @@ struct ServerSettings: View {
                 address = url.absoluteString
                 store.setServer(url)
                 await store.refreshAccount()
-                if store.account == nil { signingIn = true }  // straight on to the server's sign-in page
+                if store.account == nil { store.showingSignIn = true }  // straight on to the server's sign-in page
             }
+        }
+    }
+}
+
+extension View {
+    /// The server's sign-in page as a sheet, opened by ServerSettings (store.showingSignIn). Attached to the top of the
+    /// Settings view, not to a row of its form: a sheet on a row closes by itself as soon as the form redraws, which a
+    /// sign-in does at once (the page sets cookies, the account is checked).
+    func signInSheet(_ store: NotesStore) -> some View {
+        sheet(isPresented: Binding(get: { store.showingSignIn }, set: { store.showingSignIn = $0 })) {
+            SignInView()
+                .environmentObject(store)
         }
     }
 }

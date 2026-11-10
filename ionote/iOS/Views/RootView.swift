@@ -22,10 +22,11 @@ struct RootView: View {
     @State private var section: SidebarItem? = .all
     @State private var selectedNote: Note.ID?
     @State private var compactColumn = NavigationSplitViewColumn.content
+    @State private var showSettings = false
 
     var body: some View {
         NavigationSplitView(preferredCompactColumn: $compactColumn) {
-            Sidebar(section: $section)
+            Sidebar(section: $section, showSettings: $showSettings)
         } content: {
             NotesList(selection: $selectedNote)
         } detail: {
@@ -40,7 +41,7 @@ struct RootView: View {
             store.selectedFolder = new?.folder
             store.selectedTag = new?.tag
             selectedNote = nil
-            compactColumn = .content
+            if new != nil { compactColumn = .content }  // nil: back on the iPhone's sidebar, stay there
         }
         .onChange(of: store.folders) { _, folders in
             if let id = section?.folder, !folders.contains(where: { $0.id == id }) { section = .all }
@@ -51,7 +52,11 @@ struct RootView: View {
         .onChange(of: selectedNote) { _, id in
             if id != nil { compactColumn = .detail }
         }
-        .alert("Something went wrong", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(store)
+        }
+        .alert("Something went wrong", isPresented: Binding(get: { store.lastError != nil && !showSettings }, set: { if !$0 { store.lastError = nil } })) {
             Button("OK") { store.lastError = nil }
         } message: {
             Text(store.lastError ?? "")
@@ -66,7 +71,7 @@ struct Sidebar: View {
     @State private var naming: Folder?
     @State private var folderName = ""
     @State private var deleting: Folder?
-    @State private var showSettings = false
+    @Binding var showSettings: Bool
 
     var body: some View {
         List(selection: $section) {
@@ -132,10 +137,6 @@ struct Sidebar: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .environmentObject(store)
         }
         .alert("New Folder", isPresented: $creating) {
             TextField("Name", text: $folderName)

@@ -25,6 +25,7 @@ struct SettingsView: View {
                 .tabItem { Label("Server", systemImage: "server.rack") }
         }
         .frame(width: 540, height: 520)
+        .signInSheet(store)
     }
 
     private var general: some View {
