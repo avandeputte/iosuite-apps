@@ -91,7 +91,10 @@ The `ionotesiOS` target has the same bundle id as the Mac app, so both are one a
 - A sync sends the changes made here (`POST /api/sync/push`), uploads new pictures (`PUT /api/notes/{id}/image`),
   then fetches what changed since the last `rev` (`GET /api/sync`), and pictures this device doesn't have yet.
   It runs on launch, when the app comes to the front, two seconds after an edit, every minute and when the network
-  returns. An edit made offline carries its own time; when the server has a later edit, the server's copy wins.
+  returns. An edit made offline carries its own time; when the server has a later edit, the server's copy wins
+  and the text written on this device is kept beside it as a note of its own ("copy of an edit made here").
+  Changes go up in batches the server takes in one request; a change the server refuses stays on the device,
+  is named under the last error, and is sent again only once it is edited.
 - Text in pictures is read on the device (Vision) and sent as `ocrText`; the server only reads pictures added in
   its web app.
 - Changing the server address drops what came from the old server (changes not sent yet are kept and go to the

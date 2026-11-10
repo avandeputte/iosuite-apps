@@ -13,6 +13,7 @@ enum IonotesError: LocalizedError, Equatable {
     case noServer
     case needsSignIn
     case notAllowed(String)
+    case tooLarge
     case server(String)
 
     var errorDescription: String? {
@@ -20,6 +21,7 @@ enum IonotesError: LocalizedError, Equatable {
         case .noServer: return "Enter your ionotes server in Settings."
         case .needsSignIn: return "Sign in to your ionotes server in Settings."
         case .notAllowed(let why): return why
+        case .tooLarge: return "That is more than the server takes in one request."
         case .server(let why): return why
         }
     }
@@ -104,6 +106,8 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
             throw IonotesError.needsSignIn
         case 403:
             throw json == nil ? IonotesError.needsSignIn : IonotesError.notAllowed(detail ?? "This account can only read notes.")
+        case 413:
+            throw IonotesError.tooLarge
         case 502, 503, 504:
             throw URLError(.cannotConnectToHost)
         default:

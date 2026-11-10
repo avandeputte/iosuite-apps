@@ -6,9 +6,14 @@ import Network
 /// last rev (GET /api/sync), and finally fetches pictures this device doesn't have yet. It runs on launch, when
 /// the app comes to the front, shortly after an edit, every minute while active, and when the network returns.
 /// An edit made here and not sent yet always wins over the server's copy until the server has seen it; the
-/// server then decides by edit time ("stale": its copy is newer and is kept).
+/// server then decides by edit time ("stale": its copy is newer and is kept, and the text written here is kept
+/// beside it as a note of its own). Changes go up in batches the server takes in one request; one the server
+/// refuses ("error") stays on this device and is sent again only once it is edited.
 extension NotesStore {
     private static let pollInterval: TimeInterval = 60
+    /// One push carries at most this much note text and this many notes: the server refuses a body over 8 MiB.
+    private static let pushBytes = 2_000_000
+    private static let pushNotes = 200
 
     func startSync() {
         let monitor = NWPathMonitor()
@@ -104,6 +109,40 @@ extension NotesStore {
         let tags = try db.dirtyTags()
         guard !notes.isEmpty || !folders.isEmpty || !tags.isEmpty else { return }
 
+        // the notes in batches the server takes; the folders and tag colours go with the first (a note names its folder)
+        var batches: [[(note: Note, deleted: Bool)]] = [[]]
+        var size = 0
+        for item in notes {
+            let n = item.note
+            let bytes = item.deleted ? 200 : n.title.utf8.count + n.body.utf8.count + n.ocrText.utf8.count + 600
+            if !batches[batches.count - 1].isEmpty, size + bytes > Self.pushBytes || batches[batches.count - 1].count >= Self.pushNotes {
+                batches.append([])
+                size = 0
+            }
+            batches[batches.count - 1].append(item)
+            size += bytes
+        }
+        var refused: [String] = []
+        var copies = 0
+        for (i, batch) in batches.enumerated() {
+            let result = try await push(notes: batch, folders: i == 0 ? folders : [], tags: i == 0 ? tags : [])
+            refused += result.refused
+            copies += result.copies
+        }
+        reloadNotes()
+        if copies > 0 {
+            syncAgain = true  // the copies kept of what was written here go to the server too
+        }
+        if !refused.isEmpty {
+            let what = refused.count == 1 ? "a change" : "\(refused.count) changes"
+            lastError = "The server refused \(what): \(refused[0]). What it refused stays on this device and is sent again once it is edited."
+        }
+    }
+
+    /// One push request and what the server said about each item: the reasons of what it refused, and how many
+    /// notes written here were kept as copies. A request the server finds too large is sent again in two halves;
+    /// a single note that is too large by itself is refused like any other.
+    private func push(notes: [(note: Note, deleted: Bool)], folders: [Database.FolderRow], tags: [Database.TagRow]) async throws -> (refused: [String], copies: Int) {
         let noteDicts: [[String: Any]] = notes.map { item in
             let n = item.note
             if item.deleted {
@@ -121,8 +160,28 @@ extension NotesStore {
         let tagDicts: [[String: Any]] = tags.map {
             ["name": $0.name, "color": $0.color as Any? ?? NSNull(), "updatedAt": $0.updatedAt]
         }
-        let answer = try await client.push(notes: noteDicts, folders: folderDicts, tags: tagDicts)
+        let answer: [String: Any]
+        do {
+            answer = try await client.push(notes: noteDicts, folders: folderDicts, tags: tagDicts)
+        } catch IonotesError.tooLarge {
+            if notes.count > 1 {
+                let half = notes.count / 2
+                let first = try await push(notes: Array(notes[..<half]), folders: folders, tags: tags)
+                let second = try await push(notes: Array(notes[half...]), folders: [], tags: [])
+                return (first.refused + second.refused, first.copies + second.copies)
+            }
+            guard let only = notes.first else { throw IonotesError.tooLarge }  // the folders and colours alone: nothing to split
+            try db.markRefused(note: only.note.id, updatedAt: only.note.updatedAt.timeIntervalSince1970)
+            IonotesClient.log.error("note \(only.note.id, privacy: .public) is larger than the server takes")
+            var rest: (refused: [String], copies: Int) = ([], 0)
+            if !folders.isEmpty || !tags.isEmpty {
+                rest = try await push(notes: [], folders: folders, tags: tags)
+            }
+            return (["\u{201C}\(only.note.displayTitle)\u{201D} is larger than the server takes"] + rest.refused, rest.copies)
+        }
         let rev = (answer["rev"] as? NSNumber)?.int64Value ?? 0
+        var refused: [String] = []
+        var copies = 0
 
         try db.transaction {
             for (sent, result) in zip(folders, answer["folders"] as? [[String: Any]] ?? []) {
@@ -132,7 +191,10 @@ extension NotesStore {
                 case "stale":
                     if let item = result["item"] as? [String: Any] { try applyFolder(item, force: true) }
                 default:
-                    IonotesClient.log.error("folder \(sent.id, privacy: .public) refused: \(String(describing: result["error"]), privacy: .public)")
+                    let why = result["error"] as? String ?? "no reason given"
+                    IonotesClient.log.error("folder \(sent.id, privacy: .public) refused: \(why, privacy: .public)")
+                    try db.markFolderRefused(id: sent.id, updatedAt: sent.updatedAt)
+                    refused.append("the folder \u{201C}\(sent.name)\u{201D}, \(why)")
                 }
             }
             for (sent, result) in zip(notes, answer["notes"] as? [[String: Any]] ?? []) {
@@ -149,9 +211,15 @@ extension NotesStore {
                                         imageSHA: item["imageSHA"] as? String, hasImage: item["hasImage"] as? Bool ?? false)
                     }
                 case "stale":
-                    if let item = result["item"] as? [String: Any] { try applyNote(item, force: true) }
+                    if let item = result["item"] as? [String: Any] {
+                        if try keepCopy(ofNote: id, replacedBy: item) { copies += 1 }
+                        try applyNote(item, force: true)
+                    }
                 default:
-                    IonotesClient.log.error("note \(id, privacy: .public) refused: \(String(describing: result["error"]), privacy: .public)")
+                    let why = result["error"] as? String ?? "no reason given"
+                    IonotesClient.log.error("note \(id, privacy: .public) refused: \(why, privacy: .public)")
+                    try db.markRefused(note: id, updatedAt: sentAt)
+                    refused.append("\u{201C}\(sent.note.displayTitle)\u{201D}, \(why)")
                 }
             }
             for (sent, result) in zip(tags, answer["tags"] as? [[String: Any]] ?? []) {
@@ -161,11 +229,35 @@ extension NotesStore {
                 case "stale":
                     if let item = result["item"] as? [String: Any] { try applyTag(item, force: true) }
                 default:
-                    break
+                    let why = result["error"] as? String ?? "no reason given"
+                    try db.markTagRefused(name: sent.name, updatedAt: sent.updatedAt)
+                    refused.append("the colour of the tag \(sent.name), \(why)")
                 }
             }
         }
-        reloadNotes()
+        return (refused, copies)
+    }
+
+    /// The server kept its own, later copy of a note that was changed here as well ("stale"): before that copy
+    /// replaces the note, the text written here is saved as a note of its own, so nothing typed on this device is
+    /// lost. Not when the note was deleted here, when the text is the same (only tags, the folder or the pin
+    /// differ), or when there is no text. Answers whether a copy was made.
+    private func keepCopy(ofNote id: String, replacedBy item: [String: Any]) throws -> Bool {
+        guard let mine = try db.note(id: id) else { return false }
+        let gone = item["deleted"] as? Bool == true
+        if !gone, mine.title == item["title"] as? String ?? "", mine.body == item["body"] as? String ?? "" { return false }
+        let blank = CharacterSet.whitespacesAndNewlines
+        if mine.title.trimmingCharacters(in: blank).isEmpty, mine.body.trimmingCharacters(in: blank).isEmpty { return false }
+        var copy = mine
+        copy.id = UUID().uuidString
+        copy.title = "\(mine.displayTitle) (copy of an edit made here)"
+        copy.hasImage = false  // the picture stays with the note itself
+        copy.imageKey = nil
+        copy.ocrText = ""
+        copy.pinned = false
+        copy.updatedAt = Date()
+        try db.saveLocal(copy)
+        return true
     }
 
     /// Pictures made here, sent once their notes are on the server.
