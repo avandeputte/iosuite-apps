@@ -16,6 +16,17 @@ enum AdminAPI {
         return try IopixClient.shared.check(data, resp)
     }
 
+    /// PUT with a JSON body (the suite's settings, such as sign-in at the proxy).
+    @discardableResult
+    static func put(_ path: String, _ body: [String: Any] = [:]) async throws -> [String: Any] {
+        var r = IopixClient.shared.request(path, method: "PUT")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await IopixClient.shared.session.data(for: r)
+        if data.isEmpty, let h = resp as? HTTPURLResponse, (200..<300).contains(h.statusCode) { return [:] }
+        return try IopixClient.shared.check(data, resp)
+    }
+
     /// DELETE (a session, an app password); the answer, or the server's reason it refused.
     @discardableResult
     static func delete(_ path: String) async throws -> [String: Any] {
