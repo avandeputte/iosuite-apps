@@ -74,7 +74,7 @@ location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or la
 one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
 the slower paths. Settings and Tools follow the web app of ioPix 1.143 or later (one Settings menu, Settings ›
 Server through the suite's shared endpoints, app passwords under Account); the ages and birthdays from ioContacts
-and the menu of the other ioThing apps (the ioPix mark top left, when others are installed) need 1.114 to 1.117.
+need 1.114 to 1.117.
 "Open in iopix" shows the same photo in the web app.
 
 ## How it signs in
