@@ -38,7 +38,8 @@ final class Database {
 
     deinit { sqlite3_close(db) }
 
-    // dirty: changed here and not yet taken by the server. deleted: deleted here, waiting to be sent.
+    // dirty: 1 changed here and not yet taken by the server; 2 the server refused the change (it stays here and is
+    // sent again only once it is edited here, which makes it 1 again). deleted: deleted here, waiting to be sent.
     // image_sha: the server's picture; image_local: which picture the file on this device is (a sha, or
     // "local" for one made here); image_pending: the file still has to be uploaded.
     private static let schema = """
@@ -226,6 +227,11 @@ final class Database {
         try run("UPDATE notes SET dirty = 0 WHERE id = ? AND updated_at = ?", [id, updatedAt])
     }
 
+    /// The server refused the change (a reason it will give again): kept here, not sent again until it is edited.
+    func markRefused(note id: String, updatedAt: Double) throws {
+        try run("UPDATE notes SET dirty = 2 WHERE id = ? AND updated_at = ? AND dirty = 1", [id, updatedAt])
+    }
+
     func setImageState(id: String, local: String?, pending: Bool) throws {
         try run("UPDATE notes SET image_local = ?, image_pending = ? WHERE id = ?", [local, pending ? 1 : 0, id])
     }
@@ -277,15 +283,19 @@ final class Database {
         return count
     }
 
-    /// A different server: everything that came from the old one goes; changes not sent yet stay, for the new one.
+    /// A different server: everything that came from the old one goes; changes not sent yet stay, for the new one
+    /// (what the old server refused is offered to the new one).
     func forgetSynced() throws -> [String] {
         var ids: [String] = []
         try query("SELECT id FROM notes WHERE dirty = 0 AND image_pending = 0", []) { ids.append(Database.string($0, 0)) }
         try exec("""
             DELETE FROM notes WHERE dirty = 0 AND image_pending = 0;
             UPDATE notes SET rev = 0, image_sha = NULL;
+            UPDATE notes SET dirty = 1 WHERE dirty = 2;
             DELETE FROM folders WHERE dirty = 0;
+            UPDATE folders SET dirty = 1 WHERE dirty = 2;
             DELETE FROM tag_colors WHERE dirty = 0;
+            UPDATE tag_colors SET dirty = 1 WHERE dirty = 2;
             DELETE FROM meta WHERE key = 'rev';
             """)
         return ids
@@ -401,6 +411,10 @@ final class Database {
         return result
     }
 
+    func markFolderRefused(id: String, updatedAt: Double) throws {
+        try run("UPDATE folders SET dirty = 2 WHERE id = ? AND updated_at = ? AND dirty = 1", [id, updatedAt])
+    }
+
     func markFolderSent(id: String, updatedAt: Double) throws {
         try run("UPDATE folders SET dirty = 0 WHERE id = ? AND updated_at = ?", [id, updatedAt])
         try run("DELETE FROM folders WHERE id = ? AND deleted = 1 AND dirty = 0", [id])
@@ -443,6 +457,10 @@ final class Database {
             result.append(TagRow(name: Database.string($0, 0), color: Database.optionalString($0, 1), updatedAt: sqlite3_column_double($0, 2)))
         }
         return result
+    }
+
+    func markTagRefused(name: String, updatedAt: Double) throws {
+        try run("UPDATE tag_colors SET dirty = 2 WHERE key = ? AND updated_at = ? AND dirty = 1", [name.lowercased(), updatedAt])
     }
 
     func markTagSent(name: String, updatedAt: Double) throws {
