@@ -45,8 +45,14 @@ struct NoteEditor: View {
                 }
 
                 if editing {
-                    TextField(note.hasImage ? "Add a comment…" : "Write something…", text: $text, axis: .vertical)
-                        .lineLimit(6...)
+                    MarkdownTextView(text: $text)
+                        .overlay(alignment: .topLeading) {
+                            if text.isEmpty {
+                                Text(note.hasImage ? "Add a comment…" : "Write something… (Markdown: # heading, **bold**, - [ ] checklist)")
+                                    .foregroundStyle(.tertiary)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                         .padding(10)
                         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
                 } else {

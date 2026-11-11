@@ -24,6 +24,10 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
 - **Markdown and checklists**: notes are drawn formatted (# headings, **bold**, links, lists, quotes, code) and
   `- [ ] ` items get boxes you tick right in the note, on every device and in the web app. ⇧⌘E switches between
   the formatted note and its text, ⇧⌘L adds a checklist item. The list shows checklist progress (3/5).
+- **Formatting bar**: while you edit the text, a bar above it (on the Mac) or above the keyboard (iPhone and iPad)
+  has bold (⌘B), italic (⌘I), strikethrough (⇧⌘X), code (⌘E), link (⌘K), heading (⇧⌘H, again for ## and ###),
+  bulleted (⇧⌘8) and numbered (⇧⌘7) lists, checklist (⇧⌘L), quote (⇧⌘.), code block and divider, the same as the
+  web app. Each one toggles, undo takes it back, and Return continues a list.
 - **Files**: attach PDFs, more pictures and documents to a note (Attach File, or drop them on the Files row).
   They live on the server, which reads a PDF's text so search finds it; a file is fetched when you open it.
 - **Templates**: make templates in the web app (Manage › Templates); New Note ▾ starts a note from one, with
