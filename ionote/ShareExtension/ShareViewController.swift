@@ -2,13 +2,13 @@ import Social
 import UIKit
 import UniformTypeIdentifiers
 
-/// "ioNotes" in the share sheet: text, links, pictures, PDFs and other files become a note (a comment can be added).
+/// "ioNote" in the share sheet: text, links, pictures, PDFs and other files become a note (a comment can be added).
 /// The extension only writes the share into the App Group container; the app makes the note and sends it to the
 /// server the next time it is opened (see ShareInbox).
 final class ShareViewController: SLComposeServiceViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "ioNotes"
+        title = "ioNote"
         placeholder = "Add a comment (optional)"
         navigationController?.navigationBar.tintColor = UIColor(red: 0.0, green: 0.56, blue: 0.56, alpha: 1)
     }

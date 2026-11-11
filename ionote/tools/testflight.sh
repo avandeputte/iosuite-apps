@@ -11,7 +11,7 @@ KEY=~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
 [[ -f $KEY ]] || { echo "No key file at $KEY"; exit 1; }
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 BUILD=$(date -u +%Y%m%d%H%M)
-ARCHIVE=build/ionotes-ios-$BUILD.xcarchive
+ARCHIVE=build/ionote-ios-$BUILD.xcarchive
 xcodegen generate -q
 xcodebuild -project ionotes.xcodeproj -scheme ionotesiOS -configuration Release -destination "generic/platform=iOS" \
   -archivePath "$ARCHIVE" CURRENT_PROJECT_VERSION=$BUILD "${AUTH[@]}" archive

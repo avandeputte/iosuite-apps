@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings for the ionotes server, the same on the Mac and on iPhone/iPad: its address, signing in,
+/// Settings for the ionote server, the same on the Mac and on iPhone/iPad: its address, signing in,
 /// the optional Cloudflare service token, and how syncing is going.
 struct ServerSettings: View {
     @EnvironmentObject private var store: NotesStore
@@ -35,7 +35,7 @@ struct ServerSettings: View {
                 Text(addressProblem).font(.caption).foregroundStyle(.red)
             }
         } header: {
-            Text("ionotes server")
+            Text("ionote server")
         } footer: {
             Text("Your notes, folders, tags and colours sync with this server. A copy stays on this device, so you can read, search and write while offline.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -103,7 +103,7 @@ struct ServerSettings: View {
             } header: {
                 Text("Cloudflare Access")
             } footer: {
-                Text("Only needed when the server sits behind Cloudflare Access: a service token lets ionotes through. It is kept in the Keychain.")
+                Text("Only needed when the server sits behind Cloudflare Access: a service token lets ionote through. It is kept in the Keychain.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

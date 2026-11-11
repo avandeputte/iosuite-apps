@@ -1,4 +1,4 @@
-# Draws the ionotes icon: a clipped note card with a gold-highlighted line on deep teal, without a wordmark
+# Draws the ionote icon: a clipped note card with a gold-highlighted line on deep teal, without a wordmark
 # (like the other ioThing app icons). python3 tools/make_icon.py out.png [--ios]
 # --ios: a square, opaque 1024 px tile for iPhone and iPad (iOS rounds the corners itself).
 import sys, math

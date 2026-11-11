@@ -74,7 +74,7 @@ struct SettingsView: View {
             }
 
             Section("Right-click") {
-                Text("Select text in any app, right-click, and choose Save to ionotes (it may be under Services). If it's missing, turn it on in System Settings › Keyboard › Keyboard Shortcuts › Services › Text, where you can also give it a shortcut.")
+                Text("Select text in any app, right-click, and choose Save to ionote (it may be under Services). If it's missing, turn it on in System Settings › Keyboard › Keyboard Shortcuts › Services › Text, where you can also give it a shortcut.")
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Open Keyboard Settings") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)

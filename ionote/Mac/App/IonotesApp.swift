@@ -41,7 +41,7 @@ enum Router {
         if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()  // in front even if macOS doesn't hand ionotes the focus
+        window.orderFrontRegardless()  // in front even if macOS doesn't hand ionote the focus
         Log.app.info("showMain: window visible=\(window.isVisible) key=\(window.isKeyWindow) active=\(NSApp.isActive)")
     }
 

@@ -45,7 +45,7 @@ extension NotesStore {
         ownPasteboardChange = pb.changeCount
     }
 
-    /// For ⌘C in the notes list: SwiftUI puts this on the clipboard (ionotes is in front, so the Inbox skips it).
+    /// For ⌘C in the notes list: SwiftUI puts this on the clipboard (ionote is in front, so the Inbox skips it).
     func copyProvider(for note: Note) -> NSItemProvider {
         if let data = imageData(for: note), let image = NSImage(data: data) {
             return NSItemProvider(object: image)

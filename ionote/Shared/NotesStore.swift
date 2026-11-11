@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 extension UTType {
-    /// A note being dragged inside ionotes (onto a folder); declared in Info.plist.
+    /// A note being dragged inside ionote (onto a folder); declared in Info.plist.
     static let ionotesNote = UTType(exportedAs: "net.iothing.ionotes.note")
 }
 
@@ -85,7 +85,7 @@ struct TagCount: Identifiable, Hashable {
     var id: String { name }
 }
 
-/// The app's single source of truth. Notes live on the ionotes server; this device keeps a full copy in
+/// The app's single source of truth. Notes live on the ionote server; this device keeps a full copy in
 /// local SQLite (searchable offline) plus the changes not sent yet, and syncs with the server (see Sync.swift).
 /// The clipboard inbox is local only.
 @MainActor
@@ -155,7 +155,7 @@ final class NotesStore: ObservableObject {
         do {
             db = try Database(url: AppPaths.databaseURL)
         } catch {
-            fatalError("ionotes could not open its database: \(error)")
+            fatalError("ionote could not open its database: \(error)")
         }
         reloadNotes()
         reloadInbox()
@@ -607,7 +607,7 @@ final class NotesStore: ObservableObject {
     // MARK: - Helpers
 
     func report(_ error: Error) {
-        NSLog("ionotes error: \(error)")
+        NSLog("ionote error: \(error)")
         lastError = "\(error)"
     }
 

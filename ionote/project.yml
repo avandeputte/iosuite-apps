@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.3.0"
+    MARKETING_VERSION: "1.4.0"
     CURRENT_PROJECT_VERSION: "1"
     # your Apple team id (Xcode › Settings › Accounts), the same as iopix
     DEVELOPMENT_TEAM: 69M2JRAT8P
@@ -22,7 +22,7 @@ targets:
     sources:
       - path: Mac
         excludes: ["LaunchAgent/**"]
-      - path: Mac/LaunchAgent  # starts ionotes at login, menu bar only (see Mac/App/LoginItem.swift)
+      - path: Mac/LaunchAgent  # starts ionote at login, menu bar only (see Mac/App/LoginItem.swift)
         buildPhase:
           copyFiles:
             destination: wrapper
@@ -31,26 +31,26 @@ targets:
     info:
       path: Mac/Info.plist
       properties:
-        CFBundleDisplayName: ionotes
+        CFBundleDisplayName: ionote
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
-        # notes sync with a self-hosted ionotes server, often plain http on the home network
+        # notes sync with a self-hosted ionote server, often plain http on the home network
         NSAppTransportSecurity: {NSAllowsLocalNetworking: true}
         UTExportedTypeDeclarations:  # a note dragged onto a folder in the sidebar
           - UTTypeIdentifier: net.iothing.ionotes.note
-            UTTypeDescription: ionotes note
+            UTTypeDescription: ionote note
             UTTypeConformsTo: [public.data]
         NSHumanReadableCopyright: ""
         NSServices:
-          # select text anywhere › right-click › Save to ionotes
-          - NSMenuItem: {default: Save to ionotes}
+          # select text anywhere › right-click › Save to ionote
+          - NSMenuItem: {default: Save to ionote}
             NSMessage: saveToNotes
             NSPortName: ionotes
             NSRequiredContext: {}
             NSSendTypes: [public.utf8-plain-text, NSStringPboardType]
-          # images in Finder › right-click › Services › Save Image to ionotes
-          - NSMenuItem: {default: Save Image to ionotes}
+          # images in Finder › right-click › Services › Save Image to ionote
+          - NSMenuItem: {default: Save Image to ionote}
             NSMessage: saveFilesToNotes
             NSPortName: ionotes
             NSRequiredContext: {}
@@ -61,7 +61,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ionotes
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  # iPhone and iPad: the same notes through the same ionotes server. Same bundle id as the Mac app,
+  # iPhone and iPad: the same notes through the same ionote server. Same bundle id as the Mac app,
   # so both are one app in App Store Connect.
   ionotesiOS:
     type: application
@@ -79,20 +79,20 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
-        CFBundleDisplayName: ionotes
+        CFBundleDisplayName: ionote
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
         UILaunchScreen: {}
         NSAppTransportSecurity: {NSAllowsLocalNetworking: true}
-        NSLocalNetworkUsageDescription: ionotes syncs your notes with your ionotes server on your home network.
+        NSLocalNetworkUsageDescription: ionote syncs your notes with your ionote server on your home network.
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: net.iothing.ionotes.note
-            UTTypeDescription: ionotes note
+            UTTypeDescription: ionote note
             UTTypeConformsTo: [public.data]
     settings:
       base:
@@ -101,10 +101,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.ionotes
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
-        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO  # the Mac has its own ionotes
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO  # the Mac has its own ionote
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  # "ioNotes" in the iPhone/iPad share sheet: text, links, pictures and files become notes (ShareExtension/).
+  # "ioNote" in the iPhone/iPad share sheet: text, links, pictures and files become notes (ShareExtension/).
   ionotesShare:
     type: app-extension
     platform: iOS
@@ -113,7 +113,7 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
-        CFBundleDisplayName: ioNotes
+        CFBundleDisplayName: ioNote
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:

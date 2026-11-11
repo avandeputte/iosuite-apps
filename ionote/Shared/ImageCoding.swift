@@ -67,7 +67,7 @@ enum ImageExport {
             try ImageCoding.png(from: data).write(to: url, options: .atomic)
             return url
         } catch {
-            NSLog("ionotes error: \(error)")
+            NSLog("ionote error: \(error)")
             return nil
         }
     }

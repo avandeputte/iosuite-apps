@@ -17,7 +17,7 @@ enum SidebarSection: Hashable {
     }
 }
 
-/// The ionotes window: Inbox and Notes in the sidebar, the list in the middle, the item on the right.
+/// The ionote window: Inbox and Notes in the sidebar, the list in the middle, the item on the right.
 struct MainWindow: View {
     @EnvironmentObject private var store: NotesStore
     @Environment(\.openSettings) private var openSettings

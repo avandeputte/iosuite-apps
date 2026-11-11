@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-/// Syncing with the ionotes server. Changes made here are saved locally first and marked dirty; a sync sends
+/// Syncing with the ionote server. Changes made here are saved locally first and marked dirty; a sync sends
 /// them (POST /api/sync/push), uploads new pictures, then fetches everything changed on the server since the
 /// last rev (GET /api/sync), and finally fetches pictures this device doesn't have yet. It runs on launch, when
 /// the app comes to the front, shortly after an edit, every minute while active, and when the network returns.

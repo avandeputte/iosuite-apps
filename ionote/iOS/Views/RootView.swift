@@ -128,7 +128,7 @@ struct Sidebar: View {
                 SyncStatusView()
             }
         }
-        .navigationTitle("ionotes")
+        .navigationTitle("ionote")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {

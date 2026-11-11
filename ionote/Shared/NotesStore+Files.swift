@@ -28,7 +28,7 @@ extension NotesStore {
     func attach(data items: [(data: Data, name: String)], to noteID: String) async -> Bool {
         guard !items.isEmpty else { return true }
         guard ServerConfig.serverURL != nil else {
-            lastError = "Attaching files needs the ioNotes server. Connect to it in Settings."
+            lastError = "Attaching files needs the ioNote server. Connect to it in Settings."
             return false
         }
         transferring.insert(noteID)

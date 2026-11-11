@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Starts ionotes at login in the menu bar only (no window, no Dock icon). Registered by the app through SMAppService.agent; see LoginItem.swift. -->
+<!-- Starts ionote at login in the menu bar only (no window, no Dock icon). Registered by the app through SMAppService.agent; see LoginItem.swift. -->
 <plist version="1.0">
 <dict>
 	<key>Label</key>

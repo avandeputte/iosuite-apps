@@ -1,13 +1,13 @@
-# ionotes
+# ionote
 
 Save anything from the clipboard as a searchable note, on your Mac, iPhone and iPad, synced through
-your own [ionotes server](https://github.com/avandeputte/ionotes).
+your own [ionote server](https://github.com/avandeputte/ionote).
 A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-teal note-card icon.
 
 - **Inbox**: everything you copy (text, images, files) and every screenshot you take lands in the Inbox,
   newest first. Pick what's worth keeping and click **Save as Note** (⌘↩). The Inbox stays on this Mac.
-- **Right-click › Save to ionotes**: select text in any app and save it straight to your notes.
-  Images in Finder: right-click › Services › Save Image to ionotes.
+- **Right-click › Save to ionote**: select text in any app and save it straight to your notes.
+  Images in Finder: right-click › Services › Save Image to ionote.
 - **Screenshots**: new screenshots show up in the Inbox (or go straight to notes, see Settings). Their text
   is read on the Mac with Apple's Vision framework, so a search finds words that are inside a screenshot.
 - **Folders, tags and pins**: make folders like Work or AI in the sidebar and drag notes onto them (or use
@@ -18,7 +18,7 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
   Saving an Inbox item as a note takes it out of the Inbox.
 - **Search**: full-text search (SQLite FTS5) over titles, note text and text found in images, prefix-matching
   every word you type.
-- **Sync with your server**: notes, folders, tags and colours live on a self-hosted ionotes server (FastAPI and
+- **Sync with your server**: notes, folders, tags and colours live on a self-hosted ionote server (FastAPI and
   MariaDB, with its own web app). Each device keeps a full copy in local SQLite, so reading, searching and writing
   work offline; changes are sent when the server is back.
 - **Markdown and checklists**: notes are drawn formatted (# headings, **bold**, links, lists, quotes, code) and
@@ -36,15 +36,15 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
 - **Inbox rules** (Settings › Inbox Rules): save copies from an app, or containing some text, as notes straight
   away (into a folder, with tags), or leave them out of the Inbox. Settings can also clear Inbox items after a
   number of days.
-- **Menu bar**: click the icon to open ionotes; right-click it to pause clipboard capture, open Settings or quit.
-  Quit from the Dock (or ⌘Q) just closes the window: ionotes keeps running in the menu bar.
+- **Menu bar**: click the icon to open ionote; right-click it to pause clipboard capture, open Settings or quit.
+  Quit from the Dock (or ⌘Q) just closes the window: ionote keeps running in the menu bar.
   ionotes starts at login in the menu bar only (a launch agent passes `--background`); the Dock icon appears
   while the window is open. Turn it off in Settings.
 
-On **iPhone and iPad**, ionotes shows the same notes, folders, tags and colours. Paste with the clipboard button at
+On **iPhone and iPad**, ionote shows the same notes, folders, tags and colours. Paste with the clipboard button at
 the bottom of the list (iOS doesn't ask permission for that button), or add photos and screenshots with the photo
-button; their text is read on the device so search finds it. **Share to ioNotes** from any app's share sheet
-(text, links, pictures, PDFs and other files, with a comment): the note is made when ionotes next opens, and its
+button; their text is read on the device so search finds it. **Share to ioNote** from any app's share sheet
+(text, links, pictures, PDFs and other files, with a comment): the note is made when ionote next opens, and its
 files are sent to the server once it can be reached. The clipboard Inbox stays on the Mac.
 
 Passwords never go into the Inbox: copies that apps mark as private (concealed or transient) are skipped, and so is
@@ -57,7 +57,7 @@ You need Xcode 16 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 the same setup as iopix.
 
 ```sh
-cd ~/Documents/GitHub/ionotes
+cd ~/Documents/GitHub/iosuite/ionote-apps
 xcodegen generate
 open ionotes.xcodeproj
 ```
@@ -65,8 +65,8 @@ open ionotes.xcodeproj
 In Xcode, pick the **ionotes** scheme and press ⌘R. The team id in `project.yml` is the iopix one
 (`69M2JRAT8P`); change `DEVELOPMENT_TEAM` there if needed and run `xcodegen generate` again.
 
-Then open Settings (⌘,) › ionotes server, enter the server's address (e.g. `192.168.1.10:8610`, or its HTTPS
-name), Connect, and sign in with an ionotes account (an editor or admin can change notes, a viewer only read).
+Then open Settings (⌘,) › ionote server, enter the server's address (e.g. `192.168.1.10:8610`, or its HTTPS
+name), Connect, and sign in with an ionote account (an editor or admin can change notes, a viewer only read).
 
 To build and install from the command line instead:
 
@@ -81,11 +81,11 @@ ditto build/Build/Products/Release/ionotes.app /Applications/ionotes.app
 
 ### First run
 
-- macOS asks to let ionotes read your **Desktop** (or wherever screenshots go): allow it, that is how
+- macOS asks to let ionote read your **Desktop** (or wherever screenshots go): allow it, that is how
   screenshots are picked up.
-- Newer versions of macOS may ask whether ionotes may **read the clipboard** (paste from other apps):
+- Newer versions of macOS may ask whether ionote may **read the clipboard** (paste from other apps):
   allow it, or the Inbox stays empty. You can change it later in System Settings › Privacy & Security.
-- **Save to ionotes** appears in the right-click menu once the app has run from `/Applications` (or Xcode)
+- **Save to ionote** appears in the right-click menu once the app has run from `/Applications` (or Xcode)
   and macOS has refreshed its Services list. If it doesn't show, run `/System/Library/CoreServices/pbs -update`,
   or turn it on in System Settings › Keyboard › Keyboard Shortcuts › Services › Text (you can give it a
   shortcut there too).
@@ -100,9 +100,13 @@ The `ionotesiOS` target has the same bundle id as the Mac app, so both are one a
 3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
 
 
+The app is called ionote. Its bundle id (`net.iothing.ionotes`), app group, Keychain entry, the Xcode project,
+target and product names, and its folders on the device keep the older `ionotes` spelling on purpose: changing them
+would make it a new app in App Store Connect and leave the notes already on a device behind.
+
 ## Syncing
 
-- Settings › ionotes server: the address, sign in (name and password; the app keeps only the 30-day session
+- Settings › ionote server: the address, sign in (name and password; the app keeps only the 30-day session
   cookie, never the password), an optional Cloudflare Access service token (kept in the Keychain) for a server
   behind Cloudflare, the sync status, the last error and **Sync Now**.
 - A sync sends the changes made here (`POST /api/sync/push`), uploads new pictures (`PUT /api/notes/{id}/image`),
@@ -131,7 +135,7 @@ Shared/            platform-neutral, ready for an iPhone/iPad target
   ServerSettings.swift the server section of Settings (Mac and iPhone/iPad) and the sync status
   Database.swift     local SQLite: notes (offline copy + changes to send), folders, tag colours, FTS5 index, Inbox
   OCR.swift          Vision text recognition
-  Brand.swift        the two-colour "ionotes" name (iopix's gold, ionotes' teal)
+  Brand.swift        the two-colour "ionote" name (iopix's gold, ioNote's teal)
 Mac/
   App/               @main app, AppDelegate (Services, monitors)
   NotesStore+Mac.swift  copying and dragging out
@@ -145,7 +149,7 @@ tools/testflight.sh  builds the iPhone/iPad app and uploads it to TestFlight
 The search index (FTS5) is kept by triggers on the local notes table, so search works offline.
 Local data lives in `~/Library/Application Support/ionotes/` (`index.sqlite`, `NoteImages/`, `InboxImages/`).
 
-ionotes is not sandboxed: it needs to read the screenshots folder and the clipboard. That suits a
+ionote is not sandboxed: it needs to read the screenshots folder and the clipboard. That suits a
 Developer ID release like iopix's (`tools/release-mac.sh` in iopix-apps works with the scheme name changed).
 
 ## License

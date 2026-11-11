@@ -44,7 +44,7 @@ struct NotesList: View {
                     ContentUnavailableView("No notes with this tag", systemImage: "number")
                 } else {
                     ContentUnavailableView("No notes yet", systemImage: "note.text",
-                                           description: Text("Save something from the Inbox, or select text in any app and right-click › Save to ionotes."))
+                                           description: Text("Save something from the Inbox, or select text in any app and right-click › Save to ionote."))
                 }
             }
         }

@@ -1,6 +1,6 @@
 import AppKit
 
-/// Answers the "Save to ionotes" items in the right-click menu (Services) of other apps.
+/// Answers the "Save to ionote" items in the right-click menu (Services) of other apps.
 /// The menu items are declared under NSServices in Info.plist (see project.yml).
 @MainActor
 final class ServiceProvider: NSObject {
@@ -10,7 +10,7 @@ final class ServiceProvider: NSObject {
         self.store = store
     }
 
-    /// Selected text, from any app: right-click › Save to ionotes.
+    /// Selected text, from any app: right-click › Save to ionote.
     @objc func saveToNotes(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         if let text = pboard.string(forType: .string), store.createTextNote(text, source: "service", sourceApp: app) != nil {
@@ -25,7 +25,7 @@ final class ServiceProvider: NSObject {
         error.pointee = "There was no text to save." as NSString
     }
 
-    /// Image files selected in Finder: right-click › Services › Save Image to ionotes.
+    /// Image files selected in Finder: right-click › Services › Save Image to ionote.
     @objc func saveFilesToNotes(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
         let urls = pboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         var saved = 0

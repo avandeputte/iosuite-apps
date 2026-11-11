@@ -15,13 +15,13 @@ enum LoginItem {
         if on { try service.register() } else { try service.unregister() }
     }
 
-    /// Turns starting at login on the first time ionotes runs; after that the Settings switch decides.
+    /// Turns starting at login on the first time ionote runs; after that the Settings switch decides.
     static func enableOnFirstRun() {
         guard !UserDefaults.standard.bool(forKey: configuredKey) else { return }
         do {
             try service.register()
         } catch {
-            NSLog("ionotes: could not add the login item: \(error)")
+            NSLog("ionote: could not add the login item: \(error)")
         }
         UserDefaults.standard.set(true, forKey: configuredKey)
     }

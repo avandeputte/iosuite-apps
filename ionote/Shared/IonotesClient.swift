@@ -18,8 +18,8 @@ enum IonotesError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .noServer: return "Enter your ionotes server in Settings."
-        case .needsSignIn: return "Sign in to your ionotes server in Settings."
+        case .noServer: return "Enter your ionote server in Settings."
+        case .needsSignIn: return "Sign in to your ionote server in Settings."
         case .notAllowed(let why): return why
         case .tooLarge: return "That is more than the server takes in one request."
         case .server(let why): return why
@@ -27,7 +27,7 @@ enum IonotesError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to the ionotes server: the sign-in cookie (and, from outside, Cloudflare Access's service token),
+/// Talks to the ionote server: the sign-in cookie (and, from outside, Cloudflare Access's service token),
 /// then the sync API. Every time is seconds since 1970; ids are chosen by the device.
 final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     static let shared = IonotesClient()
@@ -101,7 +101,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         case 200..<300:
             if let json { return json }
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
-            throw type.contains("html") ? IonotesError.needsSignIn : IonotesError.server("The server sent an answer ionotes does not understand.")
+            throw type.contains("html") ? IonotesError.needsSignIn : IonotesError.server("The server sent an answer ionote does not understand.")
         case 300..<400, 401:
             throw IonotesError.needsSignIn
         case 403:
@@ -124,7 +124,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
 
     // MARK: - Status and sign-in
 
-    /// Is there an ionotes server at this address? nil when there is, otherwise what went wrong, in plain words.
+    /// Is there an ionote server at this address? nil when there is, otherwise what went wrong, in plain words.
     func probe(_ url: URL) async -> String? {
         do {
             var r = try request("api/status", server: url)
@@ -134,9 +134,9 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
             if http.url?.host?.lowercased() != url.host?.lowercased() || (300..<400).contains(http.statusCode) {
                 return nil  // a sign-in page in front of it (Cloudflare Access)
             }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] as? String == "ionotes" { return nil }
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] as? String == "ionote" { return nil }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an ionotes server."
+            return "That address answers, but it isn't an ionote server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
             return "No server by that name. Check the address."
         } catch {
@@ -226,7 +226,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         var r = try request("api/notes/\(noteID)/attachments/\(id)", method: "PUT", query: [URLQueryItem(name: "name", value: name)])
         r.setValue(mime.isEmpty ? "application/octet-stream" : mime, forHTTPHeaderField: "Content-Type")
         if let text, let encoded = String(text.prefix(3000)).addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
-            r.setValue(encoded, forHTTPHeaderField: "X-Ionotes-Text")
+            r.setValue(encoded, forHTTPHeaderField: "X-Ionote-Text")
         }
         r.timeoutInterval = 300
         let (body, resp) = try await session.upload(for: r, from: data)

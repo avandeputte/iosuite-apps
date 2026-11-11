@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ionotes</string>
+	<string>ionote</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -35,7 +35,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Save to ionotes</string>
+				<string>Save to ionote</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>saveToNotes</string>
@@ -53,7 +53,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Save Image to ionotes</string>
+				<string>Save Image to ionote</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>saveFilesToNotes</string>
@@ -75,7 +75,7 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>ionotes note</string>
+			<string>ionote note</string>
 			<key>UTTypeIdentifier</key>
 			<string>net.iothing.ionotes.note</string>
 		</dict>

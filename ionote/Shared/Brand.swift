@@ -4,14 +4,14 @@ import SwiftUI
 /// (or, on a light background, the deep teal of the icon). Used wherever the app writes its own name.
 enum Brand {
     static let gold = Color(red: 0.965, green: 0.812, blue: 0.447)   // #f6cf72
-    static let teal = Color(red: 0.110, green: 0.353, blue: 0.369)   // #1c5a5e, ionotes' own colour
+    static let teal = Color(red: 0.110, green: 0.353, blue: 0.369)   // #1c5a5e, ioNote's own colour
 
     /// The two-colour name as one piece of text, so it fits wherever a Text does.
     static func name(onLight: Bool = false) -> Text {
-        Text("io").foregroundColor(gold).fontWeight(.bold) + Text("notes").foregroundColor(onLight ? teal : .white).fontWeight(.bold)
+        Text("io").foregroundColor(gold).fontWeight(.bold) + Text("note").foregroundColor(onLight ? teal : .white).fontWeight(.bold)
     }
 
-    /// A sentence with the name in it: "Save to ionotes".
+    /// A sentence with the name in it: "Save to ionote".
     static func text(_ before: String, _ after: String = "", onLight: Bool = false) -> Text {
         Text(before) + name(onLight: onLight) + Text(after)
     }

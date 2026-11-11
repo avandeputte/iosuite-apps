@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItem?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // One ionotes at a time: registering the login item starts a copy straight away (RunAtLoad).
+        // One ionote at a time: registering the login item starts a copy straight away (RunAtLoad).
         let me = NSRunningApplication.current
         if let other = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .first(where: { $0 != me && ($0.launchDate ?? .distantPast) <= (me.launchDate ?? .distantFuture) }) {
@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginItem.enableOnFirstRun()
         statusItem = StatusItem()
-        // Right-click › Save to ionotes, in any app.
+        // Right-click › Save to ionote, in any app.
         let services = ServiceProvider(store: store)
         NSApp.servicesProvider = services
         NSUpdateDynamicServices()
@@ -49,13 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.syncSoon(after: 0)
     }
 
-    /// Closing the window keeps ionotes running in the menu bar, watching the clipboard.
+    /// Closing the window keeps ionote running in the menu bar, watching the clipboard.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// Set by the menu bar icon's Quit, the one way to really quit ionotes by hand.
+    /// Set by the menu bar icon's Quit, the one way to really quit ionote by hand.
     static var reallyQuit = false
 
-    /// Quit from the Dock or ⌘Q closes the window and keeps ionotes in the menu bar; logout, restart and shutdown still quit.
+    /// Quit from the Dock or ⌘Q closes the window and keeps ionote in the menu bar; logout, restart and shutdown still quit.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let reason = NSAppleEventManager.shared().currentAppleEvent?
             .attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue
