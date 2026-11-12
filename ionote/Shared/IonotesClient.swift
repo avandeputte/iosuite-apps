@@ -134,7 +134,9 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
             if http.url?.host?.lowercased() != url.host?.lowercased() || (300..<400).contains(http.statusCode) {
                 return nil  // a sign-in page in front of it (Cloudflare Access)
             }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] as? String == "ionote" { return nil }
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], ["ionote", "ionotes"].contains(j["app"] as? String ?? "") {
+                return nil  // ionote, or a server from before the rename (ionotes)
+            }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
             return "That address answers, but it isn't an ionote server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
