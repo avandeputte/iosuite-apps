@@ -24,6 +24,8 @@ struct API {
     static let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 25
+        c.waitsForConnectivity = true        // a phone just unlocked, or an app just installed: wait for the network
+        c.timeoutIntervalForResource = 40    // instead of failing at once with "appears to be offline"; this long at most
         c.httpCookieStorage = nil
         c.httpShouldSetCookies = false
         return URLSession(configuration: c)
@@ -35,15 +37,27 @@ struct API {
         "Basic " + Data("\(account.user):\(account.password)".utf8).base64EncodedString()
     }
 
+    /// The errors of a network that was not there for a moment: worth one more try before telling anyone.
+    private static let passing: Set<URLError.Code> = [
+        .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost, .secureConnectionFailed,
+    ]
+
     private static func run(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        do {
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse else { throw APIError.unreachable("The start page did not answer.") }
-            return (data, http)
-        } catch let e as APIError {
-            throw e
-        } catch {
-            throw APIError.unreachable(error.localizedDescription)
+        var tries = 0
+        while true {
+            tries += 1
+            do {
+                let (data, resp) = try await session.data(for: req)
+                guard let http = resp as? HTTPURLResponse else { throw APIError.unreachable("The start page did not answer.") }
+                return (data, http)
+            } catch let e as APIError {
+                throw e
+            } catch let e as URLError where passing.contains(e.code) && tries < 2 {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            } catch {
+                let host = req.url?.host ?? "the start page"
+                throw APIError.unreachable("Could not reach \(host): \(error.localizedDescription)")
+            }
         }
     }
 
