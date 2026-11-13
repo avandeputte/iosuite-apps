@@ -63,6 +63,17 @@ struct FolderView: View {
                         .accessibilityLabel("Settings")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { model.newPage() } label: { Label("New page", systemImage: "plus.square.on.square") }
+                    Button { model.newPage(privately: true) } label: { Label("New private page", systemImage: "eye.slash") }
+                } label: {
+                    Image(systemName: "globe")
+                } primaryAction: {
+                    model.newPage()
+                }
+                .accessibilityLabel("Browse the web")
+            }
             if model.canWrite {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if items.count > 1 { EditButton() }
@@ -174,6 +185,7 @@ private struct RowActions: ViewModifier {
             .contextMenu {
                 if let url = node.link {
                     Button { model.open(url, in: .app) } label: { Label("Open here", systemImage: "rectangle.portrait.and.arrow.right") }
+                    Button { model.open(url, privately: true) } label: { Label("Open in a private page", systemImage: "eye.slash") }
                     Button { model.open(url, in: .browser) } label: { Label("Open in my browser", systemImage: "safari") }
                     Button { UIPasteboard.general.url = url } label: { Label("Copy address", systemImage: "doc.on.doc") }
                     ShareLink(item: url) { Label("Share…", systemImage: "square.and.arrow.up") }

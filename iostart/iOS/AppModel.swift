@@ -1,10 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// A page open in the built-in browser.
+/// A page open in the built-in browser: a bookmark's, or none yet (a new page starts at its address bar). A private
+/// one keeps no cookies, sign-ins, history or cache: all of it is gone when it closes.
 struct Page: Identifiable {
     let id = UUID()
-    let url: URL
+    var url: URL?
+    var isPrivate = false
 }
 
 /// Where a tapped link opens.
@@ -27,9 +29,13 @@ final class AppModel: ObservableObject {
     @Published var openIn: OpenIn {
         didSet { Shared.defaults.set(openIn.rawValue, forKey: "openIn") }
     }
+    @Published var searchWith: SearchEngine {
+        didSet { Shared.defaults.set(searchWith.rawValue, forKey: "searchWith") }
+    }
 
     init() {
         openIn = OpenIn(rawValue: Shared.defaults.string(forKey: "openIn") ?? "") ?? .app
+        searchWith = SearchEngine(rawValue: Shared.defaults.string(forKey: "searchWith") ?? "") ?? .google
         account = Account.load()
         if account != nil, let kept = TreeCache.load() {
             tree = kept.tree
@@ -112,13 +118,23 @@ final class AppModel: ObservableObject {
         open(url)
     }
 
-    func open(_ url: URL, in place: OpenIn? = nil) {
+    func open(_ url: URL, in place: OpenIn? = nil, privately: Bool = false) {
         let web = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-        if (place ?? openIn) == .app && web {
-            browsing = Page(url: url)
+        if (privately || (place ?? openIn) == .app) && web {
+            browsing = Page(url: url, isPrivate: privately)
         } else {
             UIApplication.shared.open(url)
         }
+    }
+
+    /// The built-in browser on an empty page, its address bar ready for typing.
+    func newPage(privately: Bool = false) {
+        browsing = Page(url: nil, isPrivate: privately)
+    }
+
+    /// What was typed in an address bar as the page to open (see WebAddress).
+    func destination(_ typed: String) -> URL? {
+        WebAddress.destination(for: typed, engine: searchWith)
     }
 
     // MARK: the account
