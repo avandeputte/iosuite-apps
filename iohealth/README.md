@@ -1,7 +1,7 @@
 # ioHealthSync for iPhone
 
 Copies your Apple Health data, all of it or just the types you pick, to your own
-[ioHealth server](https://github.com/avandeputte/iohealth), which keeps it in MariaDB and gives you a fitness web app on
+[ioHealth server](https://github.com/avandeputte/iosuite/tree/main/iohealth), which keeps it in MariaDB and gives you a fitness web app on
 top of it. Nothing goes through a cloud service: the phone uploads straight to your server, over HTTPS behind your
 reverse proxy or plain HTTP on your own network.
 
@@ -26,7 +26,7 @@ works, but the app then has to be re-installed every 7 days).
 
 ```sh
 brew install xcodegen        # once
-git clone https://github.com/avandeputte/iohealth-apps && cd iohealth-apps
+git clone https://github.com/avandeputte/iosuite-apps && cd iosuite-apps/iohealth
 xcodegen generate
 open ioHealthSync.xcodeproj
 ```
@@ -79,4 +79,4 @@ The bundle ID is `net.iothing.ioHealthSync`, in the suite's `net.iothing.` space
 
 ## License
 
-GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](../LICENSE).

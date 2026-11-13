@@ -1,6 +1,6 @@
 # iopix for iPhone, Mac and Apple TV
 
-Native companions to [iopix](https://github.com/avandeputte/iopix), the self-hosted photo library.
+Native companions to [iopix](https://github.com/avandeputte/iosuite/tree/main/iopix), the self-hosted photo library.
 
 - **iopix for iPhone**: the iopix web app in a native shell, plus
   - **Send to iopix** in the share sheet (Photos, Files, any app that shares photos or videos),
@@ -143,4 +143,4 @@ only runs on your own Mac.
 
 ## License
 
-GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](../LICENSE).

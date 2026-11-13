@@ -1,13 +1,13 @@
-# iostart-apps
+# ioStart for iPhone and iPad
 
-ioSuite's native apps. For now one: **ioStart**, the iPhone and iPad app for the bookmarks of the
-[ioSuite start page](https://github.com/avandeputte/iosuite).
+**ioStart**, the iPhone and iPad app for the bookmarks of the
+[ioStart start page](https://github.com/avandeputte/iosuite/tree/main/iostart).
 
 ## ioStart
 
 - The whole tree, as the start page has it: folders, links with their sites' icons, search over everything.
 - Add, rename, move, reorder (Edit, then drag) and delete; a change here reaches the start page at once, and every
-  browser that syncs with it (the ioSuite Bookmarks extension) at its next sync.
+  browser that syncs with it (the ioStart Bookmarks extension) at its next sync.
 - **Share sheet**: in any browser (Vivaldi, Safari, Chrome…) tap Share › ioStart to bookmark the page, with a
   folder picker that remembers the last folder. The first time, the app has to be turned on under *More* at the end
   of the share sheet's row of apps.
@@ -53,4 +53,3 @@ Xcode registers the ids and the group with the team on the first build.
     iOS/               the app: sign-in, folders, editor, built-in browser, settings
     ShareExtension/    Share › ioStart
     tools/             testflight.sh and its export options
-    .github/workflows/ a check that it still builds, on every pull request (unsigned, for the simulator)

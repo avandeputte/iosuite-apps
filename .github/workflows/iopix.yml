@@ -1,14 +1,19 @@
-# Does the app still build? On every pull request (and by hand: Actions › build › Run workflow). Nothing is signed or
+# Does the app still build? On every pull request that changes its folder (and by hand: Actions › iopix › Run workflow). Nothing is signed or
 # uploaded; TestFlight builds are made with tools/testflight.sh on a Mac. A macOS runner counts ten times its minutes
 # on a private repository, so this builds one scheme and only when a pull request changes.
-name: build
+name: iopix
 
 on:
   pull_request:
+    paths: ["iopix/**", ".github/workflows/iopix.yml"]
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: iopix
+
 concurrency:
-  group: build-${{ github.ref }}
+  group: iopix-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

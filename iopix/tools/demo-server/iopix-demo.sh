@@ -186,8 +186,15 @@ apt-get install -y -q git python3 python3-venv python3-pip ffmpeg libimage-exift
 
 echo "== iopix"
 mkdir -p /opt/iopix /library/photos
-[ -d /opt/iopix/app ] || git clone --depth 1 https://github.com/avandeputte/iopix /opt/iopix/app
-git -C /opt/iopix/app rev-parse HEAD > /opt/iopix/app/COMMIT 2>/dev/null || true
+if [ ! -d /opt/iopix/app ]; then  # the suite's repository: ioPix in iopix/, the shared library in shared/
+  git clone --depth 1 https://github.com/avandeputte/iosuite /tmp/iosuite-src
+  mkdir -p /opt/iopix/app
+  cp -a /tmp/iosuite-src/iopix/. /opt/iopix/app/
+  cp -a /tmp/iosuite-src/shared /opt/iopix/app/shared
+  cp /tmp/iosuite-src/LICENSE /opt/iopix/app/LICENSE
+  git -C /tmp/iosuite-src rev-parse HEAD > /opt/iopix/app/COMMIT
+  rm -rf /tmp/iosuite-src
+fi
 
 if [ -f /root/library.tgz ]; then
   echo "== the demo library (photos and digiKam database, with its people and faces)"

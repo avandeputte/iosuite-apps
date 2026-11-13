@@ -1,14 +1,19 @@
-# Does the app still build? On every pull request (and by hand: Actions › build › Run workflow). Nothing is signed or
+# Does the app still build? On every pull request that changes its folder (and by hand: Actions › iostart › Run workflow). Nothing is signed or
 # uploaded; signed builds for a phone or TestFlight are made on a Mac with the team's certificate (README.md). A macOS
 # runner counts ten times its minutes on a private repository, so this runs only for pull requests.
-name: build
+name: iostart
 
 on:
   pull_request:
+    paths: ["iostart/**", ".github/workflows/iostart.yml"]
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: iostart
+
 concurrency:
-  group: build-${{ github.ref }}
+  group: iostart-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

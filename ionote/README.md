@@ -1,7 +1,7 @@
 # ionote
 
 Save anything from the clipboard as a searchable note, on your Mac, iPhone and iPad, synced through
-your own [ionote server](https://github.com/avandeputte/ionote).
+your own [ionote server](https://github.com/avandeputte/iosuite/tree/main/ionote).
 A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-teal note-card icon.
 
 - **Inbox**: everything you copy (text, images, files) and every screenshot you take lands in the Inbox,
@@ -154,4 +154,4 @@ Developer ID release like iopix's (`tools/release-mac.sh` in iopix-apps works wi
 
 ## License
 
-GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](LICENSE).
+GPL-3.0-or-later (the GNU General Public License, version 3 or later), see [LICENSE](../LICENSE).
