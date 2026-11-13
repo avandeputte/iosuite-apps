@@ -1,0 +1,39 @@
+# Does the app still build? On every pull request that changes its folder (and by hand: Actions › iopix › Run workflow). Nothing is signed or
+# uploaded; TestFlight builds are made with tools/testflight.sh on a Mac. A macOS runner counts ten times its minutes
+# on a private repository, so this builds one scheme and only when a pull request changes.
+name: iopix
+
+on:
+  pull_request:
+    paths: ["iopix/**", ".github/workflows/iopix.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: iopix
+
+concurrency:
+  group: iopix-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: The newest Xcode on the runner
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)"
+          xcodebuild -version
+      - name: The Xcode project (XcodeGen, from project.yml)
+        run: |
+          which xcodegen || brew install xcodegen
+          xcodegen generate -q
+      - name: Build the iPhone and iPad app
+        run: >
+          xcodebuild -project iopix.xcodeproj -scheme iopix -configuration Debug
+          -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO -quiet build

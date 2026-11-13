@@ -1,0 +1,449 @@
+import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+import CoreSpotlight
+import UserNotifications
+
+/// iOS wakes the app when background sending finishes (also the share sheet's): the uploads pick their results up.
+final class IopixAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        BackgroundUploads.wakeHandlers[identifier] = completionHandler
+        _ = BackgroundUploads.shared(identifier)
+    }
+}
+
+@main
+struct IopixApp: App {
+    @UIApplicationDelegateAdaptor(IopixAppDelegate.self) private var appDelegate
+    @StateObject private var queue = UploadQueue.shared
+    @StateObject private var watcher = PhotosWatcher.shared
+    @StateObject private var launch = LaunchState()
+    @Environment(\.scenePhase) private var phase
+    @AppStorage("iopix.pref.theme") private var theme = "system"
+
+    init() {
+        UploadQueue.shared.startBackground()
+        NetworkRoute.shared.start()
+        #if targetEnvironment(macCatalyst)
+        UNUserNotificationCenter.current().delegate = MacNotifier.shared  // early: a clicked banner can start the app
+        Task { @MainActor in
+            MacMenuBar.shared.start()
+            MacExtras.start()
+        }
+        #endif
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)  // the Display setting
+                .macTextSelection()
+                .environmentObject(queue)
+                .environmentObject(watcher)
+                .environmentObject(launch)
+        }
+        .commands {  // iPad with a keyboard; off until a server address has been entered
+            CommandGroup(after: .newItem) {
+                Button("Send Photos…") { NotificationCenter.default.post(name: .iopixSendPhotos, object: nil) }
+                    .keyboardShortcut("u", modifiers: [.command, .shift])
+                    .disabled(!launch.hasServer)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Reload") { NotificationCenter.default.post(name: .iopixReload, object: nil) }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!launch.hasServer)
+            }
+        }
+        .onChange(of: phase) { _, now in
+            guard now == .active else { return }
+            NotificationCenter.default.post(name: .iopixBecameActive, object: nil)
+            watcher.checkNow()
+            Task { await queue.refreshAccount() }
+        }
+    }
+}
+
+/// Whether the app has a server to talk to yet (the first launch asks for one).
+final class LaunchState: ObservableObject {
+    @Published var hasServer = AppConfig.hasServer
+}
+
+struct RootView: View {
+    @EnvironmentObject private var queue: UploadQueue
+    @EnvironmentObject private var launch: LaunchState
+    @StateObject private var store = LibraryStore()
+    @StateObject private var router = Router.shared
+    @State private var showUploads = false
+    @State private var server = AppConfig.serverURL
+
+    @State private var needsServer = !AppConfig.hasServer
+    @State private var signingIn = false
+    @State private var showCards = false
+    @State private var dropping = false
+
+    var body: some View {
+        if needsServer {
+            ServerSetupView { url in
+                AppConfig.serverURL = url
+                server = url
+                needsServer = false
+                launch.hasServer = true
+                Task { await queue.refreshAccount() }
+            }
+        } else {
+            library
+        }
+    }
+
+    private var library: some View {
+        AppTabs { showUploads = true }
+            .environmentObject(store)
+            .environmentObject(router)
+            .onAppear {
+                WebShell.shared.onCookiesChanged = { Task { await queue.refreshAccount() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in
+                if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
+                if store.problem != nil, !store.needsSignIn { Task { await store.load() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixNetworkMoved)) { _ in
+                // left home (or came back): the same address now leads another way, perhaps through Cloudflare
+                Task {
+                    await store.load()
+                    await queue.refreshAccount()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixSendPhotos)) { _ in showUploads = true }
+            .onReceive(NotificationCenter.default.publisher(for: .iopixSignIn)) { _ in signingIn = true }
+            #if targetEnvironment(macCatalyst)
+            .onReceive(NotificationCenter.default.publisher(for: .iopixCards)) { _ in showCards = true }
+            .sheet(isPresented: $showCards) { MacCardImportSheet() }
+            #endif
+            // iopix-native://photo/<id> (the widget), ://review, ://today
+            .onOpenURL { url in
+                guard url.scheme == "iopix-native" else { return }
+                switch url.host {
+                case "photo": if let id = Int(url.lastPathComponent) { router.open("#/photos?ids=\(id)") }
+                case "review": showUploads = true
+                case "today":
+                    let c = Calendar.current.dateComponents([.month, .day], from: Date())
+                    router.open(String(format: "#/photos?md=%02d-%02d", c.month ?? 1, c.day ?? 1))
+                default: break
+                }
+            }
+            // a Spotlight result: its id is the page of the library to open
+            .onContinueUserActivity(CSSearchableItemActionType) { a in
+                if let route = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { router.open(route) }
+            }
+            .sheet(isPresented: $signingIn) { SignInView { showUploads = true }.environmentObject(store) }
+            // photos dragged in from Photos or Files (iPad side by side) go to the queue
+            .dropDestination(for: PickedFile.self) { files, _ in
+                queue.add(files: files.map(\.url), move: true)
+                return true
+            } isTargeted: { dropping = $0 }
+            .overlay { if dropping { DropHint() } }
+            .sheet(isPresented: $showUploads, onDismiss: {
+                if server != AppConfig.serverURL {  // the address was changed in the sheet: start over with the new one
+                    server = AppConfig.serverURL
+                    WebShell.shared.reset()
+                    Router.shared.lastRoute = [:]
+                    Task { await store.load() }
+                }
+            }) {
+                UploadsView()
+            }
+    }
+
+    private var uploadButton: some View {
+        Button { showUploads = true } label: {
+            Image(systemName: !queue.pending.isEmpty ? "arrow.up.circle" : !queue.reviewing.isEmpty ? "photo.badge.plus" : "square.and.arrow.up")
+                .font(.title3.weight(.semibold))
+                .frame(width: 48, height: 48)
+                .background(.regularMaterial, in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if !queue.pending.isEmpty || !queue.reviewing.isEmpty {
+                        Text("\(queue.pending.count + queue.reviewing.count)")
+                            .font(.caption2.bold())
+                            .padding(4)
+                            .background(Color.accentColor, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+        }
+        .accessibilityLabel("Send photos to ioPix")
+        .padding(.trailing, 16)
+        .padding(.bottom, 64)
+    }
+}
+
+/// A photo or video picked from the library, as its original file.
+struct PickedFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        // the photo first: a Live Photo offers both a still and a short movie, and the still is the picture
+        FileRepresentation(importedContentType: .image) { try PickedFile(copying: $0.file) }
+        FileRepresentation(importedContentType: .movie) { try PickedFile(copying: $0.file) }
+    }
+
+    init(copying file: URL) throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("picked-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        url = dir.appendingPathComponent(file.lastPathComponent)
+        try FileManager.default.copyItem(at: file, to: url)
+    }
+}
+
+struct UploadsView: View {
+    @EnvironmentObject private var queue: UploadQueue
+    @EnvironmentObject private var watcher: PhotosWatcher
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var loading = false
+    @State private var pickNote: String?
+    @State private var signingIn = false
+    @State private var serverText = AppConfig.serverURL.absoluteString
+    @State private var tokenID = ServiceToken.clientID ?? ""
+    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    accountRow
+                    PhotosPicker(selection: $picked, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current) {
+                        Label(loading ? "Getting your photos…" : "Choose photos and videos", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .disabled(loading)
+                    if let pickNote { Text(pickNote).font(.footnote).foregroundStyle(.orange) }
+                }
+
+                Section {
+                    Toggle("Look for new photos", isOn: Binding(get: { watcher.enabled }, set: { on in Task { await watcher.setEnabled(on) } }))
+                    if !queue.reviewing.isEmpty {
+                        NavigationLink {
+                            ReviewView()
+                        } label: {
+                            Label("\(queue.reviewing.count) new photo\(queue.reviewing.count == 1 ? "" : "s") to look at", systemImage: "photo.badge.plus")
+                        }
+                    }
+                    if watcher.enabled {
+                        Button("Also list the last 7 days") { watcher.sendRecent(days: 7) }
+                    }
+                } footer: {
+                    Text(watcher.note ?? "Photos and videos you take from now on are listed here when you open ioPix, and you pick which ones to send. Photos already in ioPix are skipped.")
+                }
+
+                if !queue.pending.isEmpty {
+                    Section("Sending") {
+                        ForEach(queue.pending) { ItemRow(item: $0) }
+                    }
+                }
+                if !queue.finished.isEmpty {
+                    Section {
+                        ForEach(queue.finished.prefix(50)) { ItemRow(item: $0) }
+                    } header: {
+                        Text("Done")
+                    } footer: {
+                        HStack {
+                            if queue.finished.contains(where: { $0.state == .failed }) {
+                                Button("Try again") { queue.retryFailed() }
+                            }
+                            Spacer()
+                            Button("Clear list") { queue.clearFinished() }
+                        }
+                    }
+                }
+
+                DestinationSection()
+
+                Section {
+                    TextField("Server address", text: $serverText)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .onSubmit(saveServer)
+                    DisclosureGroup("Cloudflare Access service token") {
+                        TextField("Client ID", text: $tokenID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        SecureField("Client secret", text: $tokenSecret)
+                        Button("Save token") {
+                            ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespaces)
+                            ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespaces)
+                            Task { await queue.refreshAccount() }
+                        }
+                    }
+                    if queue.account?.signedIn == true {
+                        Button("Sign out", role: .destructive) {
+                            Task {
+                                await IopixClient.shared.signOut()
+                                ImageCache.shared.removeAll()
+                                await CookieSync.clearWebView()
+                                await queue.refreshAccount()
+                                NotificationCenter.default.post(name: .iopixReload, object: nil)  // the page shows the sign-in again
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Server")
+                } footer: {
+                    Text("Only if your server is behind Cloudflare Access; leave it empty otherwise. With a service token, uploads get through even when Cloudflare's sign-in has run out.")
+                }
+            }
+            .navigationTitle("Send to ioPix")
+            .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button { saveServer(); dismiss() } label: { BarText("Done") } }
+            }
+            .onChange(of: picked) { _, items in load(items) }
+            .task { await queue.refreshAccount() }
+            .onDisappear(perform: saveOnDismiss)
+        }
+    }
+
+    @ViewBuilder private var accountRow: some View {
+        if let a = queue.account, a.canWrite {
+            Label("Signed in as \(a.name ?? "you")", systemImage: "person.crop.circle.badge.checkmark")
+        } else if let a = queue.account, a.signedIn {
+            Label("\(a.name ?? "This account") can look at photos but not add them.", systemImage: "person.crop.circle.badge.exclamationmark")
+        } else if queue.offline {
+            Label("ioPix can't be reached right now.", systemImage: "wifi.exclamationmark")
+        } else {
+            Button { signingIn = true } label: {
+                Label("Sign in to ioPix… Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
+            }
+            .sheet(isPresented: $signingIn) { SignInView() }
+        }
+    }
+
+    private func load(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        loading = true
+        Task {
+            var files: [URL] = []
+            var failed = 0
+            for item in items {
+                if let f = try? await item.loadTransferable(type: PickedFile.self) { files.append(f.url) } else { failed += 1 }
+            }
+            queue.add(files: files, move: true)
+            if failed > 0 { pickNote = failed == 1 ? "One photo couldn't be read (not downloaded from iCloud?)." : "\(failed) photos couldn't be read (not downloaded from iCloud?)." }
+            picked = []
+            loading = false
+        }
+    }
+
+    private func saveServer() {
+        guard let url = AppConfig.normalisedServer(serverText) else { serverText = AppConfig.serverURL.absoluteString; return }
+        if url != AppConfig.serverURL {
+            AppConfig.serverURL = url
+            Task { await queue.refreshAccount() }
+        }
+        serverText = url.absoluteString
+    }
+
+    /// The sheet can be swiped away too: an edited address is kept then as well.
+    private func saveOnDismiss() { saveServer() }
+}
+
+struct ItemRow: View {
+    let item: UploadItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(item.name).lineLimit(1).truncationMode(.middle)
+            if item.state == .sending {
+                ProgressView(value: item.progress)
+            } else {
+                Text(item.stateText).font(.caption).foregroundStyle(item.state == .failed ? .red : .secondary)
+            }
+        }
+    }
+}
+
+/// First launch: which iopix to connect to.
+struct ServerSetupView: View {
+    let done: (URL) -> Void
+    @State private var text = ""
+    @State private var checking = false
+    @State private var problem: String?
+    @State private var tokenID = ServiceToken.clientID ?? ""
+    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
+    @State private var showToken = ServiceToken.isSet
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image("Mark").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
+            Brand.text("Connect to your ", onLight: true).font(.title2.bold())
+            Text("Enter the address you use for ioPix in the browser.")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+            TextField("photos.example.com", text: $text)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .textContentType(.URL)
+                .submitLabel(.go)
+                .onSubmit(connect)
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+            DisclosureGroup("Cloudflare Access service token (optional)", isExpanded: $showToken) {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Client ID", text: $tokenID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    SecureField("Client secret", text: $tokenSecret)
+                        .onSubmit(connect)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    Text("Only if ioPix sits behind Cloudflare Access. With a service token the app goes straight to ioPix's own sign-in, without Cloudflare's. Leave it empty otherwise.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
+            if let problem { Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center) }
+            Button(action: connect) {
+                Group { if checking { ProgressView() } else { Text("Connect") } }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || checking)
+            Spacer()
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: 480)
+    }
+
+    private func connect() {
+        guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
+        // kept before the check, which sends it along (the Keychain drops an empty one)
+        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespacesAndNewlines)
+        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        checking = true
+        problem = nil
+        Task {
+            var found = url
+            problem = await IopixClient.shared.probe(url)
+            // "https" was a guess: a home server may only speak plain http (or the other way round)
+            if problem != nil, !text.contains("://"), var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                c.scheme = url.scheme == "https" ? "http" : "https"
+                if let other = c.url, await IopixClient.shared.probe(other) == nil { problem = nil; found = other }
+            }
+            checking = false
+            if problem == nil { done(found) }
+        }
+    }
+}
+
+extension Notification.Name {
+    static let iopixBecameActive = Notification.Name("iopixBecameActive")
+}
+
+extension Notification.Name {
+    /// Asks the app to show the sign-in (the Mac menu bar's "Sign in…").
+    static let iopixSignIn = Notification.Name("iopixSignIn")
+}
