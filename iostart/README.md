@@ -39,10 +39,18 @@ Needs a Mac with Xcode 16 or later and [XcodeGen](https://github.com/yonaskolb/X
 `net.iothing.iostart.share`, and the app group `group.net.iothing.iostart` both are in. Signing is automatic:
 Xcode registers the ids and the group with the team on the first build.
 
+## TestFlight
+
+1. The app exists in App Store Connect (bundle id `net.iothing.iostart`).
+2. `tools/testflight.sh` archives, signs and uploads it, with the Apple account signed in to Xcode (or an App Store
+   Connect API key: `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh`). The build number is the time of the build.
+3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
+
 ## Layout
 
     project.yml        the project, for XcodeGen
     Shared/            in the app and the extension: the API, the account (keychain), the tree, the folder picker
     iOS/               the app: sign-in, folders, editor, built-in browser, settings
     ShareExtension/    Share › ioStart
+    tools/             testflight.sh and its export options
     .github/workflows/ a check that it still builds, on every pull request (unsigned, for the simulator)
