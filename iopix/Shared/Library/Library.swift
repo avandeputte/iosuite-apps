@@ -218,6 +218,10 @@ final class LibraryStore: ObservableObject {
             }
             needsSignIn = true
             problem = IopixError.needsSignIn.localizedDescription
+            // favorites and albums are the account's own (iopix 1.149): nothing of the last account stays on screen
+            favoriteIDs = []
+            favorites = 0
+            albums = []
         } catch {
             if IopixClient.shared.settling, retries > 0, loaded {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
