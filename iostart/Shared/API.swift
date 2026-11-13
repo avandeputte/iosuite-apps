@@ -37,7 +37,15 @@ struct API {
 
     private static func run(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
-            let (data, resp) = try await session.data(for: req)
+            let (data, resp): (Data, URLResponse)
+            do {
+                (data, resp) = try await session.data(for: req)
+            } catch let e as URLError where [.notConnectedToInternet, .networkConnectionLost].contains(e.code) {
+                // A newly installed app's first request often fails with "offline" while iOS is still setting up
+                // its network access; one more try a moment later goes through.
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+                (data, resp) = try await session.data(for: req)
+            }
             guard let http = resp as? HTTPURLResponse else { throw APIError.unreachable("The start page did not answer.") }
             return (data, http)
         } catch let e as APIError {
