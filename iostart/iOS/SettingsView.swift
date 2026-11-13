@@ -4,6 +4,8 @@ struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var asking = false
+    @State private var clearing = false
+    @State private var cleared = false
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -16,8 +18,27 @@ struct SettingsView: View {
                     Picker("Open bookmarks", selection: $model.openIn) {
                         ForEach(OpenIn.allCases) { Text($0.label).tag($0) }
                     }
+                    Picker("Search with", selection: $model.searchWith) {
+                        ForEach(SearchEngine.allCases) { Text($0.name).tag($0) }
+                    }
                 } footer: {
-                    Text("Either way, press and hold a bookmark to open it the other way.")
+                    Text("Either way, press and hold a bookmark to open it the other way, or in a private page. What you type in the browser's address bar that is not an address is searched for with the search engine above.")
+                }
+                Section {
+                    Button(cleared ? "Browsing data cleared" : "Clear browsing data", role: .destructive) { clearing = true }
+                        .disabled(cleared)
+                } footer: {
+                    Text("Forgets the sign-ins, cookies and caches of the pages opened here. Private pages never keep any.")
+                }
+                .confirmationDialog("Clear browsing data?", isPresented: $clearing, titleVisibility: .visible) {
+                    Button("Clear browsing data", role: .destructive) {
+                        Task {
+                            await clearBrowsingData()
+                            cleared = true
+                        }
+                    }
+                } message: {
+                    Text("Websites you are signed in to in ioStart will ask you to sign in again. Your bookmarks stay.")
                 }
                 Section {
                     Label("In your browser, tap Share, then ioStart. The first time, tap More at the end of the row of apps and turn it on.", systemImage: "square.and.arrow.up")

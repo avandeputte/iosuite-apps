@@ -31,7 +31,7 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $model.browsing) { page in
-            BrowserView(start: page.url).environmentObject(model)
+            BrowserView(page: page).environmentObject(model)
         }
         .alert("Something went wrong", isPresented: Binding(get: { model.problem != nil }, set: { if !$0 { model.problem = nil } })) {
             Button("OK", role: .cancel) {}

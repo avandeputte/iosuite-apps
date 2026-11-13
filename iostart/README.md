@@ -12,7 +12,22 @@
   folder picker that remembers the last folder. The first time, the app has to be turned on under *More* at the end
   of the share sheet's row of apps.
 - **Built-in browser**: a bookmark opens inside the app (WebKit), or in the phone's default browser: Settings ›
-  Open bookmarks. Press and hold a bookmark for the other way, and to copy or share its address.
+  Open bookmarks. Press and hold a bookmark for the other way, a private page, and to copy or share its address.
+  The globe in the bookmark list opens a new page (press and hold it for a private one).
+  - Address bar: tap the page's name; the whole address is selected, so typing replaces it. Type an address or words
+    to search for (Google, DuckDuckGo, Bing, Startpage, Ecosia or Kagi: Settings › Search with). The bookmarks that
+    match show while you type. Bare names get https://, machines at home (`localhost`, an IP address, names ending in
+    .local, .lan, .home, .internal or .home.arpa) http://; "3.14" or an email address are searched for.
+  - Back and forward (press and hold either for the pages before or after, or swipe from the edge), reload or pull
+    down to reload, share, bookmark this page, and under ⋯ Find on page, Copy address, Open in my browser, new pages
+    and private ones.
+  - A page's own dialogs (alert, confirm, prompt) show; a page that does not open says why, with Try again; a page
+    whose process iOS stopped loads again. Sound and video stop when you tap Done.
+  - Sites see a mobile Safari user agent, so they serve their full mobile pages.
+  - Settings › Clear browsing data forgets the sign-ins, cookies and caches of normal pages.
+- **Private pages**: nothing of them is kept, no history, cookies, sign-ins or cache: they live in memory and are gone
+  when the page closes, and they share nothing with normal pages. Dark bars and the crossed-out eye next to the
+  address show which is which.
 
 ## How it talks to the start page
 
