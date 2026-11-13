@@ -37,7 +37,8 @@ struct API {
         "Basic " + Data("\(account.user):\(account.password)".utf8).base64EncodedString()
     }
 
-    /// The errors of a network that was not there for a moment: worth one more try before telling anyone.
+    /// The errors of a network that was not there for a moment: worth one more try before telling anyone. A newly
+    /// installed app's first request often fails as "offline" while iOS is still setting up its network access.
     private static let passing: Set<URLError.Code> = [
         .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost, .secureConnectionFailed,
     ]
