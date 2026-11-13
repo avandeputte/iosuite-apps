@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Starts ionote at login in the menu bar only (no window, no Dock icon). Registered by the app through SMAppService.agent; see LoginItem.swift. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>net.iothing.ionotes.login</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/ionotes</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Contents/MacOS/ionotes</string>
+		<string>--background</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>net.iothing.ionotes</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+</dict>
+</plist>
