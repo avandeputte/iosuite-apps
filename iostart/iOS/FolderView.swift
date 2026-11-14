@@ -69,8 +69,6 @@ struct FolderView: View {
                     Button { model.newPage(privately: true) } label: { Label("New private page", systemImage: "eye.slash") }
                 } label: {
                     Image(systemName: "globe")
-                } primaryAction: {
-                    model.newPage()
                 }
                 .accessibilityLabel("Browse the web")
             }
