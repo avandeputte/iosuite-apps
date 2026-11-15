@@ -15,7 +15,7 @@ enum OCR {
                 do {
                     try handler.perform([request])
                 } catch {
-                    NSLog("ionote OCR failed: \(error)")
+                    NSLog("ioNote OCR failed: \(error)")
                     continuation.resume(returning: "")
                     return
                 }

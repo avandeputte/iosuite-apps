@@ -18,8 +18,8 @@ enum IonotesError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .noServer: return "Enter your ionote server in Settings."
-        case .needsSignIn: return "Sign in to your ionote server in Settings."
+        case .noServer: return "Enter your ioNote server in Settings."
+        case .needsSignIn: return "Sign in to your ioNote server in Settings."
         case .notAllowed(let why): return why
         case .tooLarge: return "That is more than the server takes in one request."
         case .server(let why): return why
@@ -27,7 +27,7 @@ enum IonotesError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to the ionote server: the sign-in cookie (and, from outside, Cloudflare Access's service token),
+/// Talks to the ioNote server: the sign-in cookie (and, from outside, Cloudflare Access's service token),
 /// then the sync API. Every time is seconds since 1970; ids are chosen by the device.
 final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     static let shared = IonotesClient()
@@ -101,7 +101,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         case 200..<300:
             if let json { return json }
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
-            throw type.contains("html") ? IonotesError.needsSignIn : IonotesError.server("The server sent an answer ionote does not understand.")
+            throw type.contains("html") ? IonotesError.needsSignIn : IonotesError.server("The server sent an answer ioNote does not understand.")
         case 300..<400, 401:
             throw IonotesError.needsSignIn
         case 403:
@@ -124,7 +124,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
 
     // MARK: - Status and sign-in
 
-    /// Is there an ionote server at this address? nil when there is, otherwise what went wrong, in plain words.
+    /// Is there an ioNote server at this address? nil when there is, otherwise what went wrong, in plain words.
     func probe(_ url: URL) async -> String? {
         do {
             var r = try request("api/status", server: url)
@@ -134,11 +134,11 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
             if http.url?.host?.lowercased() != url.host?.lowercased() || (300..<400).contains(http.statusCode) {
                 return nil  // a sign-in page in front of it (Cloudflare Access)
             }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], ["ionote", "ionotes"].contains(j["app"] as? String ?? "") {
-                return nil  // ionote, or a server from before the rename (ionotes)
+            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], ["ioNote", "ionotes"].contains(j["app"] as? String ?? "") {
+                return nil  // ioNote, or a server from before the rename (ionotes)
             }
             if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an ionote server."
+            return "That address answers, but it isn't an ioNote server."
         } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
             return "No server by that name. Check the address."
         } catch {

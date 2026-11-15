@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Where the ionote server is. The address is a setting; the optional Cloudflare service token lives in the
+/// Where the ioNote server is. The address is a setting; the optional Cloudflare service token lives in the
 /// Keychain, never in settings files. Passwords are never stored: signing in leaves a session cookie.
 enum ServerConfig {
     private static let serverKey = "serverURL"
@@ -57,7 +57,7 @@ enum Keychain {
 }
 
 /// A Cloudflare Access service token lets the apps through Cloudflare without its browser sign-in;
-/// the ionote sign-in is still needed on top of it.
+/// the ioNote sign-in is still needed on top of it.
 enum ServiceToken {
     static var clientID: String? {
         get { Keychain.get("cf-client-id") }
