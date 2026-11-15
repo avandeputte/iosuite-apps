@@ -73,7 +73,7 @@ Place suggestions, Jersey numbers, Clothing matches, Wrongly rotated, Place tags
 location, faces, rotate, crop, adjustments, edit log). It needs iopix 1.78 or later for background sending,
 one-request uploads and the converted copies of videos the phone can't play; older servers still work, with
 the slower paths. Settings and Tools follow the web app of ioPix 1.143 or later (one Settings menu, Settings ›
-Server through the suite's shared endpoints, app passwords under Account); the ages and birthdays from ioContacts
+Server through the suite's shared endpoints, app passwords under Account); the ages and birthdays from ioContact
 need 1.114 to 1.117.
 "Open in iopix" shows the same photo in the web app.
 
