@@ -19,6 +19,7 @@ final class Database {
         }
         try migrate()
         try exec(Database.schema)
+        try addColumn("family INTEGER NOT NULL DEFAULT 0", named: "family", to: "notes")
     }
 
     /// Version 2 and older only held a search index of the iCloud notes, so moving on simply drops it: the
@@ -36,12 +37,19 @@ final class Database {
             """)
     }
 
+    /// A column a newer version of the app keeps, added to the table an older one made.
+    private func addColumn(_ definition: String, named name: String, to table: String) throws {
+        var has = false
+        try query("PRAGMA table_info(\(table))", []) { if Database.string($0, 1) == name { has = true } }
+        if !has { try exec("ALTER TABLE \(table) ADD COLUMN \(definition)") }
+    }
+
     deinit { sqlite3_close(db) }
 
     // dirty: 1 changed here and not yet taken by the server; 2 the server refused the change (it stays here and is
     // sent again only once it is edited here, which makes it 1 again). deleted: deleted here, waiting to be sent.
     // image_sha: the server's picture; image_local: which picture the file on this device is (a sha, or
-    // "local" for one made here); image_pending: the file still has to be uploaded.
+    // "local" for one made here); image_pending: the file still has to be uploaded. family: a note of the Family space.
     private static let schema = """
     PRAGMA journal_mode = WAL;
 
@@ -63,7 +71,8 @@ final class Database {
         image_pending INTEGER NOT NULL DEFAULT 0,
         dirty INTEGER NOT NULL DEFAULT 0,
         deleted INTEGER NOT NULL DEFAULT 0,
-        rev INTEGER NOT NULL DEFAULT 0
+        rev INTEGER NOT NULL DEFAULT 0,
+        family INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS notes_dirty ON notes(dirty);
 
@@ -158,7 +167,7 @@ final class Database {
 
     // MARK: - Notes
 
-    private static let noteColumns = "n.id, n.title, n.body, n.ocr_text, n.has_image, n.source, n.source_app, n.created_at, n.updated_at, n.tags, n.pinned, n.folder_id, n.image_local"
+    private static let noteColumns = "n.id, n.title, n.body, n.ocr_text, n.has_image, n.source, n.source_app, n.created_at, n.updated_at, n.tags, n.pinned, n.folder_id, n.image_local, n.family"
 
     private static func readNote(_ stmt: OpaquePointer) -> Note {
         Note(id: string(stmt, 0),
@@ -173,39 +182,40 @@ final class Database {
              tags: string(stmt, 9).split(separator: "\n").map(String.init),
              pinned: sqlite3_column_int(stmt, 10) != 0,
              folderID: optionalString(stmt, 11),
-             imageKey: optionalString(stmt, 12))
+             imageKey: optionalString(stmt, 12),
+             family: sqlite3_column_int(stmt, 13) != 0)
     }
 
     /// Saves a note made or changed on this device, marked to be sent to the server.
     func saveLocal(_ note: Note) throws {
         try run("""
-            INSERT INTO notes (id, title, body, ocr_text, has_image, source, source_app, created_at, updated_at, tags, pinned, folder_id, dirty)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO notes (id, title, body, ocr_text, has_image, source, source_app, created_at, updated_at, tags, pinned, folder_id, family, dirty)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title, body = excluded.body, ocr_text = excluded.ocr_text, has_image = excluded.has_image,
                 source = excluded.source, source_app = excluded.source_app, created_at = excluded.created_at,
                 updated_at = excluded.updated_at, tags = excluded.tags, pinned = excluded.pinned,
-                folder_id = excluded.folder_id, dirty = 1
+                folder_id = excluded.folder_id, family = excluded.family, dirty = 1
             """,
             [note.id, note.title, note.body, note.ocrText, note.hasImage ? 1 : 0, note.source, note.sourceApp,
              note.createdAt.timeIntervalSince1970, note.updatedAt.timeIntervalSince1970,
-             note.tags.joined(separator: "\n"), note.pinned ? 1 : 0, note.folderID])
+             note.tags.joined(separator: "\n"), note.pinned ? 1 : 0, note.folderID, note.family ? 1 : 0])
     }
 
     /// Takes the server's copy of a note (it is not changed here, or the server's edit is newer).
     func saveFromServer(_ note: Note, imageSHA: String?, rev: Int64) throws {
         try run("""
-            INSERT INTO notes (id, title, body, ocr_text, has_image, source, source_app, created_at, updated_at, tags, pinned, folder_id, image_sha, rev, dirty, deleted)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            INSERT INTO notes (id, title, body, ocr_text, has_image, source, source_app, created_at, updated_at, tags, pinned, folder_id, family, image_sha, rev, dirty, deleted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title, body = excluded.body, ocr_text = excluded.ocr_text, has_image = excluded.has_image,
                 source = excluded.source, source_app = excluded.source_app, created_at = excluded.created_at,
                 updated_at = excluded.updated_at, tags = excluded.tags, pinned = excluded.pinned,
-                folder_id = excluded.folder_id, image_sha = excluded.image_sha, rev = excluded.rev, dirty = 0, deleted = 0
+                folder_id = excluded.folder_id, family = excluded.family, image_sha = excluded.image_sha, rev = excluded.rev, dirty = 0, deleted = 0
             """,
             [note.id, note.title, note.body, note.ocrText, note.hasImage ? 1 : 0, note.source, note.sourceApp,
              note.createdAt.timeIntervalSince1970, note.updatedAt.timeIntervalSince1970,
-             note.tags.joined(separator: "\n"), note.pinned ? 1 : 0, note.folderID, imageSHA, rev])
+             note.tags.joined(separator: "\n"), note.pinned ? 1 : 0, note.folderID, note.family ? 1 : 0, imageSHA, rev])
     }
 
     func note(id: String) throws -> Note? {
@@ -238,7 +248,7 @@ final class Database {
     func dirtyNotes() throws -> [(note: Note, deleted: Bool)] {
         var result: [(Note, Bool)] = []
         try query("SELECT \(Database.noteColumns), n.deleted FROM notes n WHERE n.dirty = 1", []) { stmt in
-            result.append((Database.readNote(stmt), sqlite3_column_int(stmt, 13) != 0))
+            result.append((Database.readNote(stmt), sqlite3_column_int(stmt, 14) != 0))
         }
         return result
     }
@@ -297,6 +307,12 @@ final class Database {
         return count
     }
 
+    func familyCount() throws -> Int {
+        var count = 0
+        try query("SELECT COUNT(*) FROM notes WHERE family = 1 AND deleted = 0", []) { count = Int(sqlite3_column_int($0, 0)) }
+        return count
+    }
+
     func pendingCount() throws -> Int {
         var count = 0
         try query("""
@@ -313,13 +329,13 @@ final class Database {
         try query("SELECT id FROM notes WHERE dirty = 0 AND image_pending = 0", []) { ids.append(Database.string($0, 0)) }
         try exec("""
             DELETE FROM notes WHERE dirty = 0 AND image_pending = 0;
-            UPDATE notes SET rev = 0, image_sha = NULL;
+            UPDATE notes SET rev = 0, image_sha = NULL, family = 0;
             UPDATE notes SET dirty = 1 WHERE dirty = 2;
             DELETE FROM folders WHERE dirty = 0;
             UPDATE folders SET dirty = 1 WHERE dirty = 2;
             DELETE FROM tag_colors WHERE dirty = 0;
             UPDATE tag_colors SET dirty = 1 WHERE dirty = 2;
-            DELETE FROM meta WHERE key = 'rev';
+            DELETE FROM meta WHERE key IN ('rev', 'familyWrite');
             DELETE FROM attachments;
             DELETE FROM templates;
             """)

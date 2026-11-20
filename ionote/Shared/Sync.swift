@@ -9,6 +9,8 @@ import Network
 /// server then decides by edit time ("stale": its copy is newer and is kept, and the text written here is kept
 /// beside it as a note of its own). Changes go up in batches the server takes in one request; one the server
 /// refuses ("error") stays on this device and is sent again only once it is edited.
+/// The Family space's notes come along with one's own (`family` on a note); the server says with every fetch whether
+/// this account may change them (`familyWrite`: editors and admins), and answers a change by anyone else as "stale".
 extension NotesStore {
     private static let pollInterval: TimeInterval = 60
     /// One push carries at most this much note text and this many notes: the server refuses a body over 8 MiB.
@@ -151,7 +153,7 @@ extension NotesStore {
             return ["id": n.id, "title": n.title, "body": n.body, "ocrText": n.ocrText, "source": n.source,
                     "sourceApp": n.sourceApp as Any? ?? NSNull(), "createdAt": n.createdAt.timeIntervalSince1970,
                     "updatedAt": n.updatedAt.timeIntervalSince1970, "tags": n.tags, "pinned": n.pinned,
-                    "folderID": n.folderID as Any? ?? NSNull(), "deleted": false]
+                    "folderID": n.folderID as Any? ?? NSNull(), "family": n.family, "deleted": false]
         }
         let folderDicts: [[String: Any]] = folders.map {
             ["id": $0.id, "name": $0.name, "color": $0.color as Any? ?? NSNull(), "createdAt": $0.createdAt,
@@ -284,9 +286,9 @@ extension NotesStore {
 
     private func pull() async throws {
         var since = Int64(try db.meta("rev") ?? "") ?? 0
-        // once, after the update that brought attached files and templates: everything again, so notes synced
-        // before then get their lists of files (changes made here and not sent yet are kept as always)
-        let fullOnce = try db.meta("fetched-v2") != "1"
+        // once, after the update that brought the Family space: everything again, so notes synced before then say
+        // whether they are the family's (changes made here and not sent yet are kept as always)
+        let fullOnce = try db.meta("fetched-v3") != "1"
         if fullOnce { since = 0 }
         while true {
             let page = try await client.changes(since: since)
@@ -297,10 +299,14 @@ extension NotesStore {
                 for item in page["templates"] as? [[String: Any]] ?? [] { try applyTemplate(item) }
                 since = (page["rev"] as? NSNumber)?.int64Value ?? since
                 try db.setMeta("rev", String(since))
+                if let may = page["familyWrite"] as? Bool {
+                    try db.setMeta("familyWrite", may ? "1" : "0")
+                    if familyWrite != may { familyWrite = may }
+                }
             }
             guard page["more"] as? Bool == true else { break }
         }
-        if fullOnce { try db.setMeta("fetched-v2", "1") }
+        if fullOnce { try db.setMeta("fetched-v3", "1") }
         reloadNotes()
     }
 
@@ -354,7 +360,8 @@ extension NotesStore {
                         updatedAt: Date(timeIntervalSince1970: (item["updatedAt"] as? NSNumber)?.doubleValue ?? 0),
                         tags: item["tags"] as? [String] ?? [],
                         pinned: item["pinned"] as? Bool ?? false,
-                        folderID: item["folderID"] as? String)
+                        folderID: item["folderID"] as? String,
+                        family: item["family"] as? Bool ?? false)
         try db.saveFromServer(note, imageSHA: item["imageSHA"] as? String, rev: (item["rev"] as? NSNumber)?.int64Value ?? 0)
         if let files = Self.attachments(of: item, noteID: id) { try db.setAttachments(noteID: id, files) }
         if !note.hasImage, local != nil {

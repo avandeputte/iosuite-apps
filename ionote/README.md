@@ -13,6 +13,9 @@ A sibling of iopix: the same two-tone name ("io" in gold), with its own deep-tea
 - **Folders, tags and pins**: make folders like Work or AI in the sidebar and drag notes onto them (or use
   Move to Folder); add tags in a note, which show up in the sidebar and are searchable; pin notes to the top
   and pick a sort order. Right-click a folder or tag in the sidebar to give it a colour (synced too).
+- **Family notes**: a note put in the **Family** space (the wifi password, the bin days, the packing list) is read by
+  everyone with a role on the server; editors and admins write and change those notes. Family is in the sidebar; a
+  note goes there, or becomes yours alone again, from its folder menu. A family note is in no folder.
 - **Copy and drag out**: hover a note and click copy, or press ⌘C, then paste anywhere; these copies never land
   in the Inbox. Drag a note or screenshot into Mail, Word or Finder (images go as a PNG named after the note).
   Saving an Inbox item as a note takes it out of the Inbox.

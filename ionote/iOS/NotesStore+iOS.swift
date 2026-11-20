@@ -19,9 +19,9 @@ extension NotesStore {
 
     /// What Paste brought in (from the system Paste button, so iOS doesn't ask each time):
     /// pictures become image notes (their text is read for search), text and links text notes.
-    /// Returns the last note made, to open it.
+    /// Returns the last note made, to open it. They go into the folder, or the Family space, being looked at.
     @discardableResult
-    func addPasted(_ providers: [NSItemProvider], inFolder folderID: String?) async -> Note? {
+    func addPasted(_ providers: [NSItemProvider], inFolder folderID: String?, family: Bool = false) async -> Note? {
         var last: Note?
         for provider in providers {
             var note: Note?
@@ -35,6 +35,7 @@ extension NotesStore {
             }
             if let made = note {
                 if let folderID { moveNote(id: made.id, toFolder: folderID) }
+                if family { setFamily(true, for: made.id) }
                 last = made
             }
         }
@@ -43,12 +44,13 @@ extension NotesStore {
 
     /// Photos and screenshots picked from the photo library become image notes.
     @discardableResult
-    func addPhotos(_ items: [PhotosPickerItem], inFolder folderID: String?) async -> Note? {
+    func addPhotos(_ items: [PhotosPickerItem], inFolder folderID: String?, family: Bool = false) async -> Note? {
         var last: Note?
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self),
                   let made = createImageNote(data: data, source: "photo") else { continue }
             if let folderID { moveNote(id: made.id, toFolder: folderID) }
+            if family { setFamily(true, for: made.id) }
             last = made
         }
         return last

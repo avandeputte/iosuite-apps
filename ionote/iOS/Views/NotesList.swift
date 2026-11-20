@@ -12,11 +12,15 @@ struct NotesList: View {
                 NoteRow(note: note)
                     .tag(note.id)
                     .swipeActions(edge: .trailing) {
-                        Button("Delete", systemImage: "trash", role: .destructive) { delete(note) }
+                        if store.canChange(note) {
+                            Button("Delete", systemImage: "trash", role: .destructive) { delete(note) }
+                        }
                     }
                     .swipeActions(edge: .leading) {
-                        Button(note.pinned ? "Unpin" : "Pin", systemImage: note.pinned ? "pin.slash" : "pin") { store.togglePin(note) }
-                            .tint(Brand.gold)
+                        if store.canChange(note) {
+                            Button(note.pinned ? "Unpin" : "Pin", systemImage: note.pinned ? "pin.slash" : "pin") { store.togglePin(note) }
+                                .tint(Brand.gold)
+                        }
                     }
                     .contextMenu {
                         NoteActions(note: note) { delete(note) }
@@ -30,6 +34,9 @@ struct NotesList: View {
                     ContentUnavailableView.search(text: store.searchText)
                 } else if store.selectedTag != nil {
                     ContentUnavailableView("No notes with this tag", systemImage: "number")
+                } else if store.familyOnly {
+                    ContentUnavailableView("No family notes yet", systemImage: "person.2",
+                                           description: Text("A note made here is everyone's to read: the wifi password, the bin days, the packing list."))
                 } else {
                     ContentUnavailableView("No notes yet", systemImage: "note.text",
                                            description: Text("Write one, paste what you copied, or add photos and screenshots. Notes you save on your Mac show up here too."))
@@ -38,7 +45,7 @@ struct NotesList: View {
         }
         .searchable(text: $store.searchText, prompt: "Search notes")
         .navigationTitle(!store.searchText.isEmpty ? "Search"
-                         : store.selectedTag.map { "#\($0)" } ?? store.folderName(store.selectedFolder) ?? "All Notes")
+                         : store.selectedTag.map { "#\($0)" } ?? store.folderName(store.selectedFolder) ?? (store.familyOnly ? "Family" : "All Notes"))
         .refreshable { await store.sync() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -72,7 +79,7 @@ struct NotesList: View {
                 // The system Paste button: iOS doesn't ask for permission each time you use it.
                 PasteButton(supportedContentTypes: [.image, .plainText, .url]) { providers in
                     Task { @MainActor in
-                        if let note = await store.addPasted(providers, inFolder: store.selectedFolder) { selection = note.id }
+                        if let note = await store.addPasted(providers, inFolder: store.selectedFolder, family: store.familyOnly) { selection = note.id }
                     }
                 }
                 .labelStyle(.iconOnly)
@@ -83,7 +90,7 @@ struct NotesList: View {
             guard !items.isEmpty else { return }
             photos = []
             Task {
-                if let note = await store.addPhotos(items, inFolder: store.selectedFolder) { selection = note.id }
+                if let note = await store.addPhotos(items, inFolder: store.selectedFolder, family: store.familyOnly) { selection = note.id }
             }
         }
     }
@@ -100,6 +107,7 @@ struct NotesList: View {
     }
 
     private func delete(_ note: Note) {
+        guard store.canChange(note) else { return }
         if selection == note.id { selection = nil }
         store.deleteNote(note)
     }
@@ -120,9 +128,12 @@ struct NoteActions: View {
         } else {
             ShareLink(item: note.body.isEmpty ? note.displayTitle : note.body) { Label("Share…", systemImage: "square.and.arrow.up") }
         }
-        Button(note.pinned ? "Unpin" : "Pin to Top", systemImage: note.pinned ? "pin.slash" : "pin") { store.togglePin(note) }
-        FolderMenu(note: note)
-        if !store.tags.isEmpty {
+        let mine = store.canChange(note)
+        if mine {
+            Button(note.pinned ? "Unpin" : "Pin to Top", systemImage: note.pinned ? "pin.slash" : "pin") { store.togglePin(note) }
+            FolderMenu(note: note)
+        }
+        if !store.tags.isEmpty, mine {
             Menu {
                 ForEach(store.tags) { tag in
                     let has = note.tags.contains { $0.caseInsensitiveCompare(tag.name) == .orderedSame }
@@ -137,8 +148,10 @@ struct NoteActions: View {
                 Label("Tags", systemImage: "number")
             }
         }
-        Divider()
-        Button("Delete Note", systemImage: "trash", role: .destructive, action: onDelete)
+        if mine {
+            Divider()
+            Button("Delete Note", systemImage: "trash", role: .destructive, action: onDelete)
+        }
     }
 }
 
@@ -169,6 +182,9 @@ struct NoteRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: NoteRow.icon(for: note.source))
                     Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    if note.family, !store.familyOnly {
+                        Image(systemName: "person.2.fill").foregroundStyle(Brand.teal).accessibilityLabel("Family note")
+                    }
                     ForEach(note.tags.prefix(3), id: \.self) { TagChip(name: $0) }
                     NoteBadges(note: note)
                 }
@@ -190,7 +206,8 @@ struct NoteRow: View {
     }
 }
 
-/// "Move to Folder ▸ No Folder / Work / AI".
+/// "Move to Folder ▸ No Folder / Work / AI", and for an editor or an admin "Family": the space everyone reads.
+/// Picking a folder for a family note makes it one's own again.
 struct FolderMenu: View {
     @EnvironmentObject private var store: NotesStore
     let note: Note
@@ -199,19 +216,35 @@ struct FolderMenu: View {
     var body: some View {
         Menu {
             Button {
-                store.moveNote(id: note.id, toFolder: nil)
+                move(to: nil)
             } label: {
-                if note.folderID == nil { Label("No Folder", systemImage: "checkmark") } else { Text("No Folder") }
+                if note.folderID == nil, !note.family { Label("No Folder", systemImage: "checkmark") } else { Text("No Folder") }
             }
             ForEach(store.folders) { folder in
                 Button {
-                    store.moveNote(id: note.id, toFolder: folder.id)
+                    move(to: folder.id)
                 } label: {
                     if note.folderID == folder.id { Label(folder.name, systemImage: "checkmark") } else { Text(folder.name) }
                 }
             }
+            if store.familyWrite {
+                Divider()
+                Button {
+                    store.setFamily(true, for: note.id)
+                } label: {
+                    if note.family { Label("Family", systemImage: "checkmark") } else { Label("Family", systemImage: "person.2") }
+                }
+            }
         } label: {
-            Label(title, systemImage: "folder")
+            Label(title, systemImage: note.family ? "person.2" : "folder")
+        }
+    }
+
+    private func move(to folderID: String?) {
+        if note.family {
+            store.setFamily(false, for: note.id, folder: folderID)
+        } else {
+            store.moveNote(id: note.id, toFolder: folderID)
         }
     }
 }

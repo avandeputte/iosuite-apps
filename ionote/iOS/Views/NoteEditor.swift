@@ -19,32 +19,43 @@ struct NoteEditor: View {
         self.onDelete = onDelete
         _title = State(initialValue: note.title)
         _text = State(initialValue: note.body)
-        _editing = State(initialValue: !Prefs.bool(Prefs.formattedText) || note.body.isEmpty)
+        _editing = State(initialValue: NotesStore.shared.canChange(note) && (!Prefs.bool(Prefs.formattedText) || note.body.isEmpty))
     }
+
+    /// A family note this account only reads: shown, not edited.
+    private var locked: Bool { !store.canChange(note) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 TextField("Title", text: $title, axis: .vertical)
                     .font(.title2.bold())
+                    .disabled(locked)
 
                 Text(meta)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    FolderMenu(note: note, title: store.folderName(note.folderID) ?? "No Folder")
-                        .font(.subheadline)
+                    if locked {
+                        Label("Family: editors and admins change it", systemImage: "person.2")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        FolderMenu(note: note, title: note.family ? "Family" : store.folderName(note.folderID) ?? "No Folder")
+                            .font(.subheadline)
+                    }
                     Spacer()
                 }
 
                 TagEditor(note: note)
+                    .disabled(locked)
 
                 if note.hasImage {
                     imageSection
                 }
 
-                if editing {
+                if editing, !locked {
                     MarkdownTextView(text: $text)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
@@ -57,7 +68,7 @@ struct NoteEditor: View {
                         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
                 } else {
                     MarkdownView(text: text) { line, checked in
-                        text = Markdown.toggleTask(text, line: line, checked: checked)
+                        if !locked { text = Markdown.toggleTask(text, line: line, checked: checked) }
                     }
                     .padding(10)
                     .frame(minHeight: 120, alignment: .topLeading)
@@ -80,15 +91,18 @@ struct NoteEditor: View {
                 Button { editing.toggle() } label: {
                     Label(editing ? "Show Formatted" : "Edit Text", systemImage: editing ? "eye" : "pencil")
                 }
+                .disabled(locked)
                 if note.hasImage {
                     ShareLink(item: NoteImage(note: note), preview: SharePreview(note.displayTitle))
                 } else {
                     ShareLink(item: text.isEmpty ? note.displayTitle : text)
                 }
                 Menu {
-                    Button("Add Checklist Item", systemImage: "checklist") {
-                        text = text.addingChecklistItem()
-                        editing = true
+                    if !locked {
+                        Button("Add Checklist Item", systemImage: "checklist") {
+                            text = text.addingChecklistItem()
+                            editing = true
+                        }
                     }
                     NoteActions(note: note, onDelete: delete)
                 } label: {
@@ -98,6 +112,9 @@ struct NoteEditor: View {
         }
         .onChange(of: title) { scheduleSave() }
         .onChange(of: text) { scheduleSave() }
+        // a family note this account only reads follows what its editors write
+        .onChange(of: note.title) { _, new in if locked { title = new } }
+        .onChange(of: note.body) { _, new in if locked { text = new } }
         .onDisappear {
             saveTask?.cancel()
             store.updateNote(id: note.id, title: title, body: text)
@@ -161,7 +178,9 @@ struct NoteEditor: View {
                             Button("Copy Text", systemImage: "doc.on.doc") { store.copyText(note.ocrText) }
                         }
                         Spacer()
-                        Button("Read Again", systemImage: "text.viewfinder") { store.runOCR(on: note) }
+                        if !locked {
+                            Button("Read Again", systemImage: "text.viewfinder") { store.runOCR(on: note) }
+                        }
                     }
                     .font(.callout)
                 }

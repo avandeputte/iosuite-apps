@@ -121,6 +121,13 @@ final class NotesStore: ObservableObject {
         didSet { reloadNotes() }
     }
     @Published private(set) var totalNotes = 0
+    /// Show only the Family space's notes (picked in the sidebar). New notes go there too, for who may add them.
+    @Published var familyOnly = false {
+        didSet { reloadNotes() }
+    }
+    @Published private(set) var familyCount = 0
+    /// This account may change the Family space's notes (an editor or an admin), as the server last said.
+    @Published var familyWrite = false
     @Published var searchText = "" {
         didSet { reloadNotes() }
     }
@@ -157,6 +164,7 @@ final class NotesStore: ObservableObject {
         } catch {
             fatalError("ioNote could not open its database: \(error)")
         }
+        familyWrite = (try? db.meta("familyWrite")) == "1"
         reloadNotes()
         reloadInbox()
         startSync()
@@ -181,6 +189,9 @@ final class NotesStore: ObservableObject {
             if let folder = selectedFolder {
                 list = list.filter { $0.folderID == folder }
             }
+            if familyOnly {
+                list = list.filter(\.family)
+            }
             if let tag = selectedTag {
                 list = list.filter { $0.tags.contains { $0.caseInsensitiveCompare(tag) == .orderedSame } }
             }
@@ -191,6 +202,7 @@ final class NotesStore: ObservableObject {
             notes = list.filter(\.pinned) + list.filter { !$0.pinned }
             tags = try db.allTags().map { TagCount(name: $0.name, count: $0.count) }
             totalNotes = try db.noteCount()
+            familyCount = try db.familyCount()
             let counts = try db.folderCounts()
             folders = try db.folders()
                 .map { Folder(id: $0.id, name: $0.name, count: counts[$0.id] ?? 0,
@@ -241,9 +253,16 @@ final class NotesStore: ObservableObject {
         return note
     }
 
-    /// Applies a change to a stored note, stamping it with the time of the edit.
+    /// The sidebar has a Family entry when there are family notes, or this account may add some.
+    var showsFamily: Bool { familyCount > 0 || familyWrite }
+
+    /// Whether this account may change the note: its own always, the family's as an editor or an admin.
+    func canChange(_ note: Note) -> Bool { !note.family || familyWrite }
+
+    /// Applies a change to a stored note, stamping it with the time of the edit. A family note this account only
+    /// reads is left as it is (the server would put it back).
     private func edit(_ id: String, _ change: (inout Note) -> Void) {
-        guard var note = try? db.note(id: id) else { return }
+        guard var note = try? db.note(id: id), canChange(note) else { return }
         let before = note
         change(&note)
         guard note != before else { return }
@@ -289,7 +308,8 @@ final class NotesStore: ObservableObject {
     func createNote(from template: NoteTemplate) -> Note? {
         var note = Self.newNote(title: Markdown.expand(template.title), body: Markdown.expand(template.body), source: "manual")
         note.tags = Note.cleanTags(template.tags)
-        note.folderID = template.folderID.flatMap { id in folders.contains { $0.id == id } ? id : nil } ?? selectedFolder
+        note.family = familyOnly && familyWrite
+        note.folderID = note.family ? nil : template.folderID.flatMap { id in folders.contains { $0.id == id } ? id : nil } ?? selectedFolder
         return save(note)
     }
 
@@ -307,6 +327,7 @@ final class NotesStore: ObservableObject {
     func createBlankNote() -> Note? {
         var note = Self.newNote(title: "New note", source: "manual")
         note.folderID = selectedFolder  // a new note goes into the folder you're looking at
+        note.family = familyOnly && familyWrite  // or into the Family space, for who may add to it
         return save(note)
     }
 
@@ -388,8 +409,21 @@ final class NotesStore: ObservableObject {
         changed()
     }
 
+    /// Files the note in a folder of one's own. A family note stays where it is: it is in no folder.
     func moveNote(id: String, toFolder folderID: String?) {
-        edit(id) { $0.folderID = folderID }
+        edit(id) {
+            if !$0.family { $0.folderID = folderID }
+        }
+    }
+
+    /// Puts the note in the Family space, for everyone to read, or makes it one's own again (in this folder, or
+    /// none): it then leaves the others' devices. Editors and admins only.
+    func setFamily(_ family: Bool, for id: String, folder folderID: String? = nil) {
+        guard familyWrite else { return }
+        edit(id) {
+            $0.family = family
+            $0.folderID = family ? nil : folderID
+        }
     }
 
     func folderName(_ id: String?) -> String? {
@@ -402,6 +436,7 @@ final class NotesStore: ObservableObject {
     }
 
     func deleteNote(_ note: Note) {
+        guard canChange(note) else { return }
         do {
             if !syncing, let state = try db.syncState(ofNote: note.id), state.rev == 0 {
                 try db.removeNote(id: note.id)  // never reached the server: nothing to tell it
