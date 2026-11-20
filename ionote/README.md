@@ -98,8 +98,8 @@ ditto build/Build/Products/Release/ionotes.app /Applications/ionotes.app
 The `ionotesiOS` target has the same bundle id as the Mac app, so both are one app in App Store Connect.
 
 1. In App Store Connect, create the app once (bundle id `net.iothing.ionotes`).
-2. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads it, with the same API key as
-   iopix. The build number is the build's date and time.
+2. `tools/testflight.sh` builds, signs and uploads it, with the Apple account signed in to Xcode (or an App Store
+   Connect API key: `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh`). The build number is the build's date and time.
 3. In TestFlight, add yourself as an internal tester and install it from Apple's TestFlight app.
 
 

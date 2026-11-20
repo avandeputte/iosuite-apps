@@ -97,11 +97,11 @@ connect from outside. If Cloudflare refuses the token, the connect screen says s
 Needs a paid Apple Developer Program membership (the free Personal Team cannot upload).
 
 1. Put the paid team's id in `project.yml` (`DEVELOPMENT_TEAM`).
-2. In App Store Connect, create the app (bundle id `net.iothing.iopix`) and an API key with the App Manager role
-   (Users and Access › Integrations). Save the `.p8` file as `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`.
-3. `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh` builds, signs and uploads the iPhone app; add `tvos` for the
-   Apple TV app. The build number is the build's
-   date and time, so every upload counts as newer.
+2. In App Store Connect, create the app (bundle id `net.iothing.iopix`).
+3. `tools/testflight.sh` builds, signs and uploads the iPhone app, with the Apple account signed in to Xcode; add
+   `tvos` for the Apple TV app. The build number is the build's date and time, so every upload counts as newer.
+   With an App Store Connect API key instead (App Manager role, Users and Access › Integrations, the `.p8` file saved
+   as `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`): `ASC_KEY_ID=… ASC_ISSUER_ID=… tools/testflight.sh`.
 4. In TestFlight, add yourself (and family) as internal testers; they install from Apple's TestFlight app.
 
 ## Sharing the Mac app
