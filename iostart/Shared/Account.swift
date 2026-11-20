@@ -14,9 +14,22 @@ enum Shared {
             ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return dir.appendingPathComponent("tree.json")
     }
+
+    /// The last /dav/ext/today answer, for the widgets when the start page cannot be reached.
+    static var todayFile: URL {
+        let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return dir.appendingPathComponent("today.json")
+    }
+
+    /// Whether the app password is a full one (widgets and Siri); nil until the start page said.
+    static var full: Bool? {
+        get { defaults.object(forKey: "full") as? Bool }
+        set { if let newValue { defaults.set(newValue, forKey: "full") } else { defaults.removeObject(forKey: "full") } }
+    }
 }
 
-/// The start page this phone syncs with, and the sync-only app password the sign-in made for it.
+/// The start page this phone syncs with, and the app password the sign-in made for it.
 /// The address and name sit in the app group's defaults; the password in the keychain, shared with the extension.
 struct Account: Equatable {
     var server: String
@@ -40,8 +53,10 @@ struct Account: Equatable {
         let d = Shared.defaults
         d.removeObject(forKey: "server")
         d.removeObject(forKey: "user")
+        d.removeObject(forKey: "full")
         Keychain.delete()
         try? FileManager.default.removeItem(at: Shared.cacheFile)
+        try? FileManager.default.removeItem(at: Shared.todayFile)
     }
 }
 

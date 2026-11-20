@@ -8,3 +8,5 @@ iOS/Info.plist
 iOS/*.entitlements
 ShareExtension/Info.plist
 ShareExtension/*.entitlements
+Widgets/Info.plist
+Widgets/*.entitlements
