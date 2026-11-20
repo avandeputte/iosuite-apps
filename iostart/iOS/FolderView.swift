@@ -18,7 +18,6 @@ struct FolderView: View {
     @State private var query = ""
     @State private var draft: Draft?
     @State private var deleting: Node?
-    @State private var showSettings = false
 
     private var folder: Node? { folderID.flatMap { model.tree.node($0) } }
     private var items: [Node] { model.tree.children(of: folderID) }
@@ -59,7 +58,7 @@ struct FolderView: View {
         .toolbar {
             if folderID == nil {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    Button { model.showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("Settings")
                 }
             }
@@ -86,7 +85,6 @@ struct FolderView: View {
             }
         }
         .sheet(item: $draft) { NodeEditor(draft: $0) }
-        .sheet(isPresented: $showSettings) { SettingsView() }
         .confirmationDialog(deleteQuestion, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 if let node = deleting { Task { await model.delete(node) } }

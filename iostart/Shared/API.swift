@@ -3,6 +3,8 @@ import Foundation
 enum APIError: LocalizedError {
     case signedOut
     case readOnly
+    /// The app password is the older sync-only kind: bookmarks work, widgets and Siri need a new sign-in.
+    case signInAgain
     case server(Int, String)
     case unreachable(String)
 
@@ -10,6 +12,7 @@ enum APIError: LocalizedError {
         switch self {
         case .signedOut: return "The start page no longer accepts this phone's sign-in. Sign in again."
         case .readOnly: return "This account can read the bookmarks, not change them."
+        case .signInAgain: return "Sign in again to turn on widgets and Siri: open ioStart › Settings › Sign in again."
         case .server(let code, let msg): return msg.isEmpty ? "The start page answered with an error (\(code))." : msg
         case .unreachable(let msg): return msg
         }
@@ -21,7 +24,8 @@ enum APIError: LocalizedError {
 struct API {
     var account: Account
 
-    static let session: URLSession = {
+    /// The widgets set a shorter one: a widget has seconds, not a minute, to get its timeline.
+    static var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 25
         c.waitsForConnectivity = true        // a phone just unlocked, or an app just installed: wait for the network
@@ -31,7 +35,20 @@ struct API {
         return URLSession(configuration: c)
     }()
 
-    private struct Failure: Decodable { var error: String?; var detail: String? }
+    /// An error answer: {"error": "…"}, {"detail": "…"}, or {"detail": {"error": "…", "signInAgain": true}}.
+    private struct Failure: Decodable {
+        struct Detail: Decodable { var error: String?; var signInAgain: Bool? }
+        var error: String?
+        var detail: String?
+        var details: Detail?
+        enum CodingKeys: String, CodingKey { case error, detail }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            error = try? c.decode(String.self, forKey: .error)
+            detail = try? c.decode(String.self, forKey: .detail)
+            details = try? c.decode(Detail.self, forKey: .detail)
+        }
+    }
 
     static func basic(_ account: Account) -> String {
         "Basic " + Data("\(account.user):\(account.password)".utf8).base64EncodedString()
@@ -64,7 +81,7 @@ struct API {
 
     private static func message(_ data: Data) -> String {
         let f = try? JSONDecoder().decode(Failure.self, from: data)
-        return f?.error ?? f?.detail ?? ""
+        return f?.error ?? f?.detail ?? f?.details?.error ?? ""
     }
 
     private func call<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
@@ -84,13 +101,34 @@ struct API {
                 throw APIError.unreachable("The start page's answer could not be read. Is it up to date?")
             }
         case 401: throw APIError.signedOut
-        case 403: throw APIError.readOnly
+        case 403:
+            if (try? JSONDecoder().decode(Failure.self, from: data))?.details?.signInAgain == true { throw APIError.signInAgain }
+            throw APIError.readOnly
         default: throw APIError.server(http.statusCode, API.message(data))
         }
     }
 
     func hello() async throws -> Hello { try await call("GET", "/dav/ext") }
     func tree() async throws -> TreeState { try await call("GET", "/dav/ext/tree") }
+
+    // MARK: widgets and Siri (they need a full app password: see Hello.full)
+
+    /// Today's events (or the next one), the week's, and the tasks due today or late (`tz`: this phone's zone).
+    func today() async throws -> TodayData {
+        let tz = TimeZone.current.identifier.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return try await call("GET", "/dav/ext/today?tz=" + tz)
+    }
+
+    /// The calendars and the task lists that can be added to.
+    func calendars() async throws -> Calendars { try await call("GET", "/dav/ext/calendars") }
+
+    struct NewTask: Encodable { var title: String; var due: String?; var listId: SuiteID?; var timezone: String? }
+    struct NewEvent: Encodable {
+        var title: String; var start: String; var end: String?; var allDay: Bool; var timezone: String?; var calendarId: SuiteID?
+    }
+
+    func addTask(_ t: NewTask) async throws -> Added { try await call("POST", "/dav/ext/tasks", body: try JSONEncoder().encode(t)) }
+    func addEvent(_ e: NewEvent) async throws -> Added { try await call("POST", "/dav/ext/events", body: try JSONEncoder().encode(e)) }
 
     private struct Changes: Encodable { var base: Int; var ops: [Op] }
 
@@ -130,9 +168,10 @@ struct API {
         return s
     }
 
+    /// scope=full: an app password that also reaches ioCalendar and ioTask (widgets and Siri), not for sync only.
     static func startFlow(server: String, client: String) async throws -> Flow {
         var c = URLComponents(string: server + flowBase)
-        c?.queryItems = [URLQueryItem(name: "client", value: client)]
+        c?.queryItems = [URLQueryItem(name: "client", value: client), URLQueryItem(name: "scope", value: "full")]
         guard let url = c?.url, url.host != nil else { throw APIError.unreachable("That address is not usable.") }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

@@ -1,4 +1,4 @@
-# ioStart: the iPhone and iPad app for the start page's bookmarks, with its share extension.
+# ioStart: the iPhone and iPad app for the start page's bookmarks, with its share extension and its widgets.
 # The Xcode project is generated from this file:  brew install xcodegen && xcodegen
 name: ioStart
 
@@ -14,7 +14,7 @@ settings:
     DEVELOPMENT_TEAM: 69M2JRAT8P
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.3"
+    MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -26,8 +26,10 @@ targets:
     sources:
       - iOS
       - Shared
+      - Intents
     dependencies:
       - target: ioStartShare
+      - target: ioStartWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iostart
@@ -43,6 +45,10 @@ targets:
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
+        # iostart://open?id=<bookmark> and ?url=<page>: the widgets' links (Shared/DeepLink.swift)
+        CFBundleURLTypes:
+          - CFBundleURLName: net.iothing.iostart
+            CFBundleURLSchemes: [iostart]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
@@ -92,6 +98,33 @@ targets:
               NSExtensionActivationSupportsText: true
     entitlements:
       path: ShareExtension/ioStartShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.net.iothing.iostart
+
+  ioStartWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+      - Shared
+      - Intents
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.iothing.iostart.widgets
+        PRODUCT_NAME: ioStartWidgets
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: ioStart
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widgets/ioStartWidgets.entitlements
       properties:
         com.apple.security.application-groups:
           - group.net.iothing.iostart

@@ -54,7 +54,7 @@ struct SignInView: View {
                 if let failure {
                     Text(failure).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
                 }
-                Text("A page of your start page opens. Sign in there if asked, then tap Allow. This phone gets a password of its own, for bookmarks only, that you can revoke in the start page's Settings.")
+                Text("A page of your start page opens. Sign in there if asked, then tap Allow. This phone gets a password of its own, for your bookmarks and for the widgets and Siri (your day in ioCalendar, your tasks in ioTask), that you can revoke in the start page's Settings.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -74,12 +74,8 @@ struct SignInView: View {
         defer { working = false }
         let server = API.root(address)
         do {
-            let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-            let flow = try await API.startFlow(server: server, client: "ioStart on \(device)")
-            guard let page = flow.page(on: server) else { throw APIError.unreachable("The start page's answer could not be read.") }
-            Shared.defaults.set(address, forKey: "lastServer")
-            guard let got = await sheet.run(page: page, server: server, token: flow.poll.token) else { return }  // closed without a yes
-            await model.signedIn(Account(server: server, user: got.loginName, password: got.appPassword))
+            guard let account = try await sheet.signIn(server: server, typed: address) else { return }  // closed without a yes
+            await model.signedIn(account)
         } catch {
             failure = error.localizedDescription
         }
@@ -93,6 +89,16 @@ struct SignInView: View {
 final class SignInSheet: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
     private var closed = false
+
+    /// The whole sign-in: the start page's allow page, then the account it lets in. Nil: closed without a yes.
+    func signIn(server: String, typed: String? = nil) async throws -> Account? {
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        let flow = try await API.startFlow(server: server, client: "ioStart on \(device)")
+        guard let page = flow.page(on: server) else { throw APIError.unreachable("The start page's answer could not be read.") }
+        if let typed { Shared.defaults.set(typed, forKey: "lastServer") }
+        guard let got = await run(page: page, server: server, token: flow.poll.token) else { return nil }
+        return Account(server: server, user: got.loginName, password: got.appPassword)
+    }
 
     func run(page: URL, server: String, token: String) async -> API.Granted? {
         closed = false
