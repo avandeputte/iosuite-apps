@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds ioStart for iPhone and iPad and uploads it to TestFlight, the same way as ionote-apps' tools/testflight.sh.
+# Builds ioStart for iPhone and iPad and uploads it to TestFlight, the same way as the other apps' tools/testflight.sh.
 # Signs in with Xcode's own account (Xcode › Settings › Accounts), or with an App Store Connect API key when
 # ASC_KEY_ID and ASC_ISSUER_ID are set (key file at ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8, never in
 # this repo). The app (bundle id net.iothing.iostart) must exist in App Store Connect. The build number is the time
