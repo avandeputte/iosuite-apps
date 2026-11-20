@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WidgetKit
 
 /// A page open in the built-in browser: a bookmark's, or none yet (a new page starts at its address bar). A private
 /// one keeps no cookies, sign-ins, history or cache: all of it is gone when it closes.
@@ -23,9 +24,12 @@ final class AppModel: ObservableObject {
     @Published var tree: [Node] = []
     @Published var rev = 0
     @Published var canWrite = true
+    /// Whether the app password reaches the other apps (widgets and Siri); false: an older, sync-only one. Nil: not known.
+    @Published var full: Bool? = Shared.full
     @Published var loaded = false
     @Published var problem: String?
     @Published var browsing: Page?
+    @Published var showSettings = false
     @Published var openIn: OpenIn {
         didSet { Shared.defaults.set(openIn.rawValue, forKey: "openIn") }
     }
@@ -67,10 +71,56 @@ final class AppModel: ObservableObject {
         guard let api else { return }
         do {
             take(try await api.tree())
-            if let me = try? await api.hello() { canWrite = me.canWrite }
+            if let me = try? await api.hello() {
+                canWrite = me.canWrite
+                if let f = me.full {
+                    full = f
+                    Shared.full = f
+                }
+            }
         } catch {
             failed(error, quiet: quiet)
         }
+        bookmarksChanged()
+    }
+
+    /// The widgets and Siri read the tree the app keeps: tell them it may have changed.
+    private func bookmarksChanged() {
+        WidgetCenter.shared.reloadAllTimelines()
+        ioStartShortcuts.updateAppShortcutParameters()
+    }
+
+    // MARK: links from the widgets and Shortcuts
+
+    /// iostart://open?id= (a bookmark, in the built-in browser) or ?url= (an event's day, a task: as Settings says).
+    func handle(_ url: URL) {
+        guard let link = DeepLink(url) else { return }
+        open(link)
+    }
+
+    func open(_ link: DeepLink) {
+        switch link {
+        case .bookmark(let id):
+            guard let node = tree.node(id), let url = node.link else {
+                problem = "That bookmark is no longer there."
+                return
+            }
+            browsing = nil
+            open(url, in: .app)
+        case .page(let url):
+            browsing = nil
+            open(url)
+        case .settings:
+            browsing = nil
+            if account != nil { showSettings = true }
+        }
+    }
+
+    /// What a Shortcuts action (Open bookmark) left for the app to open.
+    func openPending() {
+        guard let link = DeepLink.pending else { return }
+        DeepLink.pending = nil
+        open(link)
     }
 
     /// Sends changes; the tree becomes the start page's answer. False when they did not go through.
@@ -141,6 +191,8 @@ final class AppModel: ObservableObject {
 
     func signedIn(_ account: Account) async {
         account.save()
+        Shared.full = nil
+        full = nil
         self.account = account
         loaded = false
         await refresh(quiet: false)
@@ -152,5 +204,7 @@ final class AppModel: ObservableObject {
         tree = []
         rev = 0
         loaded = false
+        full = nil
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
