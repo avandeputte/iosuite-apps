@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum SidebarSection: Hashable {
-    case inbox, notes
+    case inbox, notes, family
     case folder(String)
     case tag(String)
 
@@ -45,7 +45,7 @@ struct MainWindow: View {
                 switch section ?? .inbox {
                 case .inbox:
                     InboxList(selection: $selectedInbox, onSaved: showNote)
-                case .notes, .folder, .tag:
+                case .notes, .family, .folder, .tag:
                     NotesList(selection: $selectedNote)
                 }
             }
@@ -59,7 +59,7 @@ struct MainWindow: View {
                     ContentUnavailableView("Pick something from the Inbox", systemImage: "tray",
                                            description: Text("Everything you copy lands in the Inbox. Save the ones worth keeping as notes."))
                 }
-            case .notes, .folder, .tag:
+            case .notes, .family, .folder, .tag:
                 if let note = store.note(id: selectedNote) {
                     NoteEditor(note: note).id(note.id)
                 } else {
@@ -71,6 +71,7 @@ struct MainWindow: View {
         .onChange(of: section) { _, new in
             store.selectedFolder = new?.folder
             store.selectedTag = new?.tag
+            store.familyOnly = new == .family
         }
         .onChange(of: store.folders) { _, folders in
             // The open folder was deleted (here or on another device): go back to all notes.
@@ -79,6 +80,10 @@ struct MainWindow: View {
         .onChange(of: store.tags) { _, tags in
             // The last note with the open tag lost it: go back to all notes.
             if let tag = section?.tag, !tags.contains(where: { $0.name == tag }) { section = .notes }
+        }
+        .onChange(of: store.showsFamily) { _, shown in
+            // No family notes left, and none to add: go back to all notes.
+            if !shown, section == .family { section = .notes }
         }
         .onChange(of: store.searchText) { old, new in
             // Searching is about notes: jump there when a search starts.
@@ -108,8 +113,9 @@ struct MainWindow: View {
 
     private func showNote(_ id: String) {
         store.searchText = ""
-        // Open the note where it lives: its folder, or All Notes.
-        section = store.note(id: id)?.folderID.map { .folder($0) } ?? .notes
+        // Open the note where it lives: the Family space, its folder, or All Notes.
+        let note = store.note(id: id)
+        section = note?.family == true ? .family : note?.folderID.map { .folder($0) } ?? .notes
         selectedNote = id
     }
 
@@ -137,6 +143,13 @@ struct Sidebar: View {
                     .badge(store.totalNotes)
             }
             .tag(SidebarSection.notes)
+            if store.showsFamily {
+                Label("Family", systemImage: "person.2")
+                    .badge(store.familyCount)
+                    .tag(SidebarSection.family)
+                    .help(store.familyWrite ? "Notes everyone in the family reads. Make one here, or put a note here from its folder menu."
+                                            : "Notes everyone in the family reads. Editors and admins write them.")
+            }
 
             Section {
                 ForEach(store.folders) { folder in

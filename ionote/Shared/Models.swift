@@ -49,6 +49,9 @@ struct Note: Identifiable, Hashable {
     var folderID: String?
     /// Which picture this device has for the note (nil until it has been fetched), so previews can follow it.
     var imageKey: String? = nil
+    /// A note of the Family space: everyone with a role on the server reads it, editors and admins change it.
+    /// It is in no folder (folders are each account's own).
+    var family = false
 
     /// Names the exported file of the note's picture; a new picture gets a new file.
     var exportKey: String { imageKey.map { "\(id)-\($0)" } ?? id }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum SidebarItem: Hashable {
-    case all
+    case all, family
     case folder(String)
     case tag(String)
 
@@ -40,6 +40,7 @@ struct RootView: View {
         .onChange(of: section) { _, new in
             store.selectedFolder = new?.folder
             store.selectedTag = new?.tag
+            store.familyOnly = new == .family
             selectedNote = nil
             if new != nil { compactColumn = .content }  // nil: back on the iPhone's sidebar, stay there
         }
@@ -48,6 +49,9 @@ struct RootView: View {
         }
         .onChange(of: store.tags) { _, tags in
             if let tag = section?.tag, !tags.contains(where: { $0.name == tag }) { section = .all }
+        }
+        .onChange(of: store.showsFamily) { _, shown in
+            if !shown, section == .family { section = .all }
         }
         .onChange(of: selectedNote) { _, id in
             if id != nil { compactColumn = .detail }
@@ -78,6 +82,11 @@ struct Sidebar: View {
             Label("All Notes", systemImage: "note.text")
                 .badge(store.totalNotes)
                 .tag(SidebarItem.all)
+            if store.showsFamily {
+                Label("Family", systemImage: "person.2")
+                    .badge(store.familyCount)
+                    .tag(SidebarItem.family)
+            }
 
             Section {
                 ForEach(store.folders) { folder in

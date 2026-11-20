@@ -22,13 +22,15 @@ struct AttachmentsSection: View {
                     Text("Sending…").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    importing = true
-                } label: {
-                    Label("Attach File", systemImage: "plus")
+                if store.canChange(note) {
+                    Button {
+                        importing = true
+                    } label: {
+                        Label("Attach File", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Attach a PDF, a picture or a document. Its text can be searched.")
                 }
-                .buttonStyle(.borderless)
-                .help("Attach a PDF, a picture or a document. Its text can be searched.")
             }
             .font(.callout)
             ForEach(files) { file in
@@ -42,7 +44,7 @@ struct AttachmentsSection: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(\.isFileURL)
-            guard !files.isEmpty else { return false }
+            guard !files.isEmpty, store.canChange(note) else { return false }
             Task { await store.attach(files: files, to: note.id) }
             return true
         } isTargeted: { dropping = $0 }
@@ -82,9 +84,11 @@ struct AttachmentsSection: View {
                 Task { if let url = await store.localFile(for: file) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
             }
             #endif
-            Divider()
-            Button("Remove File", role: .destructive) {
-                Task { await store.removeAttachment(file) }
+            if store.canChange(note) {
+                Divider()
+                Button("Remove File", role: .destructive) {
+                    Task { await store.removeAttachment(file) }
+                }
             }
         }
         .help("Click to look at it")

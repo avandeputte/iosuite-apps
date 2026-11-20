@@ -27,6 +27,10 @@ extension NotesStore {
     @discardableResult
     func attach(data items: [(data: Data, name: String)], to noteID: String) async -> Bool {
         guard !items.isEmpty else { return true }
+        if let note = try? db.note(id: noteID), !canChange(note) {
+            lastError = "Family notes are changed by editors and admins."
+            return false
+        }
         guard ServerConfig.serverURL != nil else {
             lastError = "Attaching files needs the ioNote server. Connect to it in Settings."
             return false

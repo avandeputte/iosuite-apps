@@ -16,9 +16,11 @@ struct NotesList: View {
                         if note.hasImage {
                             Button("Save Image As…") { if let url = store.imageFileURL(for: note) { ImageFiles.saveAs(url) } }
                         }
+                        let mine = store.canChange(note)
                         Button(note.pinned ? "Unpin" : "Pin to Top") { store.togglePin(note) }
-                        FolderMenu(note: note, title: "Move to Folder")
-                        if !store.tags.isEmpty {
+                            .disabled(!mine)
+                        if mine { FolderMenu(note: note, title: "Move to Folder") }
+                        if !store.tags.isEmpty, mine {
                             Menu("Tags") {
                                 ForEach(store.tags) { tag in
                                     let has = note.tags.contains { $0.caseInsensitiveCompare(tag.name) == .orderedSame }
@@ -33,6 +35,7 @@ struct NotesList: View {
                         }
                         Divider()
                         Button("Delete Note", role: .destructive) { delete(note) }
+                            .disabled(!mine)
                     }
             }
         }
@@ -42,6 +45,9 @@ struct NotesList: View {
                     ContentUnavailableView.search(text: store.searchText)
                 } else if store.selectedTag != nil {
                     ContentUnavailableView("No notes with this tag", systemImage: "number")
+                } else if store.familyOnly {
+                    ContentUnavailableView("No family notes yet", systemImage: "person.2",
+                                           description: Text("A note made here is everyone's to read: the wifi password, the bin days, the packing list."))
                 } else {
                     ContentUnavailableView("No notes yet", systemImage: "note.text",
                                            description: Text("Save something from the Inbox, or select text in any app and right-click › Save to ioNote."))
@@ -49,7 +55,7 @@ struct NotesList: View {
             }
         }
         .navigationTitle(!store.searchText.isEmpty ? "Search"
-                         : store.selectedTag.map { "#\($0)" } ?? store.folderName(store.selectedFolder) ?? "All Notes")
+                         : store.selectedTag.map { "#\($0)" } ?? store.folderName(store.selectedFolder) ?? (store.familyOnly ? "Family" : "All Notes"))
         .toolbar {
             ToolbarItem {
                 Menu {
@@ -73,6 +79,7 @@ struct NotesList: View {
     }
 
     private func delete(_ note: Note) {
+        guard store.canChange(note) else { return }
         if selection == note.id { selection = nil }
         store.deleteNote(note)
     }
@@ -106,6 +113,9 @@ struct NoteRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: NoteRow.icon(for: note.source))
                     Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    if note.family, !store.familyOnly {
+                        Image(systemName: "person.2.fill").foregroundStyle(Brand.teal).help("In the Family space: everyone reads it")
+                    }
                     ForEach(note.tags.prefix(3), id: \.self) { TagChip(name: $0) }
                     NoteBadges(note: note)
                 }
@@ -132,38 +142,68 @@ struct NoteRow: View {
     }
 }
 
-/// Files a note in a folder: a submenu in context menus, or a "📁 Work" pop-up in the editor.
+/// Files a note in a folder: a submenu in context menus, or a "📁 Work" pop-up in the editor. For an editor or an
+/// admin it also offers the Family space, which everyone reads; picking a folder for a family note makes it one's own
+/// again. Someone who only reads a family note sees where it is, and no menu.
 struct FolderMenu: View {
     @EnvironmentObject private var store: NotesStore
     let note: Note
     let title: String?
 
     var body: some View {
+        if store.canChange(note) {
+            menu
+        } else {
+            Label("Family", systemImage: "person.2")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("A family note: editors and admins change it")
+        }
+    }
+
+    private var menu: some View {
         Menu {
             Button {
-                store.moveNote(id: note.id, toFolder: nil)
+                move(to: nil)
             } label: {
-                if note.folderID == nil { Label("No Folder", systemImage: "checkmark") } else { Text("No Folder") }
+                if note.folderID == nil, !note.family { Label("No Folder", systemImage: "checkmark") } else { Text("No Folder") }
             }
             if !store.folders.isEmpty { Divider() }
             ForEach(store.folders) { folder in
                 Button {
-                    store.moveNote(id: note.id, toFolder: folder.id)
+                    move(to: folder.id)
                 } label: {
                     if note.folderID == folder.id { Label(folder.name, systemImage: "checkmark") } else { Text(folder.name) }
+                }
+            }
+            if store.familyWrite {
+                Divider()
+                Button {
+                    store.setFamily(true, for: note.id)
+                } label: {
+                    if note.family { Label("Family", systemImage: "checkmark") } else { Text("Family") }
                 }
             }
         } label: {
             if let title {
                 Text(title)
             } else {
-                Label(store.folderName(note.folderID) ?? "No Folder", systemImage: "folder")
+                Label(note.family ? "Family" : store.folderName(note.folderID) ?? "No Folder", systemImage: note.family ? "person.2" : "folder")
                     .font(.caption)
             }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Choose the folder this note is in")
+        .help(store.familyWrite ? "Choose the folder this note is in, or Family: everyone reads the note. Taking it out of Family makes it yours alone."
+                                : "Choose the folder this note is in")
+    }
+
+    private func move(to folderID: String?) {
+        if note.family {
+            store.setFamily(false, for: note.id, folder: folderID)
+        } else {
+            store.moveNote(id: note.id, toFolder: folderID)
+        }
     }
 }
 
@@ -278,14 +318,18 @@ struct NoteEditor: View {
         self.note = note
         _title = State(initialValue: note.title)
         _text = State(initialValue: note.body)
-        _editing = State(initialValue: !Prefs.bool(Prefs.formattedText) || note.body.isEmpty)
+        _editing = State(initialValue: NotesStore.shared.canChange(note) && (!Prefs.bool(Prefs.formattedText) || note.body.isEmpty))
     }
+
+    /// A family note this account only reads: shown, not edited.
+    private var locked: Bool { !store.canChange(note) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Title", text: $title)
                 .textFieldStyle(.plain)
                 .font(.title2.bold())
+                .disabled(locked)
 
             HStack {
                 Text(meta)
@@ -296,12 +340,13 @@ struct NoteEditor: View {
             }
 
             TagEditor(note: note)
+                .disabled(locked)
 
             if note.hasImage {
                 imageSection
             }
 
-            if editing {
+            if editing, !locked {
                 VStack(alignment: .leading, spacing: 4) {
                     FormatBar { formatter.apply($0) }
                     MarkdownTextView(text: $text, formatter: formatter)
@@ -321,14 +366,14 @@ struct NoteEditor: View {
             } else {
                 ScrollView {
                     MarkdownView(text: text) { line, checked in
-                        text = Markdown.toggleTask(text, line: line, checked: checked)
+                        if !locked { text = Markdown.toggleTask(text, line: line, checked: checked) }
                     }
                     .padding(10)
                 }
                 .frame(minHeight: 120)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-                .onTapGesture(count: 2) { editing = true }
-                .help("Double-click to edit the text")
+                .onTapGesture(count: 2) { if !locked { editing = true } }
+                .help(locked ? "A family note: editors and admins change it" : "Double-click to edit the text")
             }
 
             AttachmentsSection(note: note)
@@ -346,6 +391,7 @@ struct NoteEditor: View {
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .help(editing ? "Show the text formatted, with boxes to tick (⇧⌘E)" : "Edit the text (⇧⌘E)")
+                .disabled(locked)
                 Button {
                     text = text.addingChecklistItem()
                     editing = true
@@ -355,10 +401,12 @@ struct NoteEditor: View {
                 // while the text is edited, ⇧⌘L makes the selected lines a checklist (the formatting bar's)
                 .keyboardShortcut(editing ? nil : KeyboardShortcut("l", modifiers: [.command, .shift]))
                 .help(editing ? "Add a checklist item at the end" : "Add a checklist item (⇧⌘L)")
+                .disabled(locked)
                 Button { store.togglePin(note) } label: {
                     Label(note.pinned ? "Unpin" : "Pin", systemImage: note.pinned ? "pin.slash" : "pin")
                 }
                 .help(note.pinned ? "Unpin this note" : "Keep this note at the top of the list")
+                .disabled(locked)
                 Button { store.copyToPasteboard(note) } label: { Label("Copy", systemImage: "doc.on.doc") }
                     .help("Copy, ready to paste anywhere (it doesn't go into the Inbox)")
                 // Messages, Mail, AirDrop, Notes…: the picture for image notes, the text otherwise.
@@ -370,11 +418,15 @@ struct NoteEditor: View {
                         .help("Share the text")
                 }
                 Button(role: .destructive) { store.deleteNote(note) } label: { Label("Delete", systemImage: "trash") }
-                    .help("Delete this note on all your devices")
+                    .help(note.family ? "Delete this note for everyone" : "Delete this note on all your devices")
+                    .disabled(locked)
             }
         }
         .onChange(of: title) { scheduleSave() }
         .onChange(of: text) { scheduleSave() }
+        // a family note this account only reads follows what its editors write
+        .onChange(of: note.title) { _, new in if locked { title = new } }
+        .onChange(of: note.body) { _, new in if locked { text = new } }
         .onDisappear {
             saveTask?.cancel()
             store.updateNote(id: note.id, title: title, body: text)
@@ -448,8 +500,10 @@ struct NoteEditor: View {
                         Button("Copy Text") { store.copyText(note.ocrText) }
                         .buttonStyle(.link)
                     }
-                    Button("Read Again") { store.runOCR(on: note) }
-                        .buttonStyle(.link)
+                    if !locked {
+                        Button("Read Again") { store.runOCR(on: note) }
+                            .buttonStyle(.link)
+                    }
                 }
             }
         }
