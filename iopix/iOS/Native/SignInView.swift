@@ -12,12 +12,16 @@ struct SignInView: View {
     @State private var loading = true
     @State private var chosen: String?
     @State private var password = ""
+    /// Asked for only when the server says the account has two-step sign-in on.
+    @State private var code = ""
+    @State private var needsCode = false
     @State private var problem: String?
     @State private var busy = false
     /// Away from home, the server can sit behind another sign-in first (Cloudflare Access): its page.
     @State private var gate: URL?
     @State private var showGate = false
     @FocusState private var passwordFocused: Bool
+    @FocusState private var codeFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -45,6 +49,8 @@ struct SignInView: View {
                         Button {
                             chosen = a.name
                             password = ""
+                            code = ""
+                            needsCode = false
                             problem = nil
                             if a.needsPassword { passwordFocused = true } else { signIn() }
                         } label: {
@@ -67,7 +73,18 @@ struct SignInView: View {
                             .textContentType(.password)
                             .focused($passwordFocused)
                             .onSubmit(signIn)
-                        Button(busy ? "Signing in…" : "Sign in", action: signIn).disabled(password.isEmpty || busy)
+                        if needsCode {
+                            TextField("Code from your code app", text: $code)
+                                .textContentType(.oneTimeCode)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .focused($codeFocused)
+                                .onSubmit(signIn)
+                        }
+                        Button(busy ? "Signing in…" : "Sign in", action: signIn).disabled(password.isEmpty || busy || (needsCode && code.isEmpty))
+                    } footer: {
+                        if needsCode { Text("This account has two-step sign-in on. A recovery code works here too.") }
                     }
                 }
                 if let problem, !accounts.isEmpty {
@@ -130,8 +147,13 @@ struct SignInView: View {
         problem = nil
         Task {
             do {
-                try await IopixClient.shared.signIn(name: chosen, password: password)
+                try await IopixClient.shared.signIn(name: chosen, password: password, code: code.trimmingCharacters(in: .whitespaces))
                 await finish()
+            } catch IopixError.needsCode(let why) {
+                if needsCode { problem = why }  // a code was sent and was not right; the first time the field just appears
+                needsCode = true
+                code = ""
+                codeFocused = true
             } catch IopixError.needsSignIn {
                 await loadAccounts()  // the network changed under the sign-in: Cloudflare's comes first now
             } catch {
