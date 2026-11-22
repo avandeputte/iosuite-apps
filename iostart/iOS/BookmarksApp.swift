@@ -10,8 +10,13 @@ struct BookmarksApp: App {
             RootView()
                 .environmentObject(model)
                 .onChange(of: phase) { _, now in
-                    if now == .active { Task { await model.refresh() } }  // also picks up what the share sheet added
+                    if now == .active {
+                        model.openPending()
+                        Task { await model.refresh() }  // also picks up what the share sheet added; reloads the widgets
+                    }
                 }
+                .onOpenURL { model.handle($0) }  // a widget's bookmark, event or task
+                .onReceive(NotificationCenter.default.publisher(for: .ioStartOpenLink)) { _ in model.openPending() }
         }
     }
 }
@@ -30,6 +35,7 @@ struct RootView: View {
                 }
             }
         }
+        .sheet(isPresented: $model.showSettings) { SettingsView().environmentObject(model) }
         .fullScreenCover(item: $model.browsing) { page in
             BrowserView(page: page).environmentObject(model)
         }

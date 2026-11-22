@@ -29,10 +29,30 @@
   when the page closes, and they share nothing with normal pages. Dark bars and the crossed-out eye next to the
   address show which is which.
 
+## Widgets and Siri
+
+- **Widgets** (iOS 17 and later), from what the start page reads in ioCalendar and ioTask (`/dav/ext/today`):
+  - *Today* (small, medium, large, and the lock screen's rectangular one): what is left of today's events, with
+    their time and calendar colour, or the next one when the day is done; medium and large add the tasks due today,
+    with how many are late.
+  - *Next event* (small, and the lock screen's rectangular, inline and round ones).
+  - *Bookmarks* (small: 4, medium: 8): pick them under Edit Widget; each opens in the built-in browser.
+  
+  They refresh about every 20 minutes, when an event ends, and whenever the app comes to the front. Tapping an event
+  opens its day in ioCalendar, a task opens in ioTask (through the app: `iostart://open?url=`, `iostart://open?id=`
+  for a bookmark). Without the start page they show its last answer, with a crossed-out cloud.
+- **Siri and Shortcuts**, no setup needed: "Add a task in ioStart" (title, due date, list), "Add an event in
+  ioStart" (title, start, end, all day, calendar), "What's on today in ioStart" (a spoken summary), "Open
+  ‹bookmark› in ioStart". The same four are actions in the Shortcuts app.
+
+Both need the start page with `/dav/ext/today`, `/calendars`, `/tasks` and `/events` (iosuite PR #234), and an app
+password with full access: the sign-in asks for one (`scope=full`). A phone signed in before 1.2.0 has a password
+for bookmarks only; its widgets say "Sign in again", and so does Settings, with a button that does it.
+
 ## How it talks to the start page
 
 The same way the browser extension does (in the iosuite repo: `app/bookmarkext.py`, `/dav/ext`): the tree in one request, changes as ops in
-one request, HTTP Basic with a sync-only app password. Signing in is the start page's own "may this app sync?" page
+one request, HTTP Basic with an app password (full access since 1.2.0, for the widgets and Siri; sync-only before). Signing in is the start page's own "may this app sync?" page
 (`app/ncbookmarks.py`, Nextcloud's login flow v2) in the system's sign-in sheet: nobody types a password into the app,
 and the app password it gets is kept in the Shared ioSuite database, listed and revoked like every other one
 (Settings › Account). It lives in the phone's keychain, in the app group the app shares with its share extension.
@@ -51,7 +71,7 @@ Needs a Mac with Xcode 16 or later and [XcodeGen](https://github.com/yonaskolb/X
     open ioStart.xcodeproj    # pick your iPhone, Run
 
 `project.yml` names the team (`DEVELOPMENT_TEAM`) and the ids: `net.iothing.iostart`, its share extension
-`net.iothing.iostart.share`, and the app group `group.net.iothing.iostart` both are in. Signing is automatic:
+`net.iothing.iostart.share`, its widgets `net.iothing.iostart.widgets`, and the app group `group.net.iothing.iostart` they all are in. Signing is automatic:
 Xcode registers the ids and the group with the team on the first build.
 
 ## TestFlight
