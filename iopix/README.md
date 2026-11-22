@@ -92,6 +92,10 @@ and Apple TV). They are kept in the Keychain and sent with every request, so Clo
 and the app goes straight to iopix's own sign-in; the Apple TV, which can't show Cloudflare's page, needs one to
 connect from outside. If Cloudflare refuses the token, the connect screen says so. You still sign in to iopix once.
 
+An account with two-step sign-in on (ioSuite 3.39 or later, Settings › Account › Sign-in in the web app) is asked for
+the code from its code app after the password, on the iPhone, iPad and Apple TV sign-in alike; a recovery code works
+too. Nothing is asked of an account that did not turn it on.
+
 ## TestFlight
 
 Needs a paid Apple Developer Program membership (the free Personal Team cannot upload).

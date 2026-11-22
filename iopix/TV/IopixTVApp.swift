@@ -106,6 +106,9 @@ struct TVSignIn: View {
     @State private var accounts: [(name: String, needsPassword: Bool)] = []
     @State private var chosen: String?
     @State private var password = ""
+    /// Asked for only when the server says the account has two-step sign-in on.
+    @State private var code = ""
+    @State private var needsCode = false
     @State private var problem: String?
     @State private var busy = false
     @FocusState private var focus: String?
@@ -119,6 +122,8 @@ struct TVSignIn: View {
                     Button {
                         chosen = a.name
                         password = ""
+                        code = ""
+                        needsCode = false
                         Task {
                             if await resume(a.name) { done() } else if !a.needsPassword { signIn() }
                         }
@@ -138,7 +143,12 @@ struct TVSignIn: View {
                 SecureField("Password for \(chosen)", text: $password)
                     .frame(width: 700)
                     .onSubmit(signIn)
-                Button(busy ? "Signing in…" : "Sign in", action: signIn).disabled(password.isEmpty || busy)
+                if needsCode {
+                    TextField("Code from your code app", text: $code)
+                        .frame(width: 700)
+                        .onSubmit(signIn)
+                }
+                Button(busy ? "Signing in…" : "Sign in", action: signIn).disabled(password.isEmpty || busy || (needsCode && code.isEmpty))
             }
             if let problem { Text(problem).foregroundStyle(.red).multilineTextAlignment(.center) }
             Button("Change server (\(AppConfig.serverURL.host ?? ""))", action: changeServer).font(.callout)
@@ -182,9 +192,13 @@ struct TVSignIn: View {
         problem = nil
         Task {
             do {
-                try await IopixClient.shared.signIn(name: chosen, password: password)
+                try await IopixClient.shared.signIn(name: chosen, password: password, code: code.trimmingCharacters(in: .whitespaces))
                 Profiles.save(chosen)
                 done()
+            } catch IopixError.needsCode(let why) {
+                problem = needsCode ? why : "This account has two-step sign-in on: enter the code from your code app."
+                needsCode = true
+                code = ""
             } catch {
                 problem = error.localizedDescription
             }

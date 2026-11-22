@@ -22,11 +22,13 @@ enum IopixError: LocalizedError, Equatable {
     case needsSignIn
     case needsServerUpdate  // the chosen folder needs a newer iopix
     case notAllowed(String)
+    case needsCode(String)  // the account has two-step sign-in on: the code app's code comes with the password
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .needsSignIn: return "Sign in to ioPix to send photos."
+        case .needsCode(let why): return why
         case .needsServerUpdate: return "Your ioPix server can't put photos in a folder of your choice yet. Update ioPix, or pick one of its date layouts in Settings."
         case .notAllowed(let why): return why
         case .server(let why): return why
@@ -213,13 +215,19 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     }
 
     /// Signs in with a name and password (the Apple TV has no web page to sign in on).
-    func signIn(name: String, password: String) async throws {
+    /// code: the 6 digits of the account's code app (or a recovery code), when it has two-step sign-in on; without
+    /// one the server answers that it is needed (IopixError.needsCode) and the sign-in asks for it.
+    func signIn(name: String, password: String, code: String = "") async throws {
         var r = request("api/auth/login", method: "POST")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "password": password])
+        var body = ["name": name, "password": password]
+        if !code.isEmpty { body["code"] = code }
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await session.data(for: r)
         if let http = resp as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 429 || http.statusCode == 403 {
-            let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["detail"] as? String
+            let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let detail = j?["detail"] as? String
+            if http.statusCode == 401, j?["twoStep"] as? Bool == true { throw IopixError.needsCode(detail ?? "Enter the code from your code app") }
             throw IopixError.notAllowed(detail ?? "Wrong user name or password")
         }
         _ = try check(data, resp)
