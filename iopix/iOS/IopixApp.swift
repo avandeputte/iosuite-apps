@@ -63,9 +63,9 @@ struct IopixApp: App {
     }
 }
 
-/// Whether the app has a server to talk to yet (the first launch asks for one).
+/// Whether this device is signed in (the first launch, and a password removed on the server, show the sign-in).
 final class LaunchState: ObservableObject {
-    @Published var hasServer = AppConfig.hasServer
+    @Published var hasServer = IopixClient.shared.isSignedIn
 }
 
 struct RootView: View {
@@ -76,22 +76,27 @@ struct RootView: View {
     @State private var showUploads = false
     @State private var server = AppConfig.serverURL
 
-    @State private var needsServer = !AppConfig.hasServer
     @State private var signingIn = false
     @State private var showCards = false
     @State private var dropping = false
 
     var body: some View {
-        if needsServer {
-            ServerSetupView { url in
-                AppConfig.serverURL = url
-                server = url
-                needsServer = false
-                launch.hasServer = true
-                Task { await queue.refreshAccount() }
+        Group {
+            if launch.hasServer {
+                library
+            } else {
+                SignInView(cancellable: false) {
+                    launch.hasServer = true
+                    if server != AppConfig.serverURL {  // another server or account: start afresh
+                        server = AppConfig.serverURL
+                        Router.shared.photosPath = []; Router.shared.morePath = []
+                    }
+                    Task { await store.load() }
+                }
             }
-        } else {
-            library
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .iopixSignedOut)) { _ in
+            launch.hasServer = false  // the sign-in comes back, with the address and name filled in
         }
     }
 
@@ -99,15 +104,13 @@ struct RootView: View {
         AppTabs { showUploads = true }
             .environmentObject(store)
             .environmentObject(router)
-            .onAppear {
-                WebShell.shared.onCookiesChanged = { Task { await queue.refreshAccount() } }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .iopixBecameActive)) { _ in
-                if WebShell.shared.status.failed != nil { WebShell.shared.status.retry() }
                 if store.problem != nil, !store.needsSignIn { Task { await store.load() } }
+                Task { await HomeServer.shared.check() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .iopixNetworkMoved)) { _ in
-                // left home (or came back): the same address now leads another way, perhaps through Cloudflare
+                // left home (or came back): the home address may answer now, or no longer
+                HomeServer.shared.forget()
                 Task {
                     await store.load()
                     await queue.refreshAccount()
@@ -135,21 +138,14 @@ struct RootView: View {
             .onContinueUserActivity(CSSearchableItemActionType) { a in
                 if let route = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { router.open(route) }
             }
-            .sheet(isPresented: $signingIn) { SignInView { showUploads = true }.environmentObject(store) }
+            .sheet(isPresented: $signingIn) { SignInView { showUploads = true }.environmentObject(queue) }
             // photos dragged in from Photos or Files (iPad side by side) go to the queue
             .dropDestination(for: PickedFile.self) { files, _ in
                 queue.add(files: files.map(\.url), move: true)
                 return true
             } isTargeted: { dropping = $0 }
             .overlay { if dropping { DropHint() } }
-            .sheet(isPresented: $showUploads, onDismiss: {
-                if server != AppConfig.serverURL {  // the address was changed in the sheet: start over with the new one
-                    server = AppConfig.serverURL
-                    WebShell.shared.reset()
-                    Router.shared.lastRoute = [:]
-                    Task { await store.load() }
-                }
-            }) {
+            .sheet(isPresented: $showUploads) {
                 UploadsView()
             }
     }
@@ -202,7 +198,6 @@ struct UploadsView: View {
     @State private var loading = false
     @State private var pickNote: String?
     @State private var signingIn = false
-    @State private var serverText = AppConfig.serverURL.absoluteString
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ServiceToken.clientSecret ?? ""
 
@@ -257,12 +252,9 @@ struct UploadsView: View {
 
                 DestinationSection()
 
+                ServerSection { dismiss() }
+
                 Section {
-                    TextField("Server address", text: $serverText)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .onSubmit(saveServer)
                     DisclosureGroup("Cloudflare Access service token") {
                         TextField("Client ID", text: $tokenID).textInputAutocapitalization(.never).autocorrectionDisabled()
                         SecureField("Client secret", text: $tokenSecret)
@@ -272,32 +264,18 @@ struct UploadsView: View {
                             Task { await queue.refreshAccount() }
                         }
                     }
-                    if queue.account?.signedIn == true {
-                        Button("Sign out", role: .destructive) {
-                            Task {
-                                await IopixClient.shared.signOut()
-                                ImageCache.shared.removeAll()
-                                await CookieSync.clearWebView()
-                                await queue.refreshAccount()
-                                NotificationCenter.default.post(name: .iopixReload, object: nil)  // the page shows the sign-in again
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Server")
                 } footer: {
-                    Text("Only if your server is behind Cloudflare Access; leave it empty otherwise. With a service token, uploads get through even when Cloudflare's sign-in has run out.")
+                    Text("Only if your server is behind Cloudflare Access; leave it empty otherwise.")
                 }
             }
             .navigationTitle("Send to ioPix")
             .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button { saveServer(); dismiss() } label: { BarText("Done") } }
+                ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { BarText("Done") } }
             }
             .onChange(of: picked) { _, items in load(items) }
             .task { await queue.refreshAccount() }
-            .onDisappear(perform: saveOnDismiss)
         }
     }
 
@@ -312,7 +290,7 @@ struct UploadsView: View {
             Button { signingIn = true } label: {
                 Label("Sign in to ioPix… Photos wait here until you do.", systemImage: "person.crop.circle.badge.questionmark")
             }
-            .sheet(isPresented: $signingIn) { SignInView() }
+            .sheet(isPresented: $signingIn) { SignInView().environmentObject(queue) }
         }
     }
 
@@ -331,18 +309,6 @@ struct UploadsView: View {
             loading = false
         }
     }
-
-    private func saveServer() {
-        guard let url = AppConfig.normalisedServer(serverText) else { serverText = AppConfig.serverURL.absoluteString; return }
-        if url != AppConfig.serverURL {
-            AppConfig.serverURL = url
-            Task { await queue.refreshAccount() }
-        }
-        serverText = url.absoluteString
-    }
-
-    /// The sheet can be swiped away too: an edited address is kept then as well.
-    private func saveOnDismiss() { saveServer() }
 }
 
 struct ItemRow: View {
@@ -356,85 +322,6 @@ struct ItemRow: View {
             } else {
                 Text(item.stateText).font(.caption).foregroundStyle(item.state == .failed ? .red : .secondary)
             }
-        }
-    }
-}
-
-/// First launch: which iopix to connect to.
-struct ServerSetupView: View {
-    let done: (URL) -> Void
-    @State private var text = ""
-    @State private var checking = false
-    @State private var problem: String?
-    @State private var tokenID = ServiceToken.clientID ?? ""
-    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
-    @State private var showToken = ServiceToken.isSet
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image("Mark").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
-            Brand.text("Connect to your ", onLight: true).font(.title2.bold())
-            Text("Enter the address you use for ioPix in the browser.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            TextField("photos.example.com", text: $text)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .autocorrectionDisabled()
-                .textContentType(.URL)
-                .submitLabel(.go)
-                .onSubmit(connect)
-                .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-            DisclosureGroup("Cloudflare Access service token (optional)", isExpanded: $showToken) {
-                VStack(alignment: .leading, spacing: 10) {
-                    TextField("Client ID", text: $tokenID)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit(connect)
-                        .padding(12)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-                    SecureField("Client secret", text: $tokenSecret)
-                        .onSubmit(connect)
-                        .padding(12)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-                    Text("Only if ioPix sits behind Cloudflare Access. With a service token the app goes straight to ioPix's own sign-in, without Cloudflare's. Leave it empty otherwise.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                .padding(.top, 8)
-            }
-            .font(.callout)
-            if let problem { Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center) }
-            Button(action: connect) {
-                Group { if checking { ProgressView() } else { Text("Connect") } }
-                    .frame(maxWidth: .infinity, minHeight: 28)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || checking)
-            Spacer()
-            Spacer()
-        }
-        .padding(24)
-        .frame(maxWidth: 480)
-    }
-
-    private func connect() {
-        guard let url = AppConfig.normalisedServer(text) else { problem = "That doesn't look like a web address."; return }
-        // kept before the check, which sends it along (the Keychain drops an empty one)
-        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespacesAndNewlines)
-        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        checking = true
-        problem = nil
-        Task {
-            var found = url
-            problem = await IopixClient.shared.probe(url)
-            // "https" was a guess: a home server may only speak plain http (or the other way round)
-            if problem != nil, !text.contains("://"), var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                c.scheme = url.scheme == "https" ? "http" : "https"
-                if let other = c.url, await IopixClient.shared.probe(other) == nil { problem = nil; found = other }
-            }
-            checking = false
-            if problem == nil { done(found) }
         }
     }
 }

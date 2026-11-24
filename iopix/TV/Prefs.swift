@@ -37,60 +37,38 @@ final class TVPrefs: ObservableObject {
     }
 }
 
-/// Accounts this TV has signed in with, each with its own iopix session, so switching needs no password.
-/// The sessions are kept in the Keychain.
+/// Accounts this TV has signed in with, each with an app password of its own (kept in the Keychain), so switching
+/// needs no password.
 enum Profiles {
     private static let listKey = "tv.profiles"
 
-    /// Kept per server: a name that signed in on another server is not offered as password-free here.
-    private static var hostKey: String { listKey + "." + (AppConfig.serverURL.host?.lowercased() ?? "") }
+    /// Kept per server: a name that signed in on another server is not offered here.
+    private static var host: String { AppConfig.serverURL.host?.lowercased() ?? "" }
+    private static var hostKey: String { listKey + "." + host }
     static var names: [String] { AppConfig.defaults.stringArray(forKey: hostKey) ?? [] }
 
-    /// Keeps the current sign-in cookies under `name`.
-    static func save(_ name: String) {
-        let host = AppConfig.serverURL.host?.lowercased() ?? ""
-        let cookies = (AppConfig.cookies.cookies ?? []).filter { CookieMatch.matches($0, host) }
-        let plain: [[String: Any]] = cookies.map { c in
-            var p: [String: Any] = ["name": c.name, "value": c.value, "domain": c.domain, "path": c.path, "secure": c.isSecure]
-            if let e = c.expiresDate { p["expires"] = e.timeIntervalSince1970 }
-            return p
-        }
-        guard let data = try? JSONSerialization.data(withJSONObject: plain), let text = String(data: data, encoding: .utf8) else { return }
-        Keychain.set(text, for: "profile.\(host).\(name)")
-        var list = names.filter { $0 != name }
-        list.insert(name, at: 0)
+    /// Keeps a sign-in under its name.
+    static func save(_ c: DeviceCredential) {
+        Keychain.set(c.password, for: "device.\(host).\(c.name)")
+        var list = names.filter { $0 != c.name }
+        list.insert(c.name, at: 0)
         AppConfig.defaults.set(list, forKey: hostKey)
     }
 
-    /// Puts `name`'s session back in place. False when it has none (any more).
+    /// Makes `name`'s app password this TV's sign-in. False when it has none (any more).
     static func use(_ name: String) -> Bool {
-        let host = AppConfig.serverURL.host?.lowercased() ?? ""
-        guard let text = Keychain.get("profile.\(host).\(name)"), let data = text.data(using: .utf8),
-              let plain = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return false }
-        IopixClient.shared.forgetCookies()
-        for p in plain {
-            var props: [HTTPCookiePropertyKey: Any] = [.name: p["name"] ?? "", .value: p["value"] ?? "", .domain: p["domain"] ?? host, .path: p["path"] ?? "/"]
-            if let e = p["expires"] as? Double { props[.expires] = Date(timeIntervalSince1970: e) }
-            if p["secure"] as? Bool == true { props[.secure] = "TRUE" }
-            if let c = HTTPCookie(properties: props) { AppConfig.cookies.setCookie(c) }
-        }
-        var list = names.filter { $0 != name }
-        list.insert(name, at: 0)
-        AppConfig.defaults.set(list, forKey: hostKey)
+        let store = DeviceCredentialStore(app: AppConfig.deviceApp)
+        guard let pw = Keychain.get("device.\(host).\(name)") else { return false }
+        let c = DeviceCredential(address: store.lastAddress ?? AppConfig.serverURL.absoluteString, base: AppConfig.serverURL, name: name, password: pw)
+        store.save(c)
+        IopixClient.shared.signedIn(c)
+        save(c)
         return true
     }
 
     static func forget(_ name: String) {
-        let host = AppConfig.serverURL.host?.lowercased() ?? ""
-        Keychain.set(nil, for: "profile.\(host).\(name)")
+        Keychain.set(nil, for: "device.\(host).\(name)")
         AppConfig.defaults.set(names.filter { $0 != name }, forKey: hostKey)
-    }
-}
-
-enum CookieMatch {
-    static func matches(_ c: HTTPCookie, _ host: String) -> Bool {
-        let d = c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        return host == d || host.hasSuffix("." + d)
     }
 }
 

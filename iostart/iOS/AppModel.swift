@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WidgetKit
 
 /// A page open in the built-in browser: a bookmark's, or none yet (a new page starts at its address bar). A private
 /// one keeps no cookies, sign-ins, history or cache: all of it is gone when it closes.
@@ -26,6 +27,7 @@ final class AppModel: ObservableObject {
     @Published var loaded = false
     @Published var problem: String?
     @Published var browsing: Page?
+    @Published var showSettings = false
     @Published var openIn: OpenIn {
         didSet { Shared.defaults.set(openIn.rawValue, forKey: "openIn") }
     }
@@ -55,7 +57,7 @@ final class AppModel: ObservableObject {
 
     private func failed(_ error: Error, quiet: Bool = false) {
         if case APIError.signedOut = error {
-            signOut()
+            forget()
             problem = error.localizedDescription
         } else if !quiet {
             problem = error.localizedDescription
@@ -71,6 +73,46 @@ final class AppModel: ObservableObject {
         } catch {
             failed(error, quiet: quiet)
         }
+        bookmarksChanged()
+    }
+
+    /// The widgets and Siri read the tree the app keeps: tell them it may have changed.
+    private func bookmarksChanged() {
+        WidgetCenter.shared.reloadAllTimelines()
+        ioStartShortcuts.updateAppShortcutParameters()
+    }
+
+    // MARK: links from the widgets and Shortcuts
+
+    /// iostart://open?id= (a bookmark, in the built-in browser) or ?url= (an event's day, a task: as Settings says).
+    func handle(_ url: URL) {
+        guard let link = DeepLink(url) else { return }
+        open(link)
+    }
+
+    func open(_ link: DeepLink) {
+        switch link {
+        case .bookmark(let id):
+            guard let node = tree.node(id), let url = node.link else {
+                problem = "That bookmark is no longer there."
+                return
+            }
+            browsing = nil
+            open(url, in: .app)
+        case .page(let url):
+            browsing = nil
+            open(url)
+        case .settings:
+            browsing = nil
+            if account != nil { showSettings = true }
+        }
+    }
+
+    /// What a Shortcuts action (Open bookmark) left for the app to open.
+    func openPending() {
+        guard let link = DeepLink.pending else { return }
+        DeepLink.pending = nil
+        open(link)
     }
 
     /// Sends changes; the tree becomes the start page's answer. False when they did not go through.
@@ -139,18 +181,29 @@ final class AppModel: ObservableObject {
 
     // MARK: the account
 
+    /// The credential is already saved (DeviceSignInForm).
     func signedIn(_ account: Account) async {
-        account.save()
         self.account = account
         loaded = false
         await refresh(quiet: false)
     }
 
+    /// Gives the app password back to the start page, then forgets it.
     func signOut() {
+        if let account, let base = URL(string: account.server) {
+            Task { await DeviceSignIn.signOut(DeviceCredential(address: "", base: base, name: account.user, password: account.password)) }
+        }
+        forget()
+    }
+
+    /// The start page no longer takes this phone's password (removed in Settings › Account): the sign-in screen,
+    /// with the address and name filled in.
+    func forget() {
         Account.clear()
         account = nil
         tree = []
         rev = 0
         loaded = false
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }

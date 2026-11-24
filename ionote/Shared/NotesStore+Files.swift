@@ -31,8 +31,8 @@ extension NotesStore {
             lastError = "Family notes are changed by editors and admins."
             return false
         }
-        guard ServerConfig.serverURL != nil else {
-            lastError = "Attaching files needs the ioNote server. Connect to it in Settings."
+        guard ServerConfig.signedIn else {
+            lastError = "Attaching files needs the ioNote server. Sign in to it in Settings."
             return false
         }
         transferring.insert(noteID)

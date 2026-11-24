@@ -41,6 +41,7 @@ struct Hello: Codable {
     var canWrite: Bool
     var rev: Int
     var version: String
+
 }
 
 /// One change sent to `/dav/ext/sync` (see app/bookmarkext.py). A missing `parent` is the top level.

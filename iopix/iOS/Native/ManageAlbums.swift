@@ -222,7 +222,7 @@ struct ManageAlbumsScreen: View {
 
     /// The web app's address for these filters, on the clipboard.
     private func copyLink(_ query: String, _ said: String) {
-        var origin = AppConfig.serverURL.absoluteString
+        var origin = (AppConfig.homeURL ?? AppConfig.serverURL).absoluteString  // the pages: the home address
         while origin.hasSuffix("/") { origin.removeLast() }
         UIPasteboard.general.string = origin + "/#/photos?" + query
         notice = Notice(text: said)

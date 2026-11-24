@@ -89,7 +89,7 @@ extension NotesStore {
                 try? ShareInbox.write(item, to: dir)
             }
             guard let noteID else { continue }
-            if files.isEmpty || ServerConfig.serverURL == nil {
+            if files.isEmpty || !ServerConfig.signedIn {
                 if files.isEmpty { ShareInbox.done(dir) }
                 continue
             }

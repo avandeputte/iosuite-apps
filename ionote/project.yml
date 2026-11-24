@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.5.0"
+    MARKETING_VERSION: "1.6.0"
     CURRENT_PROJECT_VERSION: "1"
     # your Apple team id (Xcode › Settings › Accounts), the same as iopix
     DEVELOPMENT_TEAM: 69M2JRAT8P
@@ -28,6 +28,7 @@ targets:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
       - Shared  # model, store, search index, OCR and brand: shared with the iPhone/iPad app
+      - path: ../shared/DeviceSignIn  # the suite's one sign-in for apps, the same in every app
     info:
       path: Mac/Info.plist
       properties:
@@ -69,6 +70,7 @@ targets:
     sources:
       - iOS
       - Shared
+      - path: ../shared/DeviceSignIn  # the suite's one sign-in for apps, the same in every app
       - ShareExtension/ShareInbox.swift  # what the share extension hands over
     dependencies:
       - target: ionotesShare

@@ -277,7 +277,12 @@ struct PhotoPager: View {
     }
 
     /// The link to this photo in the web app, as the web's Copy link gives it.
-    private var webLink: URL { URL(string: IopixClient.shared.server.absoluteString.hasSuffix("/") ? "\(IopixClient.shared.server.absoluteString)#/photos?p=\(current)" : "\(IopixClient.shared.server.absoluteString)/#/photos?p=\(current)") ?? IopixClient.shared.server }
+    /// The pages are served at the home address (the address for apps serves none).
+    private var webLink: URL {
+        var origin = (AppConfig.homeURL ?? IopixClient.shared.server).absoluteString
+        while origin.hasSuffix("/") { origin.removeLast() }
+        return URL(string: origin + "/#/photos?p=\(current)") ?? IopixClient.shared.server
+    }
 
     private func emailLink() {
         var c = URLComponents(string: "mailto:")

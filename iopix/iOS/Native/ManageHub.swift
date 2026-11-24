@@ -10,7 +10,7 @@ struct ManageMoreSection: View {
             Section("Library management") {
                 link("Import", "square.and.arrow.down.on.square", Hue.blue) { ManageImportScreen() }
                 link("Trash", "trash", Hue.rose) { ManageTrashScreen() }
-                link("Near-duplicates", "square.on.square", Hue.orange) { ManageNearDuplicatesScreen() }
+                link("Near-duplicates", "square.on.square", Hue.orange) { HomeOnly("Near-duplicates") { ManageNearDuplicatesScreen() } }
                 link("Detected content", "sparkles", Hue.purple) { ManageDetectedScreen() }
                 link("History", "clock.arrow.circlepath", Hue.slate) { ManageHistoryScreen() }
             }

@@ -16,12 +16,13 @@ enum APIError: LocalizedError {
     }
 }
 
-/// The start page's sync API for bookmarks (`/dav/ext`, app/bookmarkext.py), and the sign-in flow that makes the
-/// app password it is called with (`/dav/nextcloud/index.php/login/v2`, app/ncbookmarks.py).
+/// The start page's API for bookmarks, the day, tasks and events (`/dav/ext`, app/bookmarkext.py), called with the
+/// app password the sign-in made for this phone (shared/DeviceSignIn) as a Bearer token.
 struct API {
     var account: Account
 
-    static let session: URLSession = {
+    /// The widgets set a shorter one: a widget has seconds, not a minute, to get its timeline.
+    static var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 25
         c.waitsForConnectivity = true        // a phone just unlocked, or an app just installed: wait for the network
@@ -31,11 +32,22 @@ struct API {
         return URLSession(configuration: c)
     }()
 
-    private struct Failure: Decodable { var error: String?; var detail: String? }
-
-    static func basic(_ account: Account) -> String {
-        "Basic " + Data("\(account.user):\(account.password)".utf8).base64EncodedString()
+    /// An error answer: {"error": "…"}, {"detail": "…"}, or {"detail": {"error": "…", "signInAgain": true}}.
+    private struct Failure: Decodable {
+        struct Detail: Decodable { var error: String?; var signInAgain: Bool? }
+        var error: String?
+        var detail: String?
+        var details: Detail?
+        enum CodingKeys: String, CodingKey { case error, detail }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            error = try? c.decode(String.self, forKey: .error)
+            detail = try? c.decode(String.self, forKey: .detail)
+            details = try? c.decode(Detail.self, forKey: .detail)
+        }
     }
+
+    static func bearer(_ account: Account) -> String { "Bearer " + account.password }
 
     /// The errors of a network that was not there for a moment: worth one more try before telling anyone. A newly
     /// installed app's first request often fails as "offline" while iOS is still setting up its network access.
@@ -64,14 +76,14 @@ struct API {
 
     private static func message(_ data: Data) -> String {
         let f = try? JSONDecoder().decode(Failure.self, from: data)
-        return f?.error ?? f?.detail ?? ""
+        return f?.error ?? f?.detail ?? f?.details?.error ?? ""
     }
 
     private func call<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
         guard let url = URL(string: account.server + path) else { throw APIError.unreachable("The start page's address is not usable.") }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.setValue(API.basic(account), forHTTPHeaderField: "Authorization")
+        req.setValue(API.bearer(account), forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             req.httpBody = body
@@ -84,7 +96,8 @@ struct API {
                 throw APIError.unreachable("The start page's answer could not be read. Is it up to date?")
             }
         case 401: throw APIError.signedOut
-        case 403: throw APIError.readOnly
+        case 403:
+            throw APIError.readOnly
         default: throw APIError.server(http.statusCode, API.message(data))
         }
     }
@@ -92,66 +105,33 @@ struct API {
     func hello() async throws -> Hello { try await call("GET", "/dav/ext") }
     func tree() async throws -> TreeState { try await call("GET", "/dav/ext/tree") }
 
+    // MARK: widgets and Siri
+
+    /// Today's events (or the next one), the week's, and the tasks due today or late (`tz`: this phone's zone).
+    func today() async throws -> TodayData {
+        let tz = TimeZone.current.identifier.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return try await call("GET", "/dav/ext/today?tz=" + tz)
+    }
+
+    /// The calendars and the task lists that can be added to.
+    func calendars() async throws -> Calendars { try await call("GET", "/dav/ext/calendars") }
+
+    struct NewTask: Encodable { var title: String; var due: String?; var listId: SuiteID?; var timezone: String? }
+    struct NewEvent: Encodable {
+        var title: String; var start: String; var end: String?; var allDay: Bool; var timezone: String?; var calendarId: SuiteID?
+    }
+
+    func addTask(_ t: NewTask) async throws -> Added { try await call("POST", "/dav/ext/tasks", body: try JSONEncoder().encode(t)) }
+    func addEvent(_ e: NewEvent) async throws -> Added { try await call("POST", "/dav/ext/events", body: try JSONEncoder().encode(e)) }
+
     private struct Changes: Encodable { var base: Int; var ops: [Op] }
 
     func sync(base: Int, ops: [Op]) async throws -> SyncResult {
         try await call("POST", "/dav/ext/sync", body: try JSONEncoder().encode(Changes(base: base, ops: ops)))
     }
 
-    /// Where the icon of a link's site is served from (GET with the Basic header).
+    /// Where the icon of a link's site is served from (GET with the Bearer header).
     func iconURL(for id: Int) -> URL? {
         URL(string: account.server + "/dav/ext/icon/\(id)")
-    }
-
-    // MARK: the sign-in flow
-
-    struct Flow: Decodable {
-        struct Poll: Decodable { var token: String }
-        var poll: Poll
-        var login: String
-        /// The page to open, at the address the person typed (the server may know itself under another one).
-        func page(on server: String) -> URL? {
-            guard let last = login.split(separator: "/").last else { return nil }
-            return URL(string: server + API.flowBase + "/flow/" + last)
-        }
-    }
-
-    struct Granted: Decodable {
-        var loginName: String
-        var appPassword: String
-    }
-
-    private static let flowBase = "/dav/nextcloud/index.php/login/v2"
-
-    /// A typed address as the server's root: with a scheme, without a trailing slash.
-    static func root(_ typed: String) -> String {
-        var s = tidyAddress(typed)
-        while s.hasSuffix("/") { s.removeLast() }
-        return s
-    }
-
-    static func startFlow(server: String, client: String) async throws -> Flow {
-        var c = URLComponents(string: server + flowBase)
-        c?.queryItems = [URLQueryItem(name: "client", value: client)]
-        guard let url = c?.url, url.host != nil else { throw APIError.unreachable("That address is not usable.") }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        let (data, http) = try await run(req)
-        guard http.statusCode == 200, let flow = try? JSONDecoder().decode(Flow.self, from: data) else {
-            throw APIError.unreachable("No ioSuite start page with bookmarks answers at that address (it needs version 0.47 or later).")
-        }
-        return flow
-    }
-
-    /// Nil until somebody said yes on the page; then, once, the name and the app password.
-    static func pollFlow(server: String, token: String) async throws -> Granted? {
-        guard let url = URL(string: server + flowBase + "/poll") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(["token": token])
-        let (data, http) = try await run(req)
-        guard http.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(Granted.self, from: data)
     }
 }

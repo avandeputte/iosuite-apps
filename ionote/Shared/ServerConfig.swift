@@ -1,8 +1,10 @@
 import Foundation
 import Security
 
-/// Where the ioNote server is. The address is a setting; the optional Cloudflare service token lives in the
-/// Keychain, never in settings files. Passwords are never stored: signing in leaves a session cookie.
+/// Where the ioNote server is. This device signs in with the suite's one sign-in for apps (DeviceSignIn): the name
+/// and password typed once get it an app password of its own, kept in the Keychain and sent as a Bearer header with
+/// every request. The typed password is never kept. `serverURL` is the server the notes here were synced with (the
+/// app's base address, e.g. https://start-api.example.com/notes); a sign-in at another server starts afresh.
 enum ServerConfig {
     private static let serverKey = "serverURL"
 
@@ -11,20 +13,22 @@ enum ServerConfig {
         set { UserDefaults.standard.set(newValue?.absoluteString, forKey: serverKey) }
     }
 
-    /// Turns what someone typed ("notes.example.net", "192.168.1.10:8610/") into a server address, or nil.
-    /// A bare IP address or a .local name gets http (a server on the home network), anything else https.
-    static func normalisedServer(_ typed: String) -> URL? {
-        var s = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        while s.hasSuffix("/") { s.removeLast() }
-        guard !s.isEmpty else { return nil }
-        if !s.contains("://") {
-            let host = s.split(separator: ":").first.map(String.init) ?? s
-            let local = host.first?.isNumber == true || host.hasSuffix(".local") || host == "localhost" || !host.contains(".")
-            s = (local ? "http://" : "https://") + s
-        }
-        guard let url = URL(string: s), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
-        return url
-    }
+    /// ioNote in the suite's sign-in: its folder on a suite address is /notes; at its own hostname (no folder) the
+    /// sign-in is checked to have reached ioNote (GET api/status with the new app password).
+    static let app = DeviceApp(name: "ioNote", folder: "notes", keychainService: "net.iothing.ionotes.device",
+                               accessGroup: nil, defaults: .standard, verifyPlain: { base, password in
+        var r = URLRequest(url: base.appendingPathComponent("api/status"), timeoutInterval: 10)
+        r.setValue("Bearer " + password, forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await DeviceSignIn.session.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return ["ionote", "ioNote", "ionotes"].contains(j["app"] as? String ?? "")
+    })
+
+    static var store: DeviceCredentialStore { DeviceCredentialStore(app: app) }
+
+    /// Whether this device holds an app password to sync with.
+    static var signedIn: Bool { IonotesClient.shared.credential != nil }
 }
 
 enum Keychain {

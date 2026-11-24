@@ -55,7 +55,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Account")
                     } footer: {
-                        Text("This phone signs in with a password of its own, for bookmarks only. To revoke it, open the start page's Settings › Account › App passwords.")
+                        Text("This phone signs in with a password of its own. Signing out gives it back; you can also remove it in Settings › Account on the start page.")
                     }
                 }
                 Section {

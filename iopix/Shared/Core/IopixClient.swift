@@ -22,13 +22,13 @@ enum IopixError: LocalizedError, Equatable {
     case needsSignIn
     case needsServerUpdate  // the chosen folder needs a newer iopix
     case notAllowed(String)
-    case needsCode(String)  // the account has two-step sign-in on: the code app's code comes with the password
+    case homeOnly  // an admin or maintenance call, which only the home address answers
     case server(String)
 
     var errorDescription: String? {
         switch self {
-        case .needsSignIn: return "Sign in to ioPix to send photos."
-        case .needsCode(let why): return why
+        case .needsSignIn: return "Sign in to ioPix."
+        case .homeOnly: return HomeServer.unavailable
         case .needsServerUpdate: return "Your ioPix server can't put photos in a folder of your choice yet. Update ioPix, or pick one of its date layouts in Settings."
         case .notAllowed(let why): return why
         case .server(let why): return why
@@ -36,19 +36,70 @@ enum IopixError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to iopix the way its web app does: the sign-in cookies (iopix's own session and, from outside,
-/// Cloudflare Access's), then the import endpoints, which put each file in the library's dated folders
-/// and skip anything already there. The server does every write; the apps only send files.
+/// Talks to ioPix at its address for apps: every request carries this device's app password
+/// ("Authorization: Bearer", from the device sign-in in shared/DeviceSignIn), and no cookie is kept or sent.
+/// The admin and maintenance calls go to the home address instead (HomeServer), with the same app password.
 final class IopixClient: NSObject, URLSessionTaskDelegate {
     static let shared = IopixClient()
 
     private(set) var session: URLSession!
 
+    /// This device's sign-in, read from the Keychain once and kept (every thumbnail asks for it).
+    private let credentialLock = NSLock()
+    private var cachedCredential: DeviceCredential??
+
+    var credential: DeviceCredential? {
+        credentialLock.lock(); defer { credentialLock.unlock() }
+        if let c = cachedCredential { return c }
+        let c = DeviceCredentialStore(app: AppConfig.deviceApp).load()
+        cachedCredential = .some(c)
+        return c
+    }
+
+    var isSignedIn: Bool { credential != nil }
+
+    /// Signed in on the sign-in screen (the credential is saved already): talk to where it answered.
+    func signedIn(_ c: DeviceCredential) {
+        credentialLock.lock(); cachedCredential = .some(c); credentialLock.unlock()
+        AppConfig.serverURL = c.base
+        session.configuration.urlCache?.removeAllCachedResponses()
+        HomeServer.shared.forget()
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .iopixSignedIn, object: nil) }
+    }
+
+    /// Sign out: the app password goes back to the server and the Keychain forgets it (the address and name stay,
+    /// for the sign-in screen).
+    func signOut() async {
+        if let c = credential { await DeviceSignIn.signOut(c) }
+        forget()
+    }
+
+    /// The app password was refused (removed in Settings › Account): forgotten, and the sign-in screen comes back with
+    /// the address and name filled in.
+    func lostSignIn() {
+        guard credential != nil else { return }
+        forget()
+    }
+
+    private func forget() {
+        DeviceCredentialStore(app: AppConfig.deviceApp).forgetPassword()
+        credentialLock.lock(); cachedCredential = .some(nil); credentialLock.unlock()
+        // saved answers belong to whoever was signed in (favorites, albums): another account starts afresh
+        session.configuration.urlCache?.removeAllCachedResponses()
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .iopixSignedOut, object: nil) }
+    }
+
+    /// Another process (the app, for an extension) may have signed in or out since: read the Keychain again.
+    func reloadCredential() {
+        credentialLock.lock(); cachedCredential = nil; credentialLock.unlock()
+    }
+
     override init() {
         super.init()
         let cfg = URLSessionConfiguration.default
-        cfg.httpCookieStorage = AppConfig.cookies
-        cfg.httpCookieAcceptPolicy = .always
+        cfg.httpCookieStorage = nil
+        cfg.httpShouldSetCookies = false
+        cfg.httpCookieAcceptPolicy = .never
         cfg.timeoutIntervalForRequest = 120
         cfg.timeoutIntervalForResource = 6 * 3600  // a long video over a slow connection
         // the server tags its lists (ETag) and thumbnails: an unchanged list comes back as a short "not modified"
@@ -58,22 +109,37 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }
 
-    /// A redirect to another host (Cloudflare's sign-in page, a misconfigured proxy) is not followed, so the sign-in
-    /// cookies and the service token never reach anyone but the server; `check` then reports a needed sign-in.
+    /// A redirect to another host (a proxy's sign-in page, a misconfigured proxy) is not followed, so the app
+    /// password and the service token never reach anyone but the server; `check` then reports a needed sign-in.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // compared with the host this request was sent to, not the saved server: the connect screen probes an
-        // address before it is saved, and its own redirects (http to https) must still be followed
         let from = (task.originalRequest?.url ?? server).host?.lowercased()
         completionHandler(request.url?.host?.lowercased() == from ? request : nil)
     }
 
     var server: URL { AppConfig.serverURL }
 
+    /// Whether a URL is one of this app's servers: the address for apps or the home address.
+    func isOurs(_ url: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return host == server.host?.lowercased() || host == AppConfig.homeURL?.host?.lowercased()
+    }
+
+    /// The headers a request to ioPix needs that are not made by `request` (a video player, a web image loader).
+    var authHeaders: [String: String] { credential?.headers ?? [:] }
+
     func request(_ path: String, method: String = "GET") -> URLRequest {
+        var path = path
+        // the untouched original comes from the home address only; elsewhere the full-size preview stands in for it
+        if path.hasPrefix("orig/"), !HomeServer.shared.isReachable {
+            let id = path.dropFirst(5).prefix { $0.isNumber }
+            path = "preview/\(id)?dl=1"
+        }
         // a path may carry its own query ("face/12?v=3"): only the part before ? is a path
         let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
-        var url = server.appendingPathComponent(parts[0])
+        // the admin and maintenance calls go to the home address, when there is one (HomeServer)
+        let base = HomeServer.isHomeOnly(parts[0], method: method) ? (AppConfig.homeURL ?? server) : server
+        var url = base.appendingPathComponent(parts[0])
         if parts.count == 2, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             c.percentEncodedQuery = parts[1]
             url = c.url ?? url
@@ -89,9 +155,10 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         // the server's own address, as a browser on the web app would send it: iopix hands it on to Google, whose
         // map key is usually restricted to that address (without it, place searches are refused as "referer <empty>")
-        if let host = server.host, let scheme = server.scheme {
-            r.setValue("\(scheme)://\(host)\(server.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
+        if let host = base.host, let scheme = base.scheme {
+            r.setValue("\(scheme)://\(host)\(base.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
         }
+        credential?.authorize(&r)
         ServiceToken.apply(to: &r)
         return r
     }
@@ -100,12 +167,16 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     /// host or as an HTML page instead of JSON.
     func check(_ data: Data, _ response: URLResponse) throws -> [String: Any] {
         guard let http = response as? HTTPURLResponse else { throw IopixError.server("The server did not answer.") }
-        if let host = http.url?.host?.lowercased(), host != server.host?.lowercased() {
+        if http.url != nil, !isOurs(http.url) {
             throw IopixError.needsSignIn
         }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let detail = json?["detail"] as? String
+        let atHome = AppConfig.homeURL.map { http.url?.host?.lowercased() == $0.host?.lowercased() } ?? false
+        let homeOnly = http.url.map { HomeServer.isHomeOnly(relative($0), method: "GET") || HomeServer.isHomeOnly(relative($0), method: "POST") } ?? false
         switch http.statusCode {
+        case 404 where homeOnly && !atHome:  // an admin call at the address for apps, which does not serve it
+            throw IopixError.homeOnly
         case 300..<400:  // a redirect that was not followed: another host wants a sign-in first
             throw IopixError.needsSignIn
         case 200..<300:
@@ -113,6 +184,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
             throw type.contains("html") ? IopixError.needsSignIn : IopixError.server("The server sent an answer the app does not understand.")
         case 401:
+            // the app password was removed (Settings › Account): the sign-in screen comes back. A refusal at the home
+            // address (another server, perhaps) does not sign this device out.
+            if !atHome { lostSignIn() }
             throw IopixError.needsSignIn
         case 403:
             throw json == nil ? IopixError.needsSignIn : IopixError.notAllowed(detail ?? "This account cannot add photos.")
@@ -132,53 +206,15 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
 
     static let log = Logger(subsystem: "net.iothing.iopix", category: "network")
 
-    /// Is there an iopix at this address? nil when there is (or a sign-in page in front of it, such as
-    /// Cloudflare Access's), otherwise what went wrong, in plain words. The service token goes along, so with a
-    /// good one Cloudflare lets the check through to iopix; a sign-in page in spite of it means it was refused.
-    func probe(_ url: URL) async -> String? {
-        var r = URLRequest(url: url.appendingPathComponent("api/status"), timeoutInterval: 15)
-        r.setValue("application/json", forHTTPHeaderField: "Accept")
-        r.cachePolicy = .reloadIgnoringLocalCacheData
-        ServiceToken.apply(to: &r)
-        let refused = { (signIn: URL?) -> String? in
-            ServiceToken.isSet && ServiceToken.isCloudflareSignIn(signIn) ? ServiceToken.rejected : nil
+    /// A URL's path below the address of the app ("api/photos"), as `request` takes it.
+    private func relative(_ url: URL) -> String {
+        var p = url.path
+        for base in [server.path, AppConfig.homeURL?.path ?? ""] where base.count > 1 && p.hasPrefix(base) {
+            p.removeFirst(base.count)
+            break
         }
-        do {
-            let (data, resp) = try await session.data(for: r)
-            guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
-            if http.url?.host?.lowercased() != url.host?.lowercased() { return refused(http.url) }  // sent to a sign-in page first
-            // a redirect to another host is not followed (see above): Cloudflare Access's sign-in from outside
-            if (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
-               let to = URL(string: loc, relativeTo: http.url ?? url)?.absoluteURL,
-               to.host?.lowercased() != url.host?.lowercased() { return refused(to) }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], j["app"] != nil, j["version"] != nil { return nil }
-            // Cloudflare's own "Forbidden" page (a token it knows, but no policy lets in) rather than iopix's answer
-            if http.statusCode == 403, ServiceToken.isSet, (try? JSONSerialization.jsonObject(with: data)) == nil,
-               http.value(forHTTPHeaderField: "Server")?.lowercased() == "cloudflare" {
-                return ServiceToken.rejected
-            }
-            if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an ioPix server."
-        } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
-            return "No server by that name. Check the address."
-        } catch {
-            return "Couldn't reach that address: \(error.localizedDescription)"
-        }
-    }
-
-    /// The sign-in page of another host the server sits behind (Cloudflare Access away from home), or nil when
-    /// iopix answers itself. Asked without following the redirect, so no cookie goes to that host.
-    func gate() async -> URL? {
-        var r = request("api/auth/accounts")
-        r.timeoutInterval = 20
-        r.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (_, resp) = try? await session.data(for: r), let http = resp as? HTTPURLResponse else { return nil }
-        let me = server.host?.lowercased()
-        if let host = http.url?.host?.lowercased(), host != me { return http.url }
-        guard (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
-              let url = URL(string: loc, relativeTo: http.url ?? server)?.absoluteURL,
-              url.host?.lowercased() != me else { return nil }
-        return url
+        while p.hasPrefix("/") { p.removeFirst() }
+        return p
     }
 
     /// Network changed (home Wi-Fi to cellular): the next requests open new connections, by the new route.
@@ -194,8 +230,14 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     var settling: Bool { Date().timeIntervalSince(lastMove) < 20 }
 
     func account() async throws -> Account {
+        guard credential != nil else { throw IopixError.needsSignIn }  // nothing is asked without the app password
         let (data, resp) = try await session.data(for: request("api/auth/me"))
         let j = try check(data, resp)
+        // api/auth/me answers everyone: not signed in with an app password sent means it is no longer good
+        if j["signedIn"] as? Bool == false {
+            lostSignIn()
+            throw IopixError.needsSignIn
+        }
         let user = j["user"] as? [String: Any]
         return Account(name: user?["name"] as? String,
                        signedIn: j["signedIn"] as? Bool ?? false,
@@ -204,37 +246,9 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
                        person: (user?["person"] as? NSNumber)?.intValue)
     }
 
-    /// The accounts on the sign-in screen: name, and whether it needs a password.
-    func accounts() async throws -> [(name: String, needsPassword: Bool)] {
-        let (data, resp) = try await session.data(for: request("api/auth/accounts"))
-        let j = try check(data, resp)
-        return (j["accounts"] as? [[String: Any]] ?? []).compactMap { a in
-            guard let n = a["name"] as? String else { return nil }
-            return (n, !(a["passwordless"] as? Bool ?? false))
-        }
-    }
-
-    /// Signs in with a name and password (the Apple TV has no web page to sign in on).
-    /// code: the 6 digits of the account's code app (or a recovery code), when it has two-step sign-in on; without
-    /// one the server answers that it is needed (IopixError.needsCode) and the sign-in asks for it.
-    func signIn(name: String, password: String, code: String = "") async throws {
-        var r = request("api/auth/login", method: "POST")
-        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body = ["name": name, "password": password]
-        if !code.isEmpty { body["code"] = code }
-        r.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, resp) = try await session.data(for: r)
-        if let http = resp as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 429 || http.statusCode == 403 {
-            let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let detail = j?["detail"] as? String
-            if http.statusCode == 401, j?["twoStep"] as? Bool == true { throw IopixError.needsCode(detail ?? "Enter the code from your code app") }
-            throw IopixError.notAllowed(detail ?? "Wrong user name or password")
-        }
-        _ = try check(data, resp)
-    }
-
     /// Any JSON endpoint, as a dictionary.
     func json(_ path: String, query: [URLQueryItem] = []) async throws -> [String: Any] {
+        guard credential != nil else { throw IopixError.needsSignIn }  // nothing is asked without the app password
         var r = request(path)
         if !query.isEmpty, var c = URLComponents(url: r.url!, resolvingAgainstBaseURL: false) {
             c.queryItems = query
@@ -244,20 +258,6 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         }
         let (data, resp) = try await session.data(for: r)
         return try check(data, resp)
-    }
-
-    func signOut() async {
-        _ = try? await session.data(for: request("api/auth/logout", method: "POST"))
-        forgetCookies()
-    }
-
-    func forgetCookies() {
-        let host = server.host?.lowercased() ?? ""
-        for c in AppConfig.cookies.cookies ?? [] where Self.cookie(c, matches: host) {
-            AppConfig.cookies.deleteCookie(c)
-        }
-        // saved answers belong to whoever was signed in (favorites, albums): another account starts afresh
-        session.configuration.urlCache?.removeAllCachedResponses()
     }
 
     /// The folder layouts the server offers, and whether it takes folder patterns of your own.
@@ -280,13 +280,6 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     }
     private var patternServer: URL?
     private var patternKnown: Bool?
-
-    /// A cookie for this server: its domain is the host or a parent of it (never a mere suffix such as "example.net"
-    /// matching "notexample.net").
-    static func cookie(_ c: HTTPCookie, matches host: String) -> Bool {
-        let d = c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        return host == d || host.hasSuffix("." + d)
-    }
 
     /// Sends one file: staged first (iopix looks at it and checks for duplicates), then imported.
     /// When this app last changed something on the server (any request that was not a plain read).
@@ -400,8 +393,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
         let body = try Multipart.write(file: file, name: name, boundary: boundary, fields: fields, into: folder)
         var r = request("api/import", method: "POST")
         r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        // a background session sends from another process: the sign-in goes with the request itself
-        for (k, v) in HTTPCookie.requestHeaderFields(with: AppConfig.cookies.cookies(for: r.url!) ?? []) { r.setValue(v, forHTTPHeaderField: k) }
+        // a background session sends from another process: the app password goes with the request itself (request())
         return .request(r, body: body)
     }
 
@@ -485,4 +477,10 @@ enum Multipart {
         }
         return out
     }
+}
+
+extension Notification.Name {
+    /// This device signed in (the sign-in screen), or lost its app password (signed out, or refused by the server).
+    static let iopixSignedIn = Notification.Name("iopixSignedIn")
+    static let iopixSignedOut = Notification.Name("iopixSignedOut")
 }
