@@ -129,12 +129,6 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
     var authHeaders: [String: String] { credential?.headers ?? [:] }
 
     func request(_ path: String, method: String = "GET") -> URLRequest {
-        var path = path
-        // the untouched original comes from the home address only; elsewhere the full-size preview stands in for it
-        if path.hasPrefix("orig/"), !HomeServer.shared.isReachable {
-            let id = path.dropFirst(5).prefix { $0.isNumber }
-            path = "preview/\(id)?dl=1"
-        }
         // a path may carry its own query ("face/12?v=3"): only the part before ? is a path
         let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
         // the admin and maintenance calls go to the home address, when there is one (HomeServer)

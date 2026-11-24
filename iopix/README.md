@@ -89,7 +89,7 @@ the sign-in screen comes back with the address and name filled in. An account ne
 photos.
 
 The server's port for devices answers only everyday calls. The admin and maintenance screens (settings, tools,
-database, users, folders, review queues, …) use the optional **Home address (for admin screens)** in Settings, e.g.
+database, users, folders, review queues, …); pictures, videos and originals (/orig/, ioSuite 4.2.1 or later) come from the address for apps use the optional **Home address (for admin screens)** in Settings, e.g.
 `http://192.168.1.10:8080/pix`, with the same app password; without it, or away from home, they show "Available at
 home only". See `Shared/Core/HomeServer.swift` for the list.
 
