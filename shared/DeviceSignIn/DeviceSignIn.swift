@@ -167,7 +167,8 @@ enum DeviceSignIn {
             }
         }
         if case DeviceSignInError.notFound = lastError {
-            throw DeviceSignInError.unreachable("No \(app.name) answers at \(tidy(typed)?.host ?? "that address"). Check the address for apps.")
+            throw DeviceSignInError.unreachable("\(tidy(typed)?.host ?? "That address") answers, but not with \(app.name)'s sign-in (error 404). "
+                + "Check that it is your server's address for apps, and that \(app.name) is installed there.")
         }
         throw lastError
     }
@@ -188,8 +189,8 @@ enum DeviceSignIn {
             data = d; http = h
         } catch let e as DeviceSignInError {
             throw e
-        } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
-            throw DeviceSignInError.unreachable("No server by that name. Check the address.")
+        } catch let e as URLError {
+            throw DeviceSignInError.unreachable(DeviceSignIn.explain(e, host: base.host ?? "the server"))
         } catch {
             throw DeviceSignInError.unreachable("Couldn't reach \(base.host ?? "the server"): \(error.localizedDescription)")
         }
@@ -197,6 +198,10 @@ enum DeviceSignIn {
         let detail = json?["detail"] as? String ?? ""
         switch http.statusCode {
         case 200:
+            if json == nil {  // a web page (a proxy's sign-in, another site) rather than the suite's answer
+                throw DeviceSignInError.unreachable("\(base.host ?? "That address") answered with a web page, not ioSuite's sign-in. "
+                    + "Check that the address is your server's address for apps.")
+            }
             guard let pw = json?["password"] as? String, !pw.isEmpty else {
                 throw DeviceSignInError.server(200, "The server's answer could not be read. Is it up to date?")
             }
@@ -213,9 +218,37 @@ enum DeviceSignIn {
             throw DeviceSignInError.noAccess(detail.isEmpty ? "This account has no access to \(app.name)." : detail)
         case 404, 405:
             throw DeviceSignInError.notFound
+        case 502, 503, 504:
+            // the server, or the proxy or tunnel in front of it (a 503 "no server is available"), is not taking requests
+            throw DeviceSignInError.unreachable("The server at \(base.host ?? "that address") isn't available right now (error \(http.statusCode)). "
+                + "Try again in a moment. If it stays this way, the proxy or tunnel in front of it can't reach ioSuite.")
         default:
-            if json == nil { throw DeviceSignInError.notFound }  // a page, a proxy's error: not the suite's door for apps
+            if json == nil {  // a web page, a proxy's own answer: not the suite's port for apps
+                throw DeviceSignInError.unreachable("\(base.host ?? "That address") answered with error \(http.statusCode) and a web page, "
+                    + "not ioSuite's sign-in. Check that the address is your server's address for apps.")
+            }
             throw DeviceSignInError.server(http.statusCode, detail)
+        }
+    }
+
+    /// What went wrong with the connection itself, in plain words.
+    static func explain(_ e: URLError, host: String) -> String {
+        switch e.code {
+        case .cannotFindHost, .dnsLookupFailed:
+            return "No server is called \(host). Check the address."
+        case .cannotConnectToHost:
+            return "\(host) refused the connection. Is the server (or the port in the address) right?"
+        case .timedOut:
+            return "\(host) didn't answer in time. Check the address, or try again in a moment."
+        case .notConnectedToInternet, .networkConnectionLost:
+            return "This device is offline. Connect to the internet and try again."
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateNotYetValid,
+             .serverCertificateHasUnknownRoot, .clientCertificateRejected:
+            return "The secure connection to \(host) failed: its certificate isn't valid (expired, or not made for that name)."
+        case .appTransportSecurityRequiresSecureConnection:
+            return "\(host) needs an https:// address (plain http only works on your home network)."
+        default:
+            return "Couldn't reach \(host): \(e.localizedDescription)"
         }
     }
 
