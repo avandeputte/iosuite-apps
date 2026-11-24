@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The app's tabs, all native. Editing a photo opens the web app (under More).
+/// The app's tabs, all native.
 struct AppTabs: View {
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var queue: UploadQueue
@@ -182,29 +182,25 @@ struct ScreenView: View {
         case .events: EventsScreen()
         case .trash: ManageTrashScreen()
         case .importPhotos: ManageImportScreen()
-        case .duplicates: ManageDuplicatesScreen()
-        case .nearDuplicates: ManageNearDuplicatesScreen()
+        case .duplicates: HomeOnly("Duplicate files") { ManageDuplicatesScreen() }
+        case .nearDuplicates: HomeOnly("Near-duplicates") { ManageNearDuplicatesScreen() }
         case .detected: ManageDetectedScreen()
-        case .quality: ManageQualityScreen()
-        case .dateSuggest: ManageDateSuggestScreen()
-        case .placeSuggest: ManagePlaceSuggestScreen()
-        case .jerseys: ManagePersonSuggestScreen(kind: .jersey)
-        case .clothing: ManagePersonSuggestScreen(kind: .clothing)
-        case .rotation: ManageRotationScreen()
-        case .damaged: AdminDamagedScreen(canEdit: true)
+        case .quality: HomeOnly("Quality") { ManageQualityScreen() }
+        case .dateSuggest: HomeOnly("Date suggestions") { ManageDateSuggestScreen() }
+        case .placeSuggest: HomeOnly("Place suggestions") { ManagePlaceSuggestScreen() }
+        case .jerseys: HomeOnly("Jersey numbers") { ManagePersonSuggestScreen(kind: .jersey) }
+        case .clothing: HomeOnly("Clothing matches") { ManagePersonSuggestScreen(kind: .clothing) }
+        case .rotation: HomeOnly("Wrongly rotated") { ManageRotationScreen() }
+        case .damaged: HomeOnly("Damaged files") { AdminDamagedScreen(canEdit: true) }
         case .history(let photo): ManageHistoryScreen(photo: photo)
         case .faces(let tab): FacesReviewScreen(tab: tab)
         case .settings: AdminSettingsScreen()
-        case .tools: AdminToolsScreen()
-        case .consistency: AdminConsistencyScreen()
+        case .tools: HomeOnly("Tools") { AdminToolsScreen() }
+        case .consistency: HomeOnly("Consistency") { AdminConsistencyScreen() }
         case .map:
             PhotoMap { bbox in Router.shared.morePath.append(.photos(PhotoQuery([("bbox", bbox)]), title: "This area")) }
                 .navigationTitle("Map").navigationBarTitleDisplayMode(.inline).ignoresSafeArea(edges: .bottom)
                 .globalSearch()
-        case .web(let route):
-            WebTabView(tab: .more, route: route, changeServer: showUploads)
-                .navigationTitle(MoreView.title(of: route))
-                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -271,17 +267,6 @@ struct MoreView: View {
     private func icon(_ symbol: String, _ hue: Color) -> some View {
         Image(systemName: symbol).foregroundStyle(.white).font(.footnote)
             .frame(width: 28, height: 28).background(hue, in: RoundedRectangle(cornerRadius: 7))
-    }
-
-    static func title(of route: String) -> String {
-        switch route.dropFirst(2).split(separator: "?").first.map(String.init) ?? "" {
-        case "settings": return "Settings"
-        case "tools": return "Tools"
-        case "duplicates": return "Duplicate files"
-        case "detected": return "Detected content"
-        case "photos": return "Edit in ioPix"
-        default: return "ioPix"
-        }
     }
 }
 

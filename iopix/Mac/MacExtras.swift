@@ -3,20 +3,32 @@ import AppKit
 import Combine
 import UserNotifications
 
-/// Opens the iopix window (at a page of the web app) or one of the app's other windows from anywhere: a
-/// notification, a link, Spotlight, Shortcuts. The window opener is picked up from the menu bar icon, which is
-/// always there.
+/// Opens a page of the library or one of the app's windows from anywhere: a notification, a link, Spotlight,
+/// Shortcuts. The library itself is browsed in ioPix Native (the iPhone and iPad app on the Mac), which a page
+/// opens in when it is installed; otherwise the app's own window comes up. The window opener is picked up from the
+/// menu bar icon, which is always there.
 @MainActor
 enum Router {
     static var openWindow: OpenWindowAction?
-    static var pendingRoute: String?
 
-    /// `route` is a page of the web app, such as "#/photos?md=10-23".
+    /// `route` is a page in the web app's style, such as "#/photos?md=10-23".
     static func show(_ route: String? = nil) {
-        pendingRoute = route
+        if let route, let native = nativeURL(route), NSWorkspace.shared.urlForApplication(toOpen: native) != nil {
+            NSWorkspace.shared.open(native)
+            return
+        }
         openWindow?(id: "main")
         NSApp.activate(ignoringOtherApps: true)
-        NotificationCenter.default.post(name: .iopixNavigate, object: nil)
+    }
+
+    /// The link ioPix Native answers for a page (iopix-native://photo/12, ://today), if it has one.
+    private static func nativeURL(_ route: String) -> URL? {
+        var c = URLComponents()
+        c.percentEncodedQuery = route.split(separator: "?", maxSplits: 1).dropFirst().first.map(String.init)
+        let q = c.queryItems ?? []
+        if let id = q.first(where: { $0.name == "p" || $0.name == "ids" })?.value, Int(id) != nil { return URL(string: "iopix-native://photo/\(id)") }
+        if q.contains(where: { $0.name == "md" }) { return URL(string: "iopix-native://today") }
+        return nil
     }
 
     static func open(_ window: String) {
@@ -30,9 +42,6 @@ enum Router {
     }
 }
 
-extension Notification.Name {
-    static let iopixNavigate = Notification.Name("iopixNavigate")
-}
 
 /// The Mac app's own settings for the extras.
 @MainActor

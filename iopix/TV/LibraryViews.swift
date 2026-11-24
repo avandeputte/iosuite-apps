@@ -311,7 +311,7 @@ struct SettingsTV: View {
                 Button("Switch to someone else", action: switchProfile)
                 Button("Sign out") {
                     Task {
-                        if let name = account?.name { Profiles.forget(name) }
+                        if let name = IopixClient.shared.credential?.name { Profiles.forget(name) }
                         await IopixClient.shared.signOut()
                         signedOut()
                     }

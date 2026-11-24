@@ -1,9 +1,10 @@
 import Foundation
 import AVFoundation
 
-/// What to play for a video. iopix 1.78 and later say whether the original plays on Apple devices as it is; for
-/// one that doesn't (an AVI, an unusual codec) the server makes an H.264 copy, which can take a moment the first
-/// time. Older servers: the original.
+/// What to play for a video. ioPix says whether the original plays on Apple devices as it is. The original is served at
+/// the home address only (the address for apps serves the pictures and the copies that play, /video/), so away from
+/// home, or for one that doesn't play as it is (an AVI, an unusual codec), the server's H.264 copy is played, which can
+/// take a moment to make the first time.
 enum VideoSource {
     enum Problem: LocalizedError {
         case failed(String)
@@ -14,10 +15,12 @@ enum VideoSource {
 
     static func url(for id: Int) async throws -> URL {
         let client = IopixClient.shared
-        let orig = AppConfig.serverURL.appendingPathComponent("orig/\(id)")
         let d = try? await client.json("api/photo/\(id)")
         try Task.checkCancellation()  // swiped away while asking: no player for a page that has gone
-        guard let d, let playable = d["playable"] as? Bool, !playable else { return orig }
+        let playable = d?["playable"] as? Bool ?? true
+        if playable, let home = AppConfig.homeURL, await HomeServer.shared.check() {
+            return home.appendingPathComponent("orig/\(id)")
+        }
         let mp4 = AppConfig.serverURL.appendingPathComponent("video/\(id).mp4")
         for _ in 0..<240 {  // up to about 20 minutes for a long video
             try Task.checkCancellation()
@@ -35,15 +38,18 @@ enum VideoSource {
                 let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 throw Problem.failed(j?["detail"] as? String ?? "")
             default:
-                return orig
+                throw Problem.failed("The server answered \(http?.statusCode ?? 0).")
             }
         }
         throw Problem.failed("Making a copy that plays took too long.")
     }
 
-    /// A player for the video at `url`, with the sign-in.
+    /// A player for the video at `url`, with this device's app password (Authorization: Bearer).
     static func player(_ url: URL) -> AVPlayer {
-        let cookies = AppConfig.cookies.cookies(for: url) ?? []
-        return AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies])))
+        AVPlayer(playerItem: AVPlayerItem(asset: asset(url)))
+    }
+
+    static func asset(_ url: URL) -> AVURLAsset {
+        AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": IopixClient.shared.authHeaders])
     }
 }

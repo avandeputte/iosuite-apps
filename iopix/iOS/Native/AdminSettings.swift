@@ -75,6 +75,7 @@ struct AdminSettingsScreen: View {
                     Button("Create the admin account") { setup = true }
                 }
             }
+            ServerSection()
             Section {
                 NavigationLink { AdminAccountScreen(model: model) } label: {
                     Label(model.signedIn ? "\(model.user.str("name") ?? "Account") · \(model.user.str("role") ?? "")" : "Account", systemImage: "person.crop.circle")
@@ -84,13 +85,13 @@ struct AdminSettingsScreen: View {
             if model.isAdmin {
                 Section("Admin") {
                     if model.editing {
-                        NavigationLink { AdminEditingScreen(model: model) } label: { Label("Editing", systemImage: "pencil") }
+                        NavigationLink { HomeOnly("Editing") { AdminEditingScreen(model: model) } } label: { Label("Editing", systemImage: "pencil") }
                     }
-                    NavigationLink { AdminLibraryScreen(model: model) } label: { Label("Library", systemImage: "photo.stack") }
-                    NavigationLink { AdminAISettingsScreen(model: model) } label: { Label("AI", systemImage: "sparkles") }
-                    NavigationLink { AdminServerScreen(model: model) } label: { Label("Server", systemImage: "server.rack") }
+                    NavigationLink { HomeOnly("Library") { AdminLibraryScreen(model: model) } } label: { Label("Library", systemImage: "photo.stack") }
+                    NavigationLink { HomeOnly("AI") { AdminAISettingsScreen(model: model) } } label: { Label("AI", systemImage: "sparkles") }
+                    NavigationLink { HomeOnly("Server") { AdminServerScreen(model: model) } } label: { Label("Server", systemImage: "server.rack") }
                     if model.usersExist {
-                        NavigationLink { AdminUsersScreen(model: model) } label: { Label("Security", systemImage: "lock.shield") }
+                        NavigationLink { HomeOnly("Security") { AdminUsersScreen(model: model) } } label: { Label("Security", systemImage: "lock.shield") }
                     }
                 }
             }
@@ -127,6 +128,7 @@ struct AdminAccountScreen: View {
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var queue: UploadQueue
     @StateObject private var notice = AdminNotice()
+    @ObservedObject private var home = HomeServer.shared
     @State private var current = ""
     @State private var newPassword = ""
     @State private var picking = false
@@ -138,13 +140,16 @@ struct AdminAccountScreen: View {
         List {
             if !model.signedIn {
                 Section {
-                    Text("Not signed in. Sign in from the Photos tab's web page or the sign-in screen to keep favorites, albums and settings with an account.")
+                    Text("Not signed in.")
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Section {
                     AdminRow(title: model.user.str("name") ?? "", detail: roleText) { Text(role.capitalized).foregroundStyle(.secondary) }
                     AdminRow(title: "Signed in", detail: signedInText)
+                }
+                Section {
+                    LabeledContent("This device", value: (IopixClient.shared.credential?.name).map { "Signed in as \($0), with a password of its own" } ?? "")
                 }
                 Section("Who you are in People") {
                     HStack {
@@ -155,7 +160,7 @@ struct AdminAccountScreen: View {
                             Text("Not linked").foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if model.isAdmin { Button(person == nil ? "Link to a person" : "Change") { picking = true } }
+                        if model.isAdmin && home.state == .reachable { Button(person == nil ? "Link to a person" : "Change") { picking = true } }
                     }
                     if !model.isAdmin && person == nil {
                         Text("An admin can link your account in Settings › Security.").font(.footnote).foregroundStyle(.secondary)
@@ -164,7 +169,11 @@ struct AdminAccountScreen: View {
                         Button("Photos of me") { router.open("#/photos?tag=\(person.id)") }
                     }
                 }
-                if !model.me.bool("viaProxy") {
+                if home.state != .reachable {
+                    Section {
+                        Text("Changing your password and this account's app passwords: \(HomeServer.unavailable)").foregroundStyle(.secondary)
+                    }
+                } else if !model.me.bool("viaProxy") {
                     Section("Change password") {
                         SecureField("Current password", text: $current).textContentType(.password)
                         SecureField("New password (8 characters or more)", text: $newPassword).textContentType(.newPassword)
@@ -179,26 +188,22 @@ struct AdminAccountScreen: View {
                         .disabled(current.isEmpty || newPassword.count < 8)
                     }
                 }
-                if !model.user.bool("passwordless") {
+                if !model.user.bool("passwordless") && home.state == .reachable {
                     AdminAppPasswordsSection()
                 }
-                if model.me.str("signedInBy") != "proxy" {
-                    Section {
-                        Button(model.me.str("signedInBy") == "cloudflare" && model.me.bool("throughCloudflare") ? "Sign out (of Cloudflare too)" : "Sign out", role: .destructive) {
-                            Task {
-                                await IopixClient.shared.signOut()
-                                await CookieSync.clearWebView()
-                                await queue.refreshAccount()
-                                NotificationCenter.default.post(name: .iopixReload, object: nil)
-                                await model.load()
-                                await store.load()
-                            }
+                Section {
+                    Button("Sign Out", role: .destructive) {
+                        Task {
+                            await IopixClient.shared.signOut()
+                            ImageCache.shared.removeAll()
+                            await queue.refreshAccount()
                         }
                     }
                 }
             }
         }
         .navigationTitle("Account")
+        .task { await home.check() }
         .sheet(isPresented: $picking) {
             AdminPersonPicker(title: "Who are you?") { p in
                 Task {
@@ -220,14 +225,7 @@ struct AdminAccountScreen: View {
         }
     }
 
-    private var signedInText: String {
-        switch model.me.str("signedInBy") {
-        case "cloudflare": return model.me.bool("throughCloudflare") ? "Through Cloudflare Access, from outside your network." : "Through Cloudflare Access; this device stays signed in on your home network too."
-        case "proxy": return "At the sign-in page of your proxy; sign out there."
-        case "oneclick": return "Here, with one click (no password)."
-        default: return "Here, with a password."
-        }
-    }
+    private var signedInText: String { "With this device's own password, which you can remove in Settings › Account on the web." }
 }
 
 /// Create the first account (an admin), which switches on sign-in.

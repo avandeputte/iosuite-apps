@@ -310,7 +310,7 @@ struct ExploreView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 100)
-        .sheet(isPresented: $signingIn) { SignInView(changeServer: showUploads) }
+        .sheet(isPresented: $signingIn) { SignInView() }
     }
 
     private func unreachable(_ why: String) -> some View {

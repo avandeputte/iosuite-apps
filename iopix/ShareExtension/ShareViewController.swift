@@ -46,7 +46,7 @@ final class ShareModel: ObservableObject {
         let providers = (context?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
             .filter { p in [UTType.movie, UTType.image].contains { p.hasItemConformingToTypeIdentifier($0.identifier) } }
         guard !providers.isEmpty else { phase = .failed("Only photos and videos can be sent to ioPix."); return }
-        guard AppConfig.hasServer else { phase = .failed("Open the ioPix app and connect it to your server first."); return }
+        guard IopixClient.shared.isSignedIn else { phase = .failed("Open the ioPix app and sign in first."); return }
 
         do {
             let account = try await IopixClient.shared.account()

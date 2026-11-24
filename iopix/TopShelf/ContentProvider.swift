@@ -1,7 +1,7 @@
 import TVServices
 
 /// The row of photos on the Apple TV home screen when iopix is in the top row: On this day, or Rediscover when
-/// nothing was taken on this date. The extension signs in with the app's cookies (shared App Group) and keeps
+/// nothing was taken on this date. The extension signs in with the app's password (the Keychain group it shares with the app) and keeps
 /// the pictures in the shared folder, since the home screen cannot sign in to iopix itself.
 final class ContentProvider: TVTopShelfContentProvider {
     override func loadTopShelfContent(completionHandler: @escaping (TVTopShelfContent?) -> Void) {
@@ -12,7 +12,7 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     private static func content() async -> TVTopShelfContent? {
         let client = IopixClient.shared
-        guard AppConfig.hasServer else { return nil }  // nothing to show until the app has been connected to a server
+        guard client.isSignedIn else { return nil }  // nothing to show until the app has signed in
         guard let account = try? await client.account(), account.signedIn else { return nil }
         let c = Calendar.current.dateComponents([.month, .day], from: Date())
         var title = "On this day"

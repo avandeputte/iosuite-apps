@@ -191,7 +191,7 @@ struct PhotoGridScreen: View {
                 }
             }
             .padding(32).frame(maxWidth: .infinity).padding(.top, 60)
-            .sheet(isPresented: $signingIn, onDismiss: { Task { await load(force: true) } }) { SignInView(changeServer: showUploads) }
+            .sheet(isPresented: $signingIn, onDismiss: { Task { await load(force: true) } }) { SignInView() }
         } else {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 120)
         }

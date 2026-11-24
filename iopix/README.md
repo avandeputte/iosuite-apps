@@ -79,10 +79,19 @@ need 1.114 to 1.117.
 
 ## How it signs in
 
-The apps sign in exactly like a browser: the iPhone app's web view, or the Mac app's sign-in window, shows the
-iopix page (and Cloudflare Access's page first, from outside the home network). The cookies from that sign-in are
-then used for uploads. An account needs the editor or admin role to add photos; one-click accounts without a
-password only work at home, as in the browser.
+Every app (iPhone, iPad, Mac, Apple TV, the uploader, widgets, share extensions, top shelf) uses the one sign-in
+of the ioSuite apps (`shared/DeviceSignIn`, see `shared/README.md`): the server's address for apps (e.g.
+`https://start-api.example.com`; the app adds `/pix`, or uses an ioPix address of its own as it is), the name and
+password, and the two-step code when asked. `POST /pix/api/auth/device` gives the device an app password of its own,
+kept in the Keychain and sent as `Authorization: Bearer` with every request, pictures and videos included. Nothing
+is a web page: no ioPix screen loads one. Sign Out gives the password back; when it is removed in Settings › Account,
+the sign-in screen comes back with the address and name filled in. An account needs the editor or admin role to add
+photos.
+
+The server's port for devices answers only everyday calls. The admin and maintenance screens (settings, tools,
+database, users, folders, review queues, …) use the optional **Home address (for admin screens)** in Settings, e.g.
+`http://192.168.1.10:8080/pix`, with the same app password; without it, or away from home, they show "Available at
+home only". See `Shared/Core/HomeServer.swift` for the list.
 
 Cloudflare Access's sign-in expires after the session length set in Cloudflare. To keep the Mac uploading
 unattended, either use the server's home-network address in Settings, or create a Cloudflare **service token**
@@ -136,8 +145,8 @@ only runs on your own Mac.
 
 | Folder | What |
 | --- | --- |
-| `Shared/Core` | server address, sign-in cookies, Keychain, the upload client (all targets) |
-| `Shared/App` | upload queue, Photos library watcher, the web view (both apps) |
+| `Shared/Core` | server and home addresses, the API client with the app password, the upload client (all targets) |
+| `Shared/App` | upload queue, Photos library watcher (both apps) |
 | `iOS` | the iPhone app |
 | `ShareExtension` | the share sheet extension |
 | `Mac` | the Mac app: window, menu bar and extras |

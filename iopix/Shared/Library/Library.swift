@@ -384,7 +384,7 @@ final class LibraryStore: ObservableObject {
     }
 }
 
-/// Thumbnails and previews, fetched with the sign-in cookies and kept in memory.
+/// Thumbnails and previews, fetched with the app password and kept in memory.
 final class ImageCache {
     static let shared = ImageCache()
     private let cache = NSCache<NSString, UIImage>()

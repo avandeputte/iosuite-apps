@@ -15,7 +15,7 @@ struct IopixMenuApp: App {
                 .environmentObject(queue)
                 .environmentObject(watcher)
         }
-        .defaultSize(width: 1280, height: 860)
+        .defaultSize(width: 420, height: 560)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Send Files…") { queue.add(files: MacFiles.choose()) }
@@ -42,7 +42,7 @@ struct IopixMenuApp: App {
         Window("Sign in to ioPix", id: "signin") {
             SignInView().environmentObject(queue)
         }
-        .defaultSize(width: 520, height: 720)
+        .defaultSize(width: 480, height: 560)
 
         Window("New photos", id: "review") {
             ReviewView().environmentObject(queue)
@@ -148,7 +148,7 @@ struct MenuView: View {
 
             Divider()
             HStack {
-                Button("Open ioPix") { show("main") }
+                Button("Open ioPix") { Router.show("#/") }
                 Button("Settings…") { show("settings") }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
@@ -216,31 +216,18 @@ struct MenuView: View {
     }
 }
 
+/// The sign-in, the same as in the other ioSuite apps (shared/DeviceSignIn).
 struct SignInView: View {
     @EnvironmentObject private var queue: UploadQueue
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
-        VStack(spacing: 0) {
-            IopixWebView(url: AppConfig.serverURL) { Task { await queue.refreshAccount() } }
-            Divider()
-            HStack {
-                if let a = queue.account, a.canWrite {
-                    Label("Signed in as \(a.name ?? "you"). Photos can be sent now.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    Spacer()
-                    Button("Close") { dismissWindow(id: "signin") }.keyboardShortcut(.defaultAction)
-                } else if let a = queue.account, a.signedIn {
-                    Text("\(a.name ?? "This account") can look at photos but not add them. Sign in with another account.")
-                    Spacer()
-                } else {
-                    Text("Sign in on the page above, the way you do in the browser.")
-                    Spacer()
-                }
-            }
-            .padding(10)
-            .font(.callout)
-        }
-        .frame(minWidth: 420, minHeight: 520)
+        DeviceSignInForm(app: AppConfig.deviceApp, onSignedIn: { answer in
+            IopixClient.shared.signedIn(answer.credential)
+            Task { await queue.refreshAccount() }
+            dismissWindow(id: "signin")
+        })
+        .frame(minWidth: 420, minHeight: 480)
     }
 }
 
@@ -248,7 +235,7 @@ struct SettingsView: View {
     @EnvironmentObject private var queue: UploadQueue
     @EnvironmentObject private var watcher: PhotosWatcher
     @Environment(\.openWindow) private var openWindow
-    @State private var serverText = AppConfig.serverURL.absoluteString
+    @State private var homeText = AppConfig.homeURL?.absoluteString ?? ""
     @State private var tokenID = ServiceToken.clientID ?? ""
     @State private var tokenSecret = ServiceToken.clientSecret ?? ""
     @State private var atLogin = SMAppService.mainApp.status == .enabled
@@ -268,16 +255,18 @@ struct SettingsView: View {
     private var general: some View {
         Form {
             Section {
-                TextField("Server address", text: $serverText)
+                if IopixClient.shared.isSignedIn {
+                    LabeledContent("Address", value: AppConfig.serverURL.absoluteString)
+                }
+                TextField("Home address", text: $homeText, prompt: Text("http://192.168.1.10:8080/pix"))
                     .onSubmit(save)
                 HStack {
-                    if let a = queue.account, a.signedIn {
-                        Text("Signed in as \(a.name ?? "you")").foregroundStyle(.secondary)
+                    if let c = IopixClient.shared.credential {
+                        Text("Signed in as \(queue.account?.name ?? c.name)").foregroundStyle(.secondary)
                         Spacer()
                         Button("Sign out") {
                             Task {
                                 await IopixClient.shared.signOut()
-                                await CookieSync.clearWebView()
                                 await queue.refreshAccount()
                             }
                         }
@@ -287,6 +276,9 @@ struct SettingsView: View {
                         Button("Sign in…") { openWindow(id: "signin") }
                     }
                 }
+            } footer: {
+                Text(HomeServer.hint + ": the address of ioPix's pages on your home network, for the originals of the photos.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             DestinationSection()
@@ -323,12 +315,8 @@ struct SettingsView: View {
     }
 
     private func save() {
-        if let url = AppConfig.normalisedServer(serverText) {
-            AppConfig.serverURL = url
-            serverText = url.absoluteString
-        } else {
-            serverText = AppConfig.serverURL.absoluteString
-        }
+        HomeServer.setAddress(homeText)
+        homeText = AppConfig.homeURL?.absoluteString ?? ""
         ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespaces)
         ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespaces)
         saved = true

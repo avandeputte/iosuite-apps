@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where things live: the server address, the settings, the files waiting to be sent and the cookies.
+/// Where things live: the server address, the settings and the files waiting to be sent.
 /// On iPhone and Apple TV these are shared with the extensions (share sheet, Top Shelf) through an App Group; the
 /// Mac app keeps them to itself.
 enum AppConfig {
@@ -31,14 +31,36 @@ enum AppConfig {
         return ensure(support.appendingPathComponent("iopix", isDirectory: true))
     }
 
-    static var cookies: HTTPCookieStorage {
-        #if os(iOS) || os(tvOS)
-        return hasGroup ? HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: appGroup) : .shared
-        #else
-        return .shared
-        #endif
+    /// The device sign-in (shared/DeviceSignIn): ioPix lives in the "pix" folder of a suite address, or at an address
+    /// of its own. The app password is kept in the Keychain group the extensions share.
+    static let deviceApp = DeviceApp(
+        name: "ioPix", folder: "pix", keychainService: "net.iothing.iopix.device",
+        accessGroup: {
+            #if os(macOS)
+            return macGroup
+            #else
+            return hasGroup ? appGroup : nil
+            #endif
+        }(),
+        defaults: defaults,
+        verifyPlain: { base, password in
+            // signed in at an address without the folder: is it ioPix that answered (its own hostname)?
+            var r = URLRequest(url: base.appendingPathComponent("api/status"), timeoutInterval: 15)
+            r.setValue("Bearer " + password, forHTTPHeaderField: "Authorization")
+            r.setValue("application/json", forHTTPHeaderField: "Accept")
+            guard let (data, _) = try? await DeviceSignIn.session.data(for: r),
+                  let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+            return (j["app"] as? String) == "iopix"
+        })
+
+    /// The address of ioPix on the home network, for the admin and maintenance screens (which the port for devices
+    /// does not serve): e.g. http://192.168.1.10:8080/pix. nil when none was given.
+    static var homeURL: URL? {
+        get { defaults.string(forKey: "homeServer").flatMap(URL.init(string:)) }
+        set { defaults.set(newValue?.absoluteString, forKey: "homeServer") }
     }
 
+    /// The address of ioPix the app talks to: where the device sign-in answered.
     static var serverURL: URL {
         get {
             let raw = defaults.string(forKey: "server") ?? defaultServer
@@ -47,7 +69,7 @@ enum AppConfig {
         set { defaults.set(newValue.absoluteString, forKey: "server") }
     }
 
-    /// False until someone has entered a server address (the iPhone app asks on first launch).
+    /// False until this device has signed in somewhere once.
     static var hasServer: Bool { defaults.string(forKey: "server") != nil }
 
     /// Turns what someone typed ("photo.example.net", "192.168.1.10:8600/") into a server address, or nil.
