@@ -12,6 +12,8 @@ struct Account: Equatable {
 enum IonotesError: LocalizedError, Equatable {
     case noServer
     case needsSignIn
+    /// 401: the server no longer takes this device's app password (removed in Settings › Account).
+    case unauthorized
     case notAllowed(String)
     case tooLarge
     case server(String)
@@ -20,6 +22,7 @@ enum IonotesError: LocalizedError, Equatable {
         switch self {
         case .noServer: return "Enter your ioNote server in Settings."
         case .needsSignIn: return "Sign in to your ioNote server in Settings."
+        case .unauthorized: return "The server no longer accepts this device's sign-in. Sign in again in Settings."
         case .notAllowed(let why): return why
         case .tooLarge: return "That is more than the server takes in one request."
         case .server(let why): return why
@@ -27,8 +30,8 @@ enum IonotesError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to the ioNote server: the sign-in cookie (and, from outside, Cloudflare Access's service token),
-/// then the sync API. Every time is seconds since 1970; ids are chosen by the device.
+/// Talks to the ioNote server: this device's app password as a Bearer header (and, behind Cloudflare Access, its
+/// service token), then the sync API. Every time is seconds since 1970; ids are chosen by the device.
 final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     static let shared = IonotesClient()
     static let log = Logger(subsystem: "net.iothing.ionotes", category: "network")
@@ -36,12 +39,14 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
     private(set) var session: URLSession!
     /// Read from the Keychain once and kept, so every request doesn't ask the Keychain again.
     private var token: (id: String, secret: String)?
+    /// The address, name and app password this device signed in with (DeviceSignIn), read from the Keychain once.
+    private(set) var credential: DeviceCredential?
 
     override init() {
         super.init()
         let cfg = URLSessionConfiguration.default
-        cfg.httpCookieStorage = .shared  // persisted, so the 30-day session survives a restart
-        cfg.httpCookieAcceptPolicy = .always
+        cfg.httpCookieStorage = nil  // no cookies: the app password goes with every request
+        cfg.httpShouldSetCookies = false
         cfg.timeoutIntervalForRequest = 30
         cfg.timeoutIntervalForResource = 600
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -49,6 +54,11 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         cfg.waitsForConnectivity = false
         session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
         reloadToken()
+        reloadCredential()
+    }
+
+    func reloadCredential() {
+        credential = ServerConfig.store.load()
     }
 
     func reloadToken() {
@@ -63,8 +73,9 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         completionHandler(same ? request : nil)
     }
 
-    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], server: URL? = nil) throws -> URLRequest {
-        guard let base = server ?? ServerConfig.serverURL else { throw IonotesError.noServer }
+    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = []) throws -> URLRequest {
+        guard let credential else { throw ServerConfig.serverURL == nil ? IonotesError.noServer : IonotesError.needsSignIn }
+        let base = credential.base
         var url = base.appendingPathComponent(path)
         if !query.isEmpty, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             c.queryItems = query
@@ -73,6 +84,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        credential.authorize(&r)
         if let token {
             r.setValue(token.id, forHTTPHeaderField: "CF-Access-Client-Id")
             r.setValue(token.secret, forHTTPHeaderField: "CF-Access-Client-Secret")
@@ -91,7 +103,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
     /// or as an HTML page instead of JSON.
     private func check(_ data: Data, _ response: URLResponse, allow: Set<Int> = []) throws -> [String: Any] {
         guard let http = response as? HTTPURLResponse else { throw IonotesError.server("The server did not answer.") }
-        if let host = http.url?.host?.lowercased(), host != ServerConfig.serverURL?.host?.lowercased() {
+        if let host = http.url?.host?.lowercased(), host != credential?.base.host?.lowercased() {
             throw IonotesError.needsSignIn
         }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -102,7 +114,9 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
             if let json { return json }
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
             throw type.contains("html") ? IonotesError.needsSignIn : IonotesError.server("The server sent an answer ioNote does not understand.")
-        case 300..<400, 401:
+        case 401:
+            throw IonotesError.unauthorized
+        case 300..<400:
             throw IonotesError.needsSignIn
         case 403:
             throw json == nil ? IonotesError.needsSignIn : IonotesError.notAllowed(detail ?? "This account can only read notes.")
@@ -122,58 +136,13 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         return try check(data, resp, allow: allow)
     }
 
-    // MARK: - Status and sign-in
-
-    /// Is there an ioNote server at this address? nil when there is, otherwise what went wrong, in plain words.
-    func probe(_ url: URL) async -> String? {
-        do {
-            var r = try request("api/status", server: url)
-            r.timeoutInterval = 10
-            let (data, resp) = try await session.data(for: r)
-            guard let http = resp as? HTTPURLResponse else { return "No answer from that address." }
-            if http.url?.host?.lowercased() != url.host?.lowercased() || (300..<400).contains(http.statusCode) {
-                return nil  // a sign-in page in front of it (Cloudflare Access)
-            }
-            if let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], ["ioNote", "ionotes"].contains(j["app"] as? String ?? "") {
-                return nil  // ioNote, or a server from before the rename (ionotes)
-            }
-            if http.statusCode == 401 || http.statusCode == 403 { return nil }
-            return "That address answers, but it isn't an ioNote server."
-        } catch let e as URLError where e.code == .cannotFindHost || e.code == .dnsLookupFailed {
-            return "No server by that name. Check the address."
-        } catch {
-            return "Couldn't reach that address: \(error.localizedDescription)"
-        }
-    }
+    // MARK: - Account
 
     func account() async throws -> Account {
         let j = try await send(try request("api/auth/me"))
         let user = j["user"] as? [String: Any]
         return Account(name: user?["name"] as? String, role: user?["role"] as? String,
                        signedIn: j["signedIn"] as? Bool ?? false, canWrite: j["canWrite"] as? Bool ?? false)
-    }
-
-    func signIn(name: String, password: String) async throws {
-        let r = try jsonRequest("api/auth/login", method: "POST", body: ["name": name, "password": password])
-        let (data, resp) = try await session.data(for: r)
-        if let code = (resp as? HTTPURLResponse)?.statusCode, [401, 403, 429].contains(code) {
-            let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["detail"] as? String
-            throw IonotesError.notAllowed(detail ?? "Wrong user name or password")
-        }
-        _ = try check(data, resp)
-    }
-
-    func signOut() async {
-        if let r = try? request("api/auth/logout", method: "POST") { _ = try? await session.data(for: r) }
-        forgetCookies()
-    }
-
-    func forgetCookies(for server: URL? = ServerConfig.serverURL) {
-        guard let host = server?.host?.lowercased() else { return }
-        for c in HTTPCookieStorage.shared.cookies ?? [] {
-            let d = c.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            if host == d || host.hasSuffix("." + d) { HTTPCookieStorage.shared.deleteCookie(c) }
-        }
     }
 
     // MARK: - Sync
@@ -212,7 +181,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         let (data, resp) = try await session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw IonotesError.server("The server did not answer.") }
         if http.statusCode == 404 { return nil }
-        let sameHost = http.url?.host?.lowercased() == ServerConfig.serverURL?.host?.lowercased()
+        let sameHost = http.url?.host?.lowercased() == credential?.base.host?.lowercased()
         if sameHost, http.statusCode == 200, (http.value(forHTTPHeaderField: "Content-Type") ?? "").hasPrefix("image/") {
             return data
         }
@@ -247,7 +216,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         let (data, resp) = try await session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw IonotesError.server("The server did not answer.") }
         if http.statusCode == 404 { return nil }
-        let sameHost = http.url?.host?.lowercased() == ServerConfig.serverURL?.host?.lowercased()
+        let sameHost = http.url?.host?.lowercased() == credential?.base.host?.lowercased()
         let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
         if sameHost, http.statusCode == 200, http.value(forHTTPHeaderField: "Content-Disposition") != nil || !type.contains("html") {
             return data

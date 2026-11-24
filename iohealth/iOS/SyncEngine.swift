@@ -51,7 +51,7 @@ final class SyncEngine: ObservableObject {
 
     /// The server no longer takes the app password (removed in Settings › Account): sign in again, with the
     /// address and name filled in.
-    private func lostSignIn() {
+    func lostSignIn() {
         DeviceCredentialStore(app: .iohealth).forgetPassword()
         credential = nil
         showSignIn = true

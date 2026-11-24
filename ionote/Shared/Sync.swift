@@ -61,8 +61,8 @@ extension NotesStore {
 
     /// Sends what changed here and fetches what changed on the server.
     func sync() async {
-        guard ServerConfig.serverURL != nil else {
-            syncStatus = .notConfigured
+        guard ServerConfig.signedIn else {
+            syncStatus = ServerConfig.serverURL == nil ? .notConfigured : .signedOut
             return
         }
         if syncing {
@@ -90,6 +90,8 @@ extension NotesStore {
             try await pull()
             lastSync = Date()
             syncStatus = refused.map { .failed($0) } ?? .synced
+        } catch IonotesError.unauthorized {
+            passwordRemoved()
         } catch IonotesError.needsSignIn {
             syncStatus = .signedOut
             account = nil
@@ -393,7 +395,7 @@ extension NotesStore {
 
     /// Fetches the pictures this device doesn't have yet, newest notes first, so every note is there offline.
     func downloadImages() async {
-        guard !downloading, ServerConfig.serverURL != nil else { return }
+        guard !downloading, ServerConfig.signedIn else { return }
         downloading = true
         defer { downloading = false }
         guard let missing = try? db.missingImages(), !missing.isEmpty else { return }
@@ -418,13 +420,12 @@ extension NotesStore {
 
     // MARK: - Server and account
 
-    /// Saves the server address. A different server starts afresh: what came from the old one is dropped,
-    /// changes not sent yet are kept for the new one.
-    func setServer(_ url: URL?) {
+    /// Notes the server the notes here sync with. A different server starts afresh: what came from the old one is
+    /// dropped, changes not sent yet are kept for the new one.
+    private func setServer(_ url: URL) {
         let old = ServerConfig.serverURL
-        guard url?.absoluteString != old?.absoluteString else { return }
+        guard url.absoluteString != old?.absoluteString else { return }
         if old != nil {
-            client.forgetCookies(for: old)
             do {
                 for id in try db.forgetSynced() {
                     try? FileManager.default.removeItem(at: AppPaths.noteImageURL(id))
@@ -434,24 +435,35 @@ extension NotesStore {
             }
         }
         ServerConfig.serverURL = url
-        account = nil
         lastSync = nil
-        syncStatus = url == nil ? .notConfigured : .syncing
         reloadNotes()
-        if url != nil { Task { await refreshAccount() } }
+    }
+
+    /// The sign-in form (DeviceSignInForm) got this device an app password, already in the Keychain: sync with it.
+    func signedIn(_ answer: DeviceSignIn.Answer) {
+        client.reloadCredential()
+        setServer(answer.credential.base)
+        let user = answer.user
+        account = Account(name: user["name"] as? String ?? answer.credential.name, role: user["role"] as? String, signedIn: true,
+                          canWrite: (user["role"] as? String ?? "viewer") != "viewer")
+        showingSignIn = false
+        syncStatus = .syncing
+        Task { await refreshAccount() }
     }
 
     /// Who this device is signed in as; syncs once signed in.
     func refreshAccount() async {
-        guard ServerConfig.serverURL != nil else {
+        guard ServerConfig.signedIn else {
             account = nil
-            syncStatus = .notConfigured
+            syncStatus = ServerConfig.serverURL == nil ? .notConfigured : .signedOut
             return
         }
         do {
             let me = try await client.account()
             account = me.signedIn ? me : nil
             if me.signedIn { await sync() } else { syncStatus = .signedOut }
+        } catch IonotesError.unauthorized {
+            passwordRemoved()
         } catch IonotesError.needsSignIn {
             account = nil
             syncStatus = .signedOut
@@ -462,14 +474,25 @@ extension NotesStore {
         }
     }
 
-    func signIn(name: String, password: String) async throws {
-        try await client.signIn(name: name, password: password)
-        await refreshAccount()
+    /// The server answered 401: this device's app password was removed (Settings › Account). It is forgotten, and the
+    /// sign-in form opens again with the address and name filled in.
+    private func passwordRemoved() {
+        guard ServerConfig.signedIn else { return }
+        ServerConfig.store.forgetPassword()
+        client.reloadCredential()
+        account = nil
+        syncStatus = .signedOut
+        showingSignIn = true
+        #if os(macOS)
+        Router.showSettings()
+        #endif
     }
 
+    /// Gives the app password back to the server, then forgets it. The notes stay on this device.
     func signOut() async {
-        await client.signOut()
-        await CookieSync.clearWebView()
+        if let c = client.credential { await DeviceSignIn.signOut(c) }
+        ServerConfig.store.forgetPassword()
+        client.reloadCredential()
         account = nil
         syncStatus = .signedOut
     }

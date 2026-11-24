@@ -60,6 +60,7 @@ struct RootView: View {
             SettingsView()
                 .environmentObject(store)
         }
+        .signInSheet(store, when: !showSettings)  // a 401 while Settings is closed: the sign-in form over the notes
         .alert("Something went wrong", isPresented: Binding(get: { store.lastError != nil && !showSettings }, set: { if !$0 { store.lastError = nil } })) {
             Button("OK") { store.lastError = nil }
         } message: {

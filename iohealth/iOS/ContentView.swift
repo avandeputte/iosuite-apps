@@ -118,6 +118,9 @@ struct ContentView: View {
         do {
             let version = try await SyncClient.check(server)
             connectionCheck = "Reached the server and signed in (schema version \(version))."
+        } catch SyncError.unauthorized {
+            connectionCheck = nil
+            engine.lostSignIn()
         } catch {
             connectionCheck = "Couldn't reach \(server.baseURL.absoluteString): \(error.localizedDescription)"
         }
