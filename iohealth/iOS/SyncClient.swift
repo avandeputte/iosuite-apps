@@ -7,30 +7,15 @@ import Security
 enum SyncClient {
     struct Server {
         let baseURL: URL
-        /// HTTP Basic: the account's user name with the app password made for this iPhone (SyncEngine trades the
-        /// typed password for one at the first sync), or with what was typed until then.
+        /// "Bearer <app password>": the app password the sign-in made for this iPhone (shared/DeviceSignIn).
         let authorization: String
 
-        /// Accepts "https://health.example.com", "http://192.168.1.10:8650" or a bare "host[:port]": taken as https,
-        /// or, when the host is on the local network, as http on port 8650 if none is given.
-        init?(address: String, user: String, password: String) {
-            var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, !user.isEmpty, !password.isEmpty else { return nil }
-            if !text.contains("://") {
-                if Server.isLocal(URL(string: "http://" + text)?.host ?? "") {
-                    text = "http://" + text
-                    if URL(string: text)?.port == nil { text += ":\(SyncProtocol.defaultPort)" }
-                } else {
-                    text = "https://" + text
-                }
-            }
-            while text.hasSuffix("/") { text.removeLast() }
-            guard let url = URL(string: text), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
-            baseURL = url
-            authorization = "Basic " + Data("\(user):\(password)".utf8).base64EncodedString()
+        init(_ credential: DeviceCredential) {
+            baseURL = credential.base
+            authorization = credential.bearer
         }
 
-        /// Plain http to an address that is not on the local network: the sign-in would travel unencrypted.
+        /// Plain http to an address that is not on the local network: the app password would travel unencrypted.
         var isPlainRemote: Bool { baseURL.scheme == "http" && !Server.isLocal(baseURL.host ?? "") }
 
         /// A host on the local network: localhost, a .local name, a name without a dot, or a private, link-local or
@@ -108,32 +93,17 @@ enum SyncClient {
         }
     }
 
-    /// GET /v1/health, for the "Test connection" button; returns the server's schema version.
+    /// GET /v1/health with the app password, for the "Test connection" button; returns the server's schema version.
     static func check(_ server: Server) async throws -> Int {
         var request = URLRequest(url: server.baseURL.appending(path: "v1/health"))
         request.timeoutInterval = 10
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SyncError.badReply }
-        return json["schemaVersion"] as? Int ?? 0
-    }
-
-    /// Trades the password that was typed for an app password of this iPhone (POST /api/auth/app-passwords, signed
-    /// in with HTTP Basic), so the account password is neither kept nor sent with every batch. nil when the server
-    /// does not make one (an older server, an account that cannot have app passwords): the sync goes on as before.
-    static func appPassword(_ server: Server, label: String) async throws -> String? {
-        var request = URLRequest(url: server.baseURL.appending(path: "api/auth/app-passwords"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 15
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["label": label])
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(server.authorization, forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SyncError.badReply }
         if http.statusCode == 401 { throw SyncError.unauthorized }
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard http.statusCode == 200, let made = json["password"] as? String, !made.isEmpty else { return nil }
-        return made
+        guard http.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SyncError.badReply }
+        return json["schemaVersion"] as? Int ?? 0
     }
 
     /// POSTs with up to three retries (1, 2, 4 s apart) on network errors and 5xx; a 4xx is reported straight away.
@@ -180,7 +150,7 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .badReply: return "The server sent an unexpected reply. Is the address right?"
-        case .unauthorized: return "The server rejected the user name or password. They are the same as for the web app; an account without a password cannot sync. Type the password again if this iPhone's app password was revoked."
+        case .unauthorized: return "The server no longer accepts this iPhone's sign-in (its password may have been removed in Settings › Account). Sign in again."
         case .server(let code, let message), .retryable(let code, let message):
             return "The server answered \(code)\(message.isEmpty ? "" : ": \(message)")."
         case .outOfTime: return "iOS ended the background window before the sync finished."
@@ -215,28 +185,25 @@ enum Gzip {
     }
 }
 
-/// What the app signs in with lives in the Keychain, readable after first unlock so background syncs can use it:
-/// the app password made for this iPhone, or the password as typed until the first sync has traded it for one.
-enum CredentialStore {
-    private static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                               kSecAttrService as String: "ioHealthSync",
-                                               kSecAttrAccount as String: "password"]
+/// The one sign-in of the ioSuite apps (shared/DeviceSignIn), for ioHealth: at <address>/health, or at the plain
+/// address of a server of its own (checked with GET /v1/health).
+extension DeviceApp {
+    static let iohealth = DeviceApp(name: "ioHealthSync", folder: "health", keychainService: "ioHealthSync.device", accessGroup: nil,
+                                    defaults: .standard, verifyPlain: { base, password in
+        var r = URLRequest(url: base.appending(path: "v1/health"))
+        r.timeoutInterval = 10
+        r.setValue("Bearer " + password, forHTTPHeaderField: "Authorization")
+        guard let (data, resp) = try? await DeviceSignIn.session.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return json["schemaVersion"] != nil
+    })
+}
 
-    static var password: String {
-        get {
-            var q = query
-            q[kSecReturnData as String] = true
-            var out: AnyObject?
-            guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return "" }
-            return String(decoding: data, as: UTF8.self)
-        }
-        set {
-            SecItemDelete(query as CFDictionary)
-            guard !newValue.isEmpty else { return }
-            var q = query
-            q[kSecValueData as String] = Data(newValue.utf8)
-            q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(q as CFDictionary, nil)
-        }
+/// The old keys (a typed password, or an app password traded for it) are removed at the first launch of this version.
+enum LegacyCredentials {
+    static func remove() {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "ioHealthSync",
+                       kSecAttrAccount as String: "password"] as CFDictionary)
+        for key in ["userName", "hasAppPassword"] { UserDefaults.standard.removeObject(forKey: key) }
     }
 }

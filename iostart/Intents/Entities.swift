@@ -24,16 +24,11 @@ enum SuiteAccess {
         return API(account: account)
     }
 
-    /// Runs a call; a sync-only password is remembered (Settings shows "Sign in again"), errors become sayable.
+    /// Runs a call; errors become sayable.
     static func run<T>(_ body: (API) async throws -> T) async throws -> T {
         let api = try api()
         do {
-            let out = try await body(api)
-            Shared.full = true
-            return out
-        } catch APIError.signInAgain {
-            Shared.full = false
-            throw IntentProblem.from(APIError.signInAgain)
+            return try await body(api)
         } catch {
             throw IntentProblem.from(error)
         }

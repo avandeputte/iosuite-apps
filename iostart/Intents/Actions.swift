@@ -6,7 +6,7 @@ import WidgetKit
 
 // The Shortcuts actions, which Siri runs too (see ioStartShortcuts in the app for the phrases). Adding a task or an
 // event goes to ioTask and ioCalendar through the start page (/dav/ext/tasks, /dav/ext/events) with the app's own
-// sign-in, which must be a full one (Settings › Sign in again for an older, sync-only one).
+// sign-in (shared/DeviceSignIn).
 
 struct AddTaskIntent: AppIntent {
     static var title: LocalizedStringResource = "Add a task"

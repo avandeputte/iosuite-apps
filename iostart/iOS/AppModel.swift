@@ -24,8 +24,6 @@ final class AppModel: ObservableObject {
     @Published var tree: [Node] = []
     @Published var rev = 0
     @Published var canWrite = true
-    /// Whether the app password reaches the other apps (widgets and Siri); false: an older, sync-only one. Nil: not known.
-    @Published var full: Bool? = Shared.full
     @Published var loaded = false
     @Published var problem: String?
     @Published var browsing: Page?
@@ -59,7 +57,7 @@ final class AppModel: ObservableObject {
 
     private func failed(_ error: Error, quiet: Bool = false) {
         if case APIError.signedOut = error {
-            signOut()
+            forget()
             problem = error.localizedDescription
         } else if !quiet {
             problem = error.localizedDescription
@@ -71,13 +69,7 @@ final class AppModel: ObservableObject {
         guard let api else { return }
         do {
             take(try await api.tree())
-            if let me = try? await api.hello() {
-                canWrite = me.canWrite
-                if let f = me.full {
-                    full = f
-                    Shared.full = f
-                }
-            }
+            if let me = try? await api.hello() { canWrite = me.canWrite }
         } catch {
             failed(error, quiet: quiet)
         }
@@ -189,22 +181,29 @@ final class AppModel: ObservableObject {
 
     // MARK: the account
 
+    /// The credential is already saved (DeviceSignInForm).
     func signedIn(_ account: Account) async {
-        account.save()
-        Shared.full = nil
-        full = nil
         self.account = account
         loaded = false
         await refresh(quiet: false)
     }
 
+    /// Gives the app password back to the start page, then forgets it.
     func signOut() {
+        if let account, let base = URL(string: account.server) {
+            Task { await DeviceSignIn.signOut(DeviceCredential(address: "", base: base, name: account.user, password: account.password)) }
+        }
+        forget()
+    }
+
+    /// The start page no longer takes this phone's password (removed in Settings › Account): the sign-in screen,
+    /// with the address and name filled in.
+    func forget() {
         Account.clear()
         account = nil
         tree = []
         rev = 0
         loaded = false
-        full = nil
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

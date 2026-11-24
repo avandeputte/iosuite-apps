@@ -83,7 +83,7 @@ enum WidgetIcons {
         }
         guard let url = API(account: account).iconURL(for: id) else { return nil }
         var req = URLRequest(url: url)
-        req.setValue(API.basic(account), forHTTPHeaderField: "Authorization")
+        req.setValue(API.bearer(account), forHTTPHeaderField: "Authorization")
         guard let (data, resp) = try? await API.session.data(for: req) else { return nil }
         var png = Data()
         if (resp as? HTTPURLResponse)?.statusCode == 200, let img = UIImage(data: data) {

@@ -21,34 +21,32 @@ struct ContentView: View {
                 }
 
                 Section {
-                    TextField("https://health.example.com", text: $engine.serverAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .textContentType(.URL)
-                    TextField("User name", text: $engine.userName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .textContentType(.username)
-                    SecureField("Password", text: $engine.password)
-                        .textContentType(.password)
-                    Button("Sync now") {
-                        Task { await engine.syncNow(trigger: .manual, deadline: nil) }
-                    }
-                    .disabled(!engine.authorized || engine.isRunning || !engine.hasTarget)
-                    Button("Test connection") { Task { await testConnection() } }
-                        .disabled(engine.server == nil)
-                    if let connectionCheck {
-                        Text(connectionCheck).font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if let server = engine.server, server.isPlainRemote {
-                        Text("This address is plain http outside your own network: your sign-in would travel unencrypted. Use an https address.")
-                            .font(.footnote).foregroundStyle(.red)
+                    if let c = engine.credential {
+                        LabeledContent("Server", value: c.base.host() ?? c.base.absoluteString)
+                        LabeledContent("Signed in as", value: c.name)
+                        Button("Sync now") {
+                            Task { await engine.syncNow(trigger: .manual, deadline: nil) }
+                        }
+                        .disabled(!engine.authorized || engine.isRunning)
+                        Button("Test connection") { Task { await testConnection() } }
+                        if let connectionCheck {
+                            Text(connectionCheck).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if let server = engine.server, server.isPlainRemote {
+                            Text("This address is plain http outside your own network: this iPhone's password would travel unencrypted. Use an https address.")
+                                .font(.footnote).foregroundStyle(.red)
+                        }
+                        Button("Sign Out", role: .destructive) { Task { await engine.signOut() } }
+                            .disabled(engine.isRunning)
+                    } else {
+                        Button("Sign In…") { engine.showSignIn = true }
                     }
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The ioHealth server's address, e.g. https://health.example.com behind your reverse proxy, or http://192.168.1.10:8650 on your own network (an address without http:// or https:// is taken as https, or as http on port 8650 when it is a local one). Sign in with your own account, the same user name and password as in the web app and the other io apps. The first sync trades the password for an app password of this iPhone, and only that is kept in the Keychain; revoke it in the web app under Settings › Account › App passwords. The account must be an editor in ioHealth.")
+                    Text(engine.credential == nil
+                         ? "Sign in to your ioSuite server with your account's name and password. This iPhone gets a password of its own; the account must be an editor in ioHealth."
+                         : "Remove this iPhone's password in Settings › Account on the server to stop it syncing.")
                 }
 
                 Section {
@@ -93,6 +91,15 @@ struct ContentView: View {
             }
             .navigationTitle("ioHealthSync")
         }
+        .sheet(isPresented: $engine.showSignIn) {
+            NavigationStack {
+                DeviceSignInForm(app: .iohealth, onSignedIn: { answer in
+                    engine.signedIn(answer.credential)
+                    autoSyncOnOpen()
+                }, onCancel: { engine.showSignIn = false })
+                .navigationTitle("Sign In")
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { autoSyncOnOpen() }
         }
@@ -110,7 +117,7 @@ struct ContentView: View {
         connectionCheck = "Checking…"
         do {
             let version = try await SyncClient.check(server)
-            connectionCheck = "Reached the server (schema version \(version)). Your user name and password are checked when you sync."
+            connectionCheck = "Reached the server and signed in (schema version \(version))."
         } catch {
             connectionCheck = "Couldn't reach \(server.baseURL.absoluteString): \(error.localizedDescription)"
         }

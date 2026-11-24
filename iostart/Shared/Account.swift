@@ -22,80 +22,62 @@ enum Shared {
         return dir.appendingPathComponent("today.json")
     }
 
-    /// Whether the app password is a full one (widgets and Siri); nil until the start page said.
-    static var full: Bool? {
-        get { defaults.object(forKey: "full") as? Bool }
-        set { if let newValue { defaults.set(newValue, forKey: "full") } else { defaults.removeObject(forKey: "full") } }
-    }
 }
 
-/// The start page this phone syncs with, and the app password the sign-in made for it.
-/// The address and name sit in the app group's defaults; the password in the keychain, shared with the extension.
+/// The one sign-in of the ioSuite apps (shared/DeviceSignIn), for the start page at the root of the address.
+extension DeviceApp {
+    static let iostart = DeviceApp(name: "ioStart", folder: "", keychainService: Shared.keychainService, accessGroup: Shared.group,
+                                   defaults: Shared.defaults)
+}
+
+/// The start page this phone signs in to, and the app password the sign-in made for it (shared/DeviceSignIn: the
+/// address and name in the app group's defaults, the password in the keychain, shared with the extension and widgets).
 struct Account: Equatable {
     var server: String
     var user: String
     var password: String
 
+    init(server: String, user: String, password: String) {
+        self.server = server
+        self.user = user
+        self.password = password
+    }
+
+    init(_ c: DeviceCredential) {
+        var s = c.base.absoluteString
+        while s.hasSuffix("/") { s.removeLast() }
+        self.init(server: s, user: c.name, password: c.password)
+    }
+
     static func load() -> Account? {
-        let d = Shared.defaults
-        guard let server = d.string(forKey: "server"), let user = d.string(forKey: "user"), let pw = Keychain.read() else { return nil }
-        return Account(server: server, user: user, password: pw)
+        LegacySignIn.migrate()
+        return DeviceCredentialStore(app: .iostart).load().map(Account.init)
     }
 
-    func save() {
-        let d = Shared.defaults
-        d.set(server, forKey: "server")
-        d.set(user, forKey: "user")
-        Keychain.write(password)
-    }
-
+    /// Forgets the app password (the address and name stay, for the sign-in screen) and what was kept of the tree.
     static func clear() {
-        let d = Shared.defaults
-        d.removeObject(forKey: "server")
-        d.removeObject(forKey: "user")
-        d.removeObject(forKey: "full")
-        Keychain.delete()
+        DeviceCredentialStore(app: .iostart).forgetPassword()
+        Shared.defaults.removeObject(forKey: "full")
         try? FileManager.default.removeItem(at: Shared.cacheFile)
         try? FileManager.default.removeItem(at: Shared.todayFile)
     }
 }
 
-enum Keychain {
-    private static func query(group: Bool) -> [String: Any] {
-        var q: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Shared.keychainService,
-            kSecAttrAccount as String: "sync",
-        ]
-        if group { q[kSecAttrAccessGroup as String] = Shared.group }
-        return q
-    }
-
-    static func read() -> String? {
+/// Before 1.3, the app password came from the start page's allow page and was kept under "sync". That sign-in
+/// is gone: the old password is removed and the address and name fill the new sign-in screen.
+enum LegacySignIn {
+    static func migrate() {
+        let d = Shared.defaults
+        guard let server = d.string(forKey: "server") else { return }
+        let store = DeviceCredentialStore(app: .iostart)
+        if store.lastAddress == nil { store.remember(address: server, name: d.string(forKey: "user") ?? "") }
+        for key in ["server", "user", "full", "lastServer"] { d.removeObject(forKey: key) }
         for group in [true, false] {
-            var q = query(group: group)
-            q[kSecReturnData as String] = true
-            q[kSecMatchLimit as String] = kSecMatchLimitOne
-            var out: CFTypeRef?
-            if SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data, let s = String(data: data, encoding: .utf8) {
-                return s
-            }
+            var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Shared.keychainService,
+                                    kSecAttrAccount as String: "sync"]
+            if group { q[kSecAttrAccessGroup as String] = Shared.group }
+            SecItemDelete(q as CFDictionary)
         }
-        return nil
-    }
-
-    static func write(_ password: String) {
-        delete()
-        for group in [true, false] {  // without the group only when the shared keychain is not available (then the extension asks to sign in)
-            var q = query(group: group)
-            q[kSecValueData as String] = Data(password.utf8)
-            q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            if SecItemAdd(q as CFDictionary, nil) == errSecSuccess { return }
-        }
-    }
-
-    static func delete() {
-        for group in [true, false] { SecItemDelete(query(group: group) as CFDictionary) }
     }
 }
 

@@ -6,8 +6,6 @@ enum TodayState {
     /// The day as the start page told it; `kept`: an older answer, the start page could not be reached just now.
     case day(TodayData, kept: Date?)
     case signedOut
-    /// The app password is for bookmark sync only.
-    case signInAgain
     case failed(String)
 }
 
@@ -47,7 +45,7 @@ struct TodayProvider: TimelineProvider {
             switch state {
             case .day(_, let kept): again = now.addingTimeInterval(kept == nil ? 20 * 60 : 10 * 60)
             case .failed: again = now.addingTimeInterval(10 * 60)
-            case .signedOut, .signInAgain: again = now.addingTimeInterval(60 * 60)
+            case .signedOut: again = now.addingTimeInterval(60 * 60)
             }
             completion(Timeline(entries: entries, policy: .after(again)))
         }
@@ -56,15 +54,10 @@ struct TodayProvider: TimelineProvider {
     static func load() async -> TodayState {
         WidgetNetwork.setUp()
         guard let account = Account.load() else { return .signedOut }
-        if Shared.full == false { return .signInAgain }
         do {
             let data = try await API(account: account).today()
             TodayCache.save(data)
-            Shared.full = true
             return .day(data, kept: nil)
-        } catch APIError.signInAgain {
-            Shared.full = false
-            return .signInAgain
         } catch APIError.signedOut {
             return .signedOut
         } catch {

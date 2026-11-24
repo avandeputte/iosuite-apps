@@ -3,8 +3,6 @@ import Foundation
 enum APIError: LocalizedError {
     case signedOut
     case readOnly
-    /// The app password is the older sync-only kind: bookmarks work, widgets and Siri need a new sign-in.
-    case signInAgain
     case server(Int, String)
     case unreachable(String)
 
@@ -12,15 +10,14 @@ enum APIError: LocalizedError {
         switch self {
         case .signedOut: return "The start page no longer accepts this phone's sign-in. Sign in again."
         case .readOnly: return "This account can read the bookmarks, not change them."
-        case .signInAgain: return "Sign in again to turn on widgets and Siri: open ioStart › Settings › Sign in again."
         case .server(let code, let msg): return msg.isEmpty ? "The start page answered with an error (\(code))." : msg
         case .unreachable(let msg): return msg
         }
     }
 }
 
-/// The start page's sync API for bookmarks (`/dav/ext`, app/bookmarkext.py), and the sign-in flow that makes the
-/// app password it is called with (`/dav/nextcloud/index.php/login/v2`, app/ncbookmarks.py).
+/// The start page's API for bookmarks, the day, tasks and events (`/dav/ext`, app/bookmarkext.py), called with the
+/// app password the sign-in made for this phone (shared/DeviceSignIn) as a Bearer token.
 struct API {
     var account: Account
 
@@ -50,9 +47,7 @@ struct API {
         }
     }
 
-    static func basic(_ account: Account) -> String {
-        "Basic " + Data("\(account.user):\(account.password)".utf8).base64EncodedString()
-    }
+    static func bearer(_ account: Account) -> String { "Bearer " + account.password }
 
     /// The errors of a network that was not there for a moment: worth one more try before telling anyone. A newly
     /// installed app's first request often fails as "offline" while iOS is still setting up its network access.
@@ -88,7 +83,7 @@ struct API {
         guard let url = URL(string: account.server + path) else { throw APIError.unreachable("The start page's address is not usable.") }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.setValue(API.basic(account), forHTTPHeaderField: "Authorization")
+        req.setValue(API.bearer(account), forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             req.httpBody = body
@@ -102,7 +97,6 @@ struct API {
             }
         case 401: throw APIError.signedOut
         case 403:
-            if (try? JSONDecoder().decode(Failure.self, from: data))?.details?.signInAgain == true { throw APIError.signInAgain }
             throw APIError.readOnly
         default: throw APIError.server(http.statusCode, API.message(data))
         }
@@ -111,7 +105,7 @@ struct API {
     func hello() async throws -> Hello { try await call("GET", "/dav/ext") }
     func tree() async throws -> TreeState { try await call("GET", "/dav/ext/tree") }
 
-    // MARK: widgets and Siri (they need a full app password: see Hello.full)
+    // MARK: widgets and Siri
 
     /// Today's events (or the next one), the week's, and the tasks due today or late (`tz`: this phone's zone).
     func today() async throws -> TodayData {
@@ -136,61 +130,8 @@ struct API {
         try await call("POST", "/dav/ext/sync", body: try JSONEncoder().encode(Changes(base: base, ops: ops)))
     }
 
-    /// Where the icon of a link's site is served from (GET with the Basic header).
+    /// Where the icon of a link's site is served from (GET with the Bearer header).
     func iconURL(for id: Int) -> URL? {
         URL(string: account.server + "/dav/ext/icon/\(id)")
-    }
-
-    // MARK: the sign-in flow
-
-    struct Flow: Decodable {
-        struct Poll: Decodable { var token: String }
-        var poll: Poll
-        var login: String
-        /// The page to open, at the address the person typed (the server may know itself under another one).
-        func page(on server: String) -> URL? {
-            guard let last = login.split(separator: "/").last else { return nil }
-            return URL(string: server + API.flowBase + "/flow/" + last)
-        }
-    }
-
-    struct Granted: Decodable {
-        var loginName: String
-        var appPassword: String
-    }
-
-    private static let flowBase = "/dav/nextcloud/index.php/login/v2"
-
-    /// A typed address as the server's root: with a scheme, without a trailing slash.
-    static func root(_ typed: String) -> String {
-        var s = tidyAddress(typed)
-        while s.hasSuffix("/") { s.removeLast() }
-        return s
-    }
-
-    /// scope=full: an app password that also reaches ioCalendar and ioTask (widgets and Siri), not for sync only.
-    static func startFlow(server: String, client: String) async throws -> Flow {
-        var c = URLComponents(string: server + flowBase)
-        c?.queryItems = [URLQueryItem(name: "client", value: client), URLQueryItem(name: "scope", value: "full")]
-        guard let url = c?.url, url.host != nil else { throw APIError.unreachable("That address is not usable.") }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        let (data, http) = try await run(req)
-        guard http.statusCode == 200, let flow = try? JSONDecoder().decode(Flow.self, from: data) else {
-            throw APIError.unreachable("No ioSuite start page with bookmarks answers at that address (it needs version 0.47 or later).")
-        }
-        return flow
-    }
-
-    /// Nil until somebody said yes on the page; then, once, the name and the app password.
-    static func pollFlow(server: String, token: String) async throws -> Granted? {
-        guard let url = URL(string: server + flowBase + "/poll") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(["token": token])
-        let (data, http) = try await run(req)
-        guard http.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(Granted.self, from: data)
     }
 }

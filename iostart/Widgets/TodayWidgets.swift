@@ -121,7 +121,6 @@ private struct Notice: View {
     private var inlineText: String {
         switch state {
         case .signedOut: return "Sign in to ioStart"
-        case .signInAgain: return "Sign in again in ioStart"
         case .failed: return "ioStart: no answer"
         case .day: return ""
         }
@@ -131,7 +130,6 @@ private struct Notice: View {
         let (icon, text): (String, String) = {
             switch state {
             case .signedOut: return ("person.crop.circle.badge.questionmark", "Open ioStart and sign in.")
-            case .signInAgain: return ("arrow.triangle.2.circlepath", "Sign in again to turn on widgets and Siri.")
             case .failed(let why): return ("exclamationmark.triangle", why)
             case .day: return ("", "")
             }

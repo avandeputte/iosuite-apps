@@ -19,27 +19,44 @@ final class SyncEngine: ObservableObject {
     @Published var autoSync = UserDefaults.standard.object(forKey: "autoSync") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoSync, forKey: "autoSync") }
     }
-    /// The server's base URL, e.g. https://health.example.com or http://192.168.1.10:8650.
-    @Published var serverAddress: String = UserDefaults.standard.string(forKey: "serverAddress") ?? "" {
-        didSet { UserDefaults.standard.set(serverAddress, forKey: "serverAddress") }
-    }
-    /// The account: the same user name and password as in the web app (and ioPix, ioNotes, ioContacts). The
-    /// password is typed once: the first sync after that trades it for an app password of this iPhone, which is
-    /// what the Keychain keeps and what every request carries from then on.
-    @Published var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "" {
-        didSet { UserDefaults.standard.set(userName, forKey: "userName") }
-    }
-    @Published var password: String = CredentialStore.password {
-        didSet {
-            CredentialStore.password = password
-            if !storingAppPassword { hasAppPassword = false }  // typed: the account's own, traded at the next sync
+    /// This iPhone's sign-in (shared/DeviceSignIn): the address, the name and the app password the server made for it.
+    /// nil until signed in, and again after signing out or once the server stopped taking the app password.
+    @Published private(set) var credential: DeviceCredential? = SyncEngine.migratedCredential()
+    @Published var showSignIn = false
+
+    private static func migratedCredential() -> DeviceCredential? {
+        let store = DeviceCredentialStore(app: .iohealth)
+        let d = UserDefaults.standard
+        if store.lastAddress == nil, let old = d.string(forKey: "serverAddress"), !old.isEmpty {
+            store.remember(address: old, name: d.string(forKey: "userName") ?? "")  // fills the new sign-in screen
         }
+        if d.object(forKey: "serverAddress") != nil {
+            d.removeObject(forKey: "serverAddress")
+            LegacyCredentials.remove()
+        }
+        return store.load()
     }
-    /// Whether the Keychain holds the app password made for this iPhone (true) or what was typed (false).
-    private var hasAppPassword = UserDefaults.standard.bool(forKey: "hasAppPassword") {
-        didSet { UserDefaults.standard.set(hasAppPassword, forKey: "hasAppPassword") }
+
+    func signedIn(_ c: DeviceCredential) {
+        credential = c
+        showSignIn = false
     }
-    private var storingAppPassword = false
+
+    func signOut() async {
+        guard let c = credential else { return }
+        await DeviceSignIn.signOut(c)
+        DeviceCredentialStore(app: .iohealth).forgetPassword()
+        credential = nil
+    }
+
+    /// The server no longer takes the app password (removed in Settings › Account): sign in again, with the
+    /// address and name filled in.
+    private func lostSignIn() {
+        DeviceCredentialStore(app: .iohealth).forgetPassword()
+        credential = nil
+        showSignIn = true
+    }
+
     @Published private(set) var lastSynced: Date? = UserDefaults.standard.object(forKey: "lastSynced") as? Date
     @Published private(set) var lastTrigger: Trigger? = UserDefaults.standard.string(forKey: "lastTrigger").flatMap(Trigger.init)
     @Published private(set) var lastBackgroundAttempt: Date?
@@ -59,9 +76,7 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    var server: SyncClient.Server? {
-        SyncClient.Server(address: serverAddress, user: userName.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
-    }
+    var server: SyncClient.Server? { credential.map(SyncClient.Server.init) }
 
     /// Whether a sync has somewhere to go.
     var hasTarget: Bool { server != nil }
@@ -105,19 +120,6 @@ final class SyncEngine: ObservableObject {
         if foreground { UIApplication.shared.isIdleTimerDisabled = true }
         defer { if foreground { UIApplication.shared.isIdleTimerDisabled = false } }
 
-        // The password was typed since the last sync: trade it for an app password of this iPhone and keep only
-        // that. In the foreground only (a background wake has seconds); a server that makes none is used as before.
-        var server = server
-        if foreground, !hasAppPassword,
-           let made = try? await SyncClient.appPassword(server, label: "ioHealthSync on \(UIDevice.current.name)"),
-           let traded = SyncClient.Server(address: serverAddress, user: userName.trimmingCharacters(in: .whitespacesAndNewlines), password: made) {
-            storingAppPassword = true
-            password = made
-            storingAppPassword = false
-            hasAppPassword = true
-            server = traded
-        }
-
         do {
             let upload = try await SyncClient.Upload.start(server: server, hello: .init(
                 protocolVersion: SyncProtocol.version, deviceName: UIDevice.current.name,
@@ -145,6 +147,9 @@ final class SyncEngine: ObservableObject {
             fullResync = false
             remember(trigger: trigger)
             state = ranOutOfTime ? .paused(n) : .done(n)
+        } catch SyncError.unauthorized {
+            lostSignIn()
+            state = .failed(SyncError.unauthorized.localizedDescription)
         } catch {
             state = .failed(error.localizedDescription)
         }

@@ -41,8 +41,7 @@ struct Hello: Codable {
     var canWrite: Bool
     var rev: Int
     var version: String
-    /// The app password reaches the other apps too (widgets and Siri). Nil: a start page from before widgets.
-    var full: Bool?
+
 }
 
 /// One change sent to `/dav/ext/sync` (see app/bookmarkext.py). A missing `parent` is the top level.
