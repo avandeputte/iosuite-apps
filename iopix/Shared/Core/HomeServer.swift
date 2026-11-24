@@ -1,7 +1,7 @@
 import Foundation
 
 /// The home address of ioPix (Settings › Home address), for what the address for apps does not serve: the admin and
-/// maintenance screens and the untouched originals. It is the pages' address on the home network (e.g.
+/// maintenance screens. It is the pages' address on the home network (e.g.
 /// http://192.168.1.10:8080/pix), which takes the same app password from inside the network. Away from home, or
 /// without one, those screens say "Available at home only".
 final class HomeServer: ObservableObject {
@@ -68,11 +68,10 @@ final class HomeServer: ObservableObject {
     }
 
     /// The calls of ioPix that the address for apps does not answer (only the pages' port does): admin and
-    /// maintenance, and the originals. `path` is relative to the app's address ("api/folders/3/move").
+    /// maintenance. The originals (orig/) are served at both since ioSuite 4.2.1. `path` is relative to the app's address ("api/folders/3/move").
     static func isHomeOnly(_ path: String, method: String) -> Bool {
         let p = path.hasPrefix("/") ? String(path.dropFirst()) : path
         let m = method.uppercased()
-        if p == "orig" || p.hasPrefix("orig/") { return true }
         guard p.hasPrefix("api/") else { return false }
         let parts = p.split(separator: "/").map(String.init)
         let area = parts.count > 1 ? parts[1] : ""

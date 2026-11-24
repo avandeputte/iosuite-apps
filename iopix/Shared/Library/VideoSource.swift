@@ -1,9 +1,9 @@
 import Foundation
 import AVFoundation
 
-/// What to play for a video. ioPix says whether the original plays on Apple devices as it is. The original is served at
-/// the home address only (the address for apps serves the pictures and the copies that play, /video/), so away from
-/// home, or for one that doesn't play as it is (an AVI, an unusual codec), the server's H.264 copy is played, which can
+/// What to play for a video. ioPix says whether the original plays on Apple devices as it is: then the original
+/// (/orig/, served at the address for apps since ioSuite 4.2.1; at the home address when it answers, which is nearer).
+/// One that doesn't play as it is (an AVI, an unusual codec) is played as the server's H.264 copy (/video/), which can
 /// take a moment to make the first time.
 enum VideoSource {
     enum Problem: LocalizedError {
@@ -18,8 +18,9 @@ enum VideoSource {
         let d = try? await client.json("api/photo/\(id)")
         try Task.checkCancellation()  // swiped away while asking: no player for a page that has gone
         let playable = d?["playable"] as? Bool ?? true
-        if playable, let home = AppConfig.homeURL, await HomeServer.shared.check() {
-            return home.appendingPathComponent("orig/\(id)")
+        if playable {
+            if let home = AppConfig.homeURL, await HomeServer.shared.check() { return home.appendingPathComponent("orig/\(id)") }
+            return AppConfig.serverURL.appendingPathComponent("orig/\(id)")
         }
         let mp4 = AppConfig.serverURL.appendingPathComponent("video/\(id).mp4")
         for _ in 0..<240 {  // up to about 20 minutes for a long video

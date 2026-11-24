@@ -277,7 +277,7 @@ struct SettingsView: View {
                     }
                 }
             } footer: {
-                Text(HomeServer.hint + ": the address of ioPix's pages on your home network, for the originals of the photos.")
+                Text(HomeServer.hint + ": the address of ioPix's pages on your home network, for the admin screens.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
