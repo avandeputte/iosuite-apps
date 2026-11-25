@@ -24,6 +24,7 @@ struct HomeOnly<Content: View>: View {
             }
         }
         .task { await home.check() }
+        .onChange(of: home.state) { _, s in if s == .unknown { Task { await home.check() } } }
     }
 }
 
@@ -96,9 +97,10 @@ struct ServerSection: View {
     }
 
     private func saveHome() {
-        let before = AppConfig.homeURL
-        HomeServer.setAddress(homeText)
-        homeText = AppConfig.homeURL?.absoluteString ?? ""
-        if AppConfig.homeURL != before { Task { await home.check(force: true) } }
+        let typed = homeText
+        Task { @MainActor in
+            await HomeServer.setAddress(typed)
+            homeText = AppConfig.homeURL?.absoluteString ?? ""
+        }
     }
 }
