@@ -53,7 +53,7 @@ final class AdminModel: ObservableObject {
     }
 }
 
-/// Settings, in the web app's tab order: Account and Display for everyone; Editing, Library, AI, Server and Security
+/// Settings, in the web app's tab order: Account and Display for everyone; Editing, Library, AI and Backups
 /// for admins. The checks and clean-up pages are under Tools, not here.
 struct AdminSettingsScreen: View {
     @StateObject private var model = AdminModel()
@@ -90,9 +90,6 @@ struct AdminSettingsScreen: View {
                     NavigationLink { HomeOnly("Library") { AdminLibraryScreen(model: model) } } label: { Label("Library", systemImage: "photo.stack") }
                     NavigationLink { HomeOnly("AI") { AdminAISettingsScreen(model: model) } } label: { Label("AI", systemImage: "sparkles") }
                     NavigationLink { HomeOnly("Backups") { AdminBackupsScreen(model: model) } } label: { Label("Backups", systemImage: "externaldrive") }
-                    if model.usersExist {
-                        NavigationLink { HomeOnly("Security") { AdminUsersScreen(model: model) } } label: { Label("Security", systemImage: "lock.shield") }
-                    }
                 }
             }
             #if targetEnvironment(macCatalyst)
@@ -163,7 +160,7 @@ struct AdminAccountScreen: View {
                         if model.isAdmin && home.state == .reachable { Button(person == nil ? "Link to a person" : "Change") { picking = true } }
                     }
                     if !model.isAdmin && person == nil {
-                        Text("An admin can link your account in Settings › Security.").font(.footnote).foregroundStyle(.secondary)
+                        Text("An admin can link your account in the start page's Settings › People.").font(.footnote).foregroundStyle(.secondary)
                     }
                     if let person {
                         Button("Photos of me") { router.open("#/photos?tag=\(person.id)") }
@@ -369,9 +366,6 @@ struct AdminLibraryScreen: View {
     @State private var roots: [[String: Any]] = []
     @State private var rootEdits: [String: String] = [:]
     @State private var viewer: [String: Any] = [:]
-    @State private var vdb = DBForm()
-    @State private var vCopy = true
-    @State private var vDrop = false
     @State private var vResult: String?
     @State private var mergePlan: String?
 
@@ -493,67 +487,30 @@ struct AdminLibraryScreen: View {
         }
     }
 
-    /// ioPix's own database: MariaDB or MySQL only (the web app's ioPix database box).
+    /// ioPix's own database: where it is is the suite's (the machine's settings file, set up with the suite), so this
+    /// only says which one it is and whether it answers, with Retry when it doesn't.
     private var viewerDatabase: some View {
         Section {
             if viewer.isEmpty {
                 ProgressView()
             } else {
-                Text(!viewer.bool("configured") ? "No database yet: \(model.appName) needs a MariaDB (or MySQL) database of its own."
-                     : "\(viewer.str("error") == nil ? "Currently" : "Configured"): MariaDB \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")")
+                Text(!viewer.bool("configured") ? "No database is configured for \(model.appName)."
+                     : "MariaDB \(viewer.str("user") ?? "")@\(viewer.str("host") ?? ""):\(viewer.str("port") ?? "")/\(viewer.str("database") ?? "")")
                     .font(.footnote)
                 if let e = viewer.str("error"), !e.isEmpty, viewer.bool("configured") {
                     Text("Not answering: \(e)").font(.footnote).foregroundStyle(.orange)
-                    Button("Retry the configured database") {
+                    Button("Retry") {
                         vResult = "Trying…"
                         Task {
                             do { try await AdminAPI.post("api/database/retry"); vResult = "It answers now. Restarting…" } catch { vResult = error.localizedDescription }
                         }
                     }
                 }
-                TextField("Host", text: $vdb.host).autocorrectionDisabled().textInputAutocapitalization(.never)
-                TextField("Port", text: $vdb.port).keyboardType(.numberPad)
-                TextField("Database", text: $vdb.database).autocorrectionDisabled().textInputAutocapitalization(.never)
-                TextField("User", text: $vdb.user).autocorrectionDisabled().textInputAutocapitalization(.never)
-                SecureField(viewer.bool("password_set") ? "Password (stored; leave empty to keep)" : "Password", text: $vdb.password)
-                if viewer.bool("configured") && viewer.str("error") == nil {
-                    Toggle("Copy all the data from the current database to the new one", isOn: $vCopy)
-                }
-                Toggle("Drop and recreate \(model.appName)’s tables at the target first", isOn: $vDrop)
-                Button("Test connection") {
-                    vResult = "Testing…"
-                    Task {
-                        do {
-                            let r = try await AdminAPI.post("api/database/test", viewerPayload)
-                            let t = r.dict("tables")
-                            vResult = "OK: \(r.str("version") ?? ""). " + (t.isEmpty ? "An empty database." : "\(model.appName) tables already there: " + t.map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", "))
-                        } catch { vResult = error.localizedDescription }
-                    }
-                }
-                Button(viewer.bool("configured") ? "Switch" : "Use this database") {
-                    let copy = vCopy && viewer.bool("configured") && viewer.str("error") == nil
-                    let target = "MariaDB \(vdb.user)@\(vdb.host):\(vdb.port)/\(vdb.database)"
-                    let what = copy ? "Every row is copied there first\(vDrop ? ", after dropping and recreating the tables there." : ".")"
-                                    : vDrop ? "The tables there are dropped and created again." : ""
-                    confirm = AdminConfirm(title: "\(viewer.bool("configured") ? "Switch" : "Set up") \(model.appName) on \(target)?", message: "\(what) \(model.appName) restarts on the new database.", button: viewer.bool("configured") ? "Switch" : "Use it", destructive: vDrop) {
-                        vResult = "Copying… this can take a minute on a large library."
-                        do {
-                            var body = viewerPayload
-                            body["copy"] = copy; body["drop"] = vDrop
-                            let r = try await AdminAPI.post("api/database/switch", body)
-                            vResult = "Set up on \(r.str("database") ?? ""): " + r.dict("copied").map { "\($0.key) \(AdminFormat.n(($0.value as? NSNumber)?.intValue))" }.sorted().joined(separator: ", ") + ". Restarting…"
-                        } catch { vResult = error.localizedDescription }
-                    }
-                }
                 if let vResult { Text(vResult).font(.footnote).foregroundStyle(.secondary) }
             }
         } header: { Text("\(model.appName) database") } footer: {
-            Text("Where \(model.appName) keeps its own data (users, albums, settings, AI results). Switching copies every row across and restarts \(model.appName).")
+            Text("Where \(model.appName) keeps its own data (albums, settings, AI results). It is the suite's database, set when the suite was set up on the server; it is not changed here.")
         }
-    }
-
-    private var viewerPayload: [String: Any] {
-        ["host": vdb.host, "port": vdb.port, "database": vdb.database, "user": vdb.user, "password": vdb.password]
     }
 
     private var intro: String {
@@ -640,8 +597,6 @@ struct AdminLibraryScreen: View {
     private func loadViewer() async {
         guard let v = try? await AdminAPI.get("api/database") else { return }
         viewer = v
-        vdb = DBForm(v)
-        vdb.type = "mysql"  // the only kind since iopix 1.113
     }
 }
 
