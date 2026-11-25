@@ -303,10 +303,11 @@ struct SettingsView: View {
     }
 
     private func save() {
-        HomeServer.setAddress(homeText)
-        homeText = AppConfig.homeURL?.absoluteString ?? ""
+        let typed = homeText
         saved = true
-        Task {
+        Task { @MainActor in
+            await HomeServer.setAddress(typed)
+            homeText = AppConfig.homeURL?.absoluteString ?? ""
             await queue.refreshAccount()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             saved = false
