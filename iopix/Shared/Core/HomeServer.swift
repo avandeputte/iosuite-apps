@@ -89,7 +89,7 @@ final class HomeServer: ObservableObject {
     }
 
     private static let homeAreas: Set<String> = [
-        "users", "server", "log", "backup", "database", "db", "library", "roots", "scan", "settings",
+        "backup", "database", "db", "library", "roots", "scan", "settings",
         "analysis", "models", "filecheck", "consistency", "quality", "duplicates", "neardups", "edits", "placetags",
         "placesuggest", "gpx", "datehints", "datesuggest", "clothing", "jerseys", "badges", "geocode", "maps",
     ]
