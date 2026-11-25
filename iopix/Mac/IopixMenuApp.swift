@@ -236,8 +236,6 @@ struct SettingsView: View {
     @EnvironmentObject private var watcher: PhotosWatcher
     @Environment(\.openWindow) private var openWindow
     @State private var homeText = AppConfig.homeURL?.absoluteString ?? ""
-    @State private var tokenID = ServiceToken.clientID ?? ""
-    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
     @State private var atLogin = SMAppService.mainApp.status == .enabled
     @State private var loginNote: String?
     @State private var saved = false
@@ -284,16 +282,6 @@ struct SettingsView: View {
             DestinationSection()
 
             Section {
-                TextField("Client ID", text: $tokenID)
-                SecureField("Client secret", text: $tokenSecret)
-            } header: {
-                Text("Cloudflare Access service token (only if you use Cloudflare Access)")
-            } footer: {
-                Text("Cloudflare's sign-in runs out after a while. With a service token, photos keep going through Cloudflare without it; you still sign in to ioPix once. You can also use the server's address on your home network instead.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
                 Toggle("Open at login", isOn: $atLogin)
                     .onChange(of: atLogin) { _, on in setLogin(on) }
                 if let loginNote { Text(loginNote).font(.caption).foregroundStyle(.orange) }
@@ -317,8 +305,6 @@ struct SettingsView: View {
     private func save() {
         HomeServer.setAddress(homeText)
         homeText = AppConfig.homeURL?.absoluteString ?? ""
-        ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespaces)
-        ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespaces)
         saved = true
         Task {
             await queue.refreshAccount()

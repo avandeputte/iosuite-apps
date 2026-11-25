@@ -96,6 +96,7 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
 
     override init() {
         super.init()
+        LegacyServiceToken.remove()
         let cfg = URLSessionConfiguration.default
         cfg.httpCookieStorage = nil
         cfg.httpShouldSetCookies = false
@@ -153,7 +154,6 @@ final class IopixClient: NSObject, URLSessionTaskDelegate {
             r.setValue("\(scheme)://\(host)\(base.port.map { ":\($0)" } ?? "")/", forHTTPHeaderField: "Referer")
         }
         credential?.authorize(&r)
-        ServiceToken.apply(to: &r)
         return r
     }
 

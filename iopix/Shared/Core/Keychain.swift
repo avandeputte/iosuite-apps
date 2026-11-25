@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// The optional Cloudflare service token lives in the Keychain, never in settings files.
+/// Small values kept in the Keychain, never in settings files.
 enum Keychain {
     private static let service = "net.iothing.iopix"
 
@@ -45,34 +45,10 @@ enum Keychain {
     }
 }
 
-/// A Cloudflare Access service token lets uploads through Cloudflare without the browser sign-in,
-/// which expires; the iopix sign-in is still needed on top of it.
-enum ServiceToken {
-    static var clientID: String? {
-        get { Keychain.get("cf-client-id") }
-        set { Keychain.set(newValue, for: "cf-client-id") }
-    }
-    static var clientSecret: String? {
-        get { Keychain.get("cf-client-secret") }
-        set { Keychain.set(newValue, for: "cf-client-secret") }
-    }
-
-    static var isSet: Bool { clientID != nil && clientSecret != nil }
-
-    /// Cloudflare checks these two headers before anything else: with a token its policy allows, the request goes
-    /// straight through to iopix, without Cloudflare's sign-in page.
-    static func apply(to r: inout URLRequest) {
-        guard let id = clientID, let secret = clientSecret else { return }
-        r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
-        r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
-    }
-
-    /// Said when Cloudflare still shows its sign-in although a token was sent: a wrong or revoked token, or one
-    /// the iopix application's policies don't allow.
-    static let rejected = "Cloudflare Access didn't accept the service token. Check its client ID and secret, and that the ioPix application in Cloudflare Zero Trust has a Service Auth policy that allows this token."
-
-    /// Is this the sign-in page of Cloudflare Access (team.cloudflareaccess.com)?
-    static func isCloudflareSignIn(_ url: URL?) -> Bool {
-        url?.host?.lowercased().hasSuffix(".cloudflareaccess.com") == true
+/// Before 1.4.3 a Cloudflare Access service token could be kept here; it is removed at launch.
+enum LegacyServiceToken {
+    static func remove() {
+        Keychain.set(nil, for: "cf-client-id")
+        Keychain.set(nil, for: "cf-client-secret")
     }
 }

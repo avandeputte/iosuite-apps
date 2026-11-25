@@ -497,15 +497,6 @@ extension NotesStore {
         syncStatus = .signedOut
     }
 
-    func setServiceToken(id: String?, secret: String?) {
-        let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), secret = secret?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let both = !(id ?? "").isEmpty && !(secret ?? "").isEmpty
-        ServiceToken.clientID = both ? id : nil
-        ServiceToken.clientSecret = both ? secret : nil
-        client.reloadToken()
-        Task { await refreshAccount() }
-    }
-
     /// One line for the sidebar and Settings.
     var syncSummary: String {
         switch syncStatus {
