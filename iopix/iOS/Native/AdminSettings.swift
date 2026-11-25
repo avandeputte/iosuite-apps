@@ -89,7 +89,7 @@ struct AdminSettingsScreen: View {
                     }
                     NavigationLink { HomeOnly("Library") { AdminLibraryScreen(model: model) } } label: { Label("Library", systemImage: "photo.stack") }
                     NavigationLink { HomeOnly("AI") { AdminAISettingsScreen(model: model) } } label: { Label("AI", systemImage: "sparkles") }
-                    NavigationLink { HomeOnly("Server") { AdminServerScreen(model: model) } } label: { Label("Server", systemImage: "server.rack") }
+                    NavigationLink { HomeOnly("Backups") { AdminBackupsScreen(model: model) } } label: { Label("Backups", systemImage: "externaldrive") }
                     if model.usersExist {
                         NavigationLink { HomeOnly("Security") { AdminUsersScreen(model: model) } } label: { Label("Security", systemImage: "lock.shield") }
                     }
