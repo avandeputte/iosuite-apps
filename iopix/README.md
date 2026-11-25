@@ -89,17 +89,13 @@ the sign-in screen comes back with the address and name filled in. An account ne
 photos.
 
 The server's port for devices answers only everyday calls. The admin and maintenance screens (settings, tools,
-database, users, folders, review queues, …); pictures, videos and originals (/orig/, ioSuite 4.2.1 or later) come from the address for apps use the optional **Home address (for admin screens)** in Settings, e.g.
+database, users, folders, review queues, …) use the optional **Home address (for admin screens)** in Settings, e.g.
 `http://192.168.1.10:8080/pix`, with the same app password; without it, or away from home, they show "Available at
-home only". See `Shared/Core/HomeServer.swift` for the list.
+home only". See `Shared/Core/HomeServer.swift` for the list. Pictures, videos and originals (`/orig/`, ioSuite 4.2.1 or
+later) come from the address for apps.
 
-Cloudflare Access's sign-in expires after the session length set in Cloudflare. To keep the Mac uploading
-unattended, either use the server's home-network address in Settings, or create a Cloudflare **service token**
-(Zero Trust › Access › Service auth), allow it in the iopix application's policy (a *Service Auth* rule), and
-enter its client ID and secret in the app's settings, or on the connect screen the first time (iPhone, iPad, Mac
-and Apple TV). They are kept in the Keychain and sent with every request, so Cloudflare's sign-in page is skipped
-and the app goes straight to iopix's own sign-in; the Apple TV, which can't show Cloudflare's page, needs one to
-connect from outside. If Cloudflare refuses the token, the connect screen says so. You still sign in to iopix once.
+The address for apps must not sit behind a Cloudflare Access login or service token: the apps send only their app
+password (Cloudflare Access service tokens were removed in 1.4.3).
 
 An account with two-step sign-in on (ioSuite 3.39 or later, Settings › Account › Sign-in in the web app) is asked for
 the code from its code app after the password, on the iPhone, iPad and Apple TV sign-in alike; a recovery code works

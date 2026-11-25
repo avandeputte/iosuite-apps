@@ -30,15 +30,12 @@ enum IonotesError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to the ioNote server: this device's app password as a Bearer header (and, behind Cloudflare Access, its
-/// service token), then the sync API. Every time is seconds since 1970; ids are chosen by the device.
+/// Talks to the ioNote server: this device's app password as a Bearer header, then the sync API. Every time is seconds since 1970; ids are chosen by the device.
 final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     static let shared = IonotesClient()
     static let log = Logger(subsystem: "net.iothing.ionotes", category: "network")
 
     private(set) var session: URLSession!
-    /// Read from the Keychain once and kept, so every request doesn't ask the Keychain again.
-    private var token: (id: String, secret: String)?
     /// The address, name and app password this device signed in with (DeviceSignIn), read from the Keychain once.
     private(set) var credential: DeviceCredential?
 
@@ -53,7 +50,7 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         cfg.urlCache = nil
         cfg.waitsForConnectivity = false
         session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
-        reloadToken()
+        LegacyServiceToken.remove()
         reloadCredential()
     }
 
@@ -61,12 +58,8 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         credential = ServerConfig.store.load()
     }
 
-    func reloadToken() {
-        if let id = ServiceToken.clientID, let secret = ServiceToken.clientSecret { token = (id, secret) } else { token = nil }
-    }
-
     /// A redirect to another host (Cloudflare's sign-in page, a misconfigured proxy) is not followed, so the
-    /// session cookie and the service token never reach anyone but the server.
+    /// app password never reaches anyone but the server.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         let same = request.url?.host?.lowercased() == task.originalRequest?.url?.host?.lowercased()
@@ -85,10 +78,6 @@ final class IonotesClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         credential.authorize(&r)
-        if let token {
-            r.setValue(token.id, forHTTPHeaderField: "CF-Access-Client-Id")
-            r.setValue(token.secret, forHTTPHeaderField: "CF-Access-Client-Secret")
-        }
         return r
     }
 

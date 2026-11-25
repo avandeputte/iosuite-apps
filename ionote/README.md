@@ -114,8 +114,7 @@ would make it a new app in App Store Connect and leave the notes already on a de
   `POST /notes/api/auth/device` trades the name and password (and the two-step code) for an app password of this
   device, kept in the Keychain and sent as `Authorization: Bearer …` with every request; the typed password is never
   kept. Sign Out gives it back (`DELETE /notes/api/auth/device`). A 401 later (the password was removed in Settings ›
-  Account) opens the sign-in again with the address and name filled in. Also an optional Cloudflare Access service
-  token (kept in the Keychain), the sync status, the last error and **Sync Now**.
+  Account) opens the sign-in again with the address and name filled in. Also the sync status, the last error and **Sync Now**.
 - The app calls only what the server's port for devices serves to ioNote: `GET /api/status`, `GET /api/auth/me`,
   `GET /api/sync`, `POST /api/sync/push`, `GET/PUT /api/notes/{id}/image` and
   `GET/PUT/DELETE /api/notes/{id}/attachments/{id}`.
@@ -140,8 +139,8 @@ Shared/            platform-neutral, ready for an iPhone/iPad target
   Models.swift       Note, Folder and InboxItem
   NotesStore.swift   source of truth for the UI: edits, folders, tags, the Inbox
   Sync.swift         syncing with the server: push, picture uploads, pull, picture downloads
-  IonotesClient.swift  the server's API on URLSession (Bearer app password, Cloudflare service token)
-  ServerConfig.swift   ioNote in the device sign-in, the synced server, Keychain, service token
+  IonotesClient.swift  the server's API on URLSession (Bearer app password)
+  ServerConfig.swift   ioNote in the device sign-in, the synced server, Keychain
   ServerSettings.swift the server section of Settings (Mac and iPhone/iPad) and the sync status
   Database.swift     local SQLite: notes (offline copy + changes to send), folders, tag colours, FTS5 index, Inbox
   OCR.swift          Vision text recognition

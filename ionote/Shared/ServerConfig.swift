@@ -60,16 +60,10 @@ enum Keychain {
     }
 }
 
-/// A Cloudflare Access service token lets the apps through Cloudflare without its browser sign-in;
-/// the ioNote sign-in is still needed on top of it.
-enum ServiceToken {
-    static var clientID: String? {
-        get { Keychain.get("cf-client-id") }
-        set { Keychain.set(newValue, for: "cf-client-id") }
+/// Before 1.6.2 a Cloudflare Access service token could be kept here; it is removed at launch.
+enum LegacyServiceToken {
+    static func remove() {
+        Keychain.set(nil, for: "cf-client-id")
+        Keychain.set(nil, for: "cf-client-secret")
     }
-    static var clientSecret: String? {
-        get { Keychain.get("cf-client-secret") }
-        set { Keychain.set(newValue, for: "cf-client-secret") }
-    }
-    static var isSet: Bool { clientID != nil && clientSecret != nil }
 }

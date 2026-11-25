@@ -1,12 +1,9 @@
 import SwiftUI
 
 /// Settings for the ioNote server, the same on the Mac and on iPhone/iPad: signing in (the suite's one sign-in for
-/// apps, DeviceSignInForm), the optional Cloudflare service token, and how syncing is going.
+/// apps, DeviceSignInForm) and how syncing is going.
 struct ServerSettings: View {
     @EnvironmentObject private var store: NotesStore
-    @State private var tokenID = ServiceToken.clientID ?? ""
-    @State private var tokenSecret = ""
-    @State private var hasToken = ServiceToken.isSet
 
     var body: some View {
         Section {
@@ -49,36 +46,6 @@ struct ServerSettings: View {
             } header: {
                 Text("Sync")
             }
-        }
-
-        Section {
-            TextField("Client ID", text: $tokenID)
-                .autocorrectionDisabled()
-                #if os(iOS)
-                .textInputAutocapitalization(.never)
-                #endif
-            SecureField(hasToken ? "Client secret (saved)" : "Client secret", text: $tokenSecret)
-            HStack {
-                Button("Save Token") {
-                    store.setServiceToken(id: tokenID, secret: tokenSecret)
-                    tokenSecret = ""
-                    hasToken = ServiceToken.isSet
-                }
-                .disabled(tokenID.isEmpty || tokenSecret.isEmpty)
-                if hasToken {
-                    Button("Remove", role: .destructive) {
-                        store.setServiceToken(id: nil, secret: nil)
-                        tokenID = ""
-                        tokenSecret = ""
-                        hasToken = false
-                    }
-                }
-            }
-        } header: {
-            Text("Cloudflare Access")
-        } footer: {
-            Text("Only needed when the server sits behind Cloudflare Access: a service token lets ioNote through. It is kept in the Keychain.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

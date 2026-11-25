@@ -198,8 +198,6 @@ struct UploadsView: View {
     @State private var loading = false
     @State private var pickNote: String?
     @State private var signingIn = false
-    @State private var tokenID = ServiceToken.clientID ?? ""
-    @State private var tokenSecret = ServiceToken.clientSecret ?? ""
 
     var body: some View {
         NavigationStack {
@@ -253,20 +251,6 @@ struct UploadsView: View {
                 DestinationSection()
 
                 ServerSection { dismiss() }
-
-                Section {
-                    DisclosureGroup("Cloudflare Access service token") {
-                        TextField("Client ID", text: $tokenID).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        SecureField("Client secret", text: $tokenSecret)
-                        Button("Save token") {
-                            ServiceToken.clientID = tokenID.trimmingCharacters(in: .whitespaces)
-                            ServiceToken.clientSecret = tokenSecret.trimmingCharacters(in: .whitespaces)
-                            Task { await queue.refreshAccount() }
-                        }
-                    }
-                } footer: {
-                    Text("Only if your server is behind Cloudflare Access; leave it empty otherwise.")
-                }
             }
             .navigationTitle("Send to ioPix")
             .toolbar { ToolbarItem(placement: .principal) { Brand.text("Send to ", onLight: true).font(.headline) } }
