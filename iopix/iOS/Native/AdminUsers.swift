@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings › Security: whether visitors must sign in, the accounts (role, password, email, person, sign-in list),
-/// adding one, and sign-in at a reverse proxy.
+/// adding one. Sign-in at a reverse proxy is a suite-wide setting: the start page's Settings › People › Sign-in at the proxy.
 struct AdminUsersScreen: View {
     @ObservedObject var model: AdminModel
     @EnvironmentObject private var store: LibraryStore
@@ -43,13 +43,6 @@ struct AdminUsersScreen: View {
                     }
                 }
                 Button { adding = true } label: { Label("Add user", systemImage: "person.badge.plus") }
-            }
-            if model.user.bool("suiteAdmin") {  // one setting for every app of the suite: a suite admin's
-                Section {
-                    NavigationLink("Sign-in at a proxy") { AdminProxyScreen() }
-                } footer: {
-                    Text("Someone signed in at your reverse proxy (Cloudflare Access, Authelia, Authentik, oauth2-proxy) is signed in here too, matched to an account by email, then name.")
-                }
             }
         }
         .navigationTitle("Security")
@@ -240,96 +233,5 @@ struct AdminAddUserSheet: View {
                 }
             }
         }
-    }
-}
-
-/// Sign-in at a reverse proxy: which proxy, Cloudflare's team domain and AUD tag, the user header, the proxy's
-/// addresses, and what happens to someone with no account here. Kept for the whole suite (api/suite-admin/proxy),
-/// so it is a suite admin's to change.
-struct AdminProxyScreen: View {
-    @StateObject private var notice = AdminNotice()
-    @State private var d: [String: Any] = [:]
-    @State private var v: [String: String] = [:]
-
-    private static let keys = ["AUTH_PROXY", "CF_ACCESS_TEAM", "CF_ACCESS_AUD", "AUTH_PROXY_HEADER", "AUTH_PROXY_TRUSTED", "AUTH_PROXY_CREATE"]
-    private var mode: String { (v["AUTH_PROXY"] ?? "").lowercased().adminIfEmpty("off") }
-
-    var body: some View {
-        Form {
-            if !d.isEmpty {
-                Section {
-                    Text(stateText).font(.footnote.weight(.semibold))
-                    Text("Saved for every app of the suite.").font(.footnote).foregroundStyle(.secondary)
-                }
-                Section {
-                    Picker("Proxy", selection: field("AUTH_PROXY", "off")) {
-                        Text("Off").tag("off"); Text("Cloudflare Access").tag("cloudflare"); Text("HAProxy").tag("haproxy")
-                        Text("nginx").tag("nginx"); Text("Caddy").tag("caddy"); Text("Traefik").tag("traefik"); Text("Another proxy").tag("header")
-                    }
-                } footer: { Text("Which reverse proxy signs people in. Everyone else still uses the sign-in here; requests from outside through Cloudflare can only use accounts with a password.") }
-                if mode == "cloudflare" {
-                    Section {
-                        text("CF_ACCESS_TEAM", "myteam.cloudflareaccess.com")
-                        text("CF_ACCESS_AUD", "Application Audience (AUD) tag")
-                        let seen = d.dict("seen")
-                        if let iss = seen.str("iss") {
-                            let aud = (seen["aud"] as? [Any])?.compactMap { $0 as? String }.first ?? seen.str("aud") ?? ""
-                            Text("Last request through your tunnel: team \(iss.replacingOccurrences(of: "https://", with: "")), AUD \(aud)\(seen.str("email").map { ", \($0)" } ?? "").").font(.footnote).foregroundStyle(.secondary)
-                            Button("Use these") { v["CF_ACCESS_TEAM"] = iss.replacingOccurrences(of: "https://", with: ""); v["CF_ACCESS_AUD"] = aud }
-                        }
-                    } header: { Text("Cloudflare") } footer: {
-                        Text("Team domain: Zero Trust › Settings › Team name and domain. AUD tag: Zero Trust › Access › Applications › this app › Overview. With both set, the token Cloudflare signs is checked and the email comes from it.")
-                    }
-                }
-                if mode != "off" {
-                    Section {
-                        text("AUTH_PROXY_HEADER", "Default: " + (mode == "cloudflare" ? "Cf-Access-Authenticated-User-Email" : "Remote-User, X-Forwarded-User…"))
-                        text("AUTH_PROXY_TRUSTED", "Default: 127.0.0.1, ::1")
-                        Picker("Someone with no account here", selection: field("AUTH_PROXY_CREATE", "")) {
-                            Text("Gets the sign-in screen").tag(""); Text("Is denied access").tag("deny")
-                            Text("Gets a viewer account").tag("viewer"); Text("Gets an editor account").tag("editor")
-                        }
-                    } header: { Text("Header and addresses") } footer: {
-                        Text("The user header is the request header the proxy puts the signed-in user in (comma-separate several); it is believed only from the proxy addresses.")
-                    }
-                }
-                Section {
-                    Button("Save") {
-                        var body: [String: Any] = [:]
-                        for k in Self.keys { body[k] = (v[k] ?? "").trimmingCharacters(in: .whitespaces) }
-                        Task { await notice.run("Proxy sign-in saved.") { try await AdminAPI.put("api/suite-admin/proxy", body); await load() } }
-                    }
-                }
-            } else {
-                ProgressView()
-            }
-        }
-        .navigationTitle("Sign-in at a proxy")
-        .task { await load() }
-        .adminNotice(notice)
-    }
-
-    private var stateText: String {
-        switch d.str("mode") ?? "off" {
-        case "off": return "Off: only the sign-in here."
-        case "cloudflare": return d.bool("cloudflareVerified") ? "On: Cloudflare Access tokens are verified." : "On, but without the team domain and AUD tag: the header is believed from the proxy addresses only."
-        case let m: return "On (\(m)): the user header is believed from \(d.strings("trusted").joined(separator: ", "))."
-        }
-    }
-
-    private func field(_ k: String, _ fallback: String) -> Binding<String> {
-        Binding(get: { (v[k] ?? "").isEmpty ? fallback : (v[k] ?? "").lowercased() }, set: { v[k] = $0 })
-    }
-
-    private func text(_ k: String, _ prompt: String) -> some View {
-        TextField(prompt, text: Binding(get: { v[k] ?? "" }, set: { v[k] = $0 }))
-            .textInputAutocapitalization(.never).autocorrectionDisabled()
-    }
-
-    private func load() async {
-        guard let r = try? await AdminAPI.get("api/suite-admin/proxy") else { return }
-        d = r.dict("here")  // how this server reads the suite's values: mode, trusted, cloudflareVerified, seen
-        let vals = r.dict("values")
-        v = Dictionary(uniqueKeysWithValues: Self.keys.map { ($0, vals.str($0) ?? "") })
     }
 }
