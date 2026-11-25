@@ -55,6 +55,9 @@ enum DeviceSignInError: LocalizedError, Equatable {
     case tooMany(Int)
     case noAccess(String)
     case notFound
+    /// A 401 that is not the sign-in's own answer (an app at that address asking for a sign-in to reach the page at
+    /// all, e.g. an ioPix of its own hostname asked below /pix): not here; try the next address.
+    case notTheSignIn
     case server(Int, String)
     case unreachable(String)
 
@@ -65,7 +68,7 @@ enum DeviceSignInError: LocalizedError, Equatable {
         case .wrongPassword: return "Wrong name or password."
         case .tooMany(let s): return "Too many attempts. Wait \(s) seconds and try again."
         case .noAccess(let why): return why
-        case .notFound: return "No ioSuite server for apps answers at that address. Check the address."
+        case .notFound, .notTheSignIn: return "No ioSuite server for apps answers at that address. Check the address."
         case .server(let code, let why): return why.isEmpty ? "The server answered with error \(code)." : why
         case .unreachable(let why): return why
         }
@@ -162,10 +165,14 @@ enum DeviceSignIn {
                 }
                 return answer
             } catch DeviceSignInError.notFound {
-                lastError = DeviceSignInError.notFound
+                if case DeviceSignInError.notTheSignIn = lastError {} else { lastError = DeviceSignInError.notFound }
+                continue
+            } catch DeviceSignInError.notTheSignIn {
+                lastError = DeviceSignInError.notTheSignIn  // reported as a wrong name or password when no address takes it
                 continue
             }
         }
+        if case DeviceSignInError.notTheSignIn = lastError { throw DeviceSignInError.wrongPassword }
         if case DeviceSignInError.notFound = lastError {
             throw DeviceSignInError.unreachable("\(tidy(typed)?.host ?? "That address") answers, but not with \(app.name)'s sign-in (error 404). "
                 + "Check that it is your server's address for apps, and that \(app.name) is installed there.")
@@ -210,7 +217,11 @@ enum DeviceSignIn {
                           user: json?["user"] as? [String: Any] ?? [:], settings: json?["settings"] as? [String: Any] ?? [:])
         case 401:
             if json?["twoStep"] as? Bool == true { throw DeviceSignInError.needsCode(detail) }
-            throw DeviceSignInError.wrongPassword
+            // the sign-in's own refusal names the name or the password; anything else is a page asking for a sign-in
+            if detail.lowercased().contains("password") || detail.lowercased().contains("user name") || detail.isEmpty {
+                throw DeviceSignInError.wrongPassword
+            }
+            throw DeviceSignInError.notTheSignIn
         case 429:
             let wait = Int(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 60
             throw DeviceSignInError.tooMany(wait)
