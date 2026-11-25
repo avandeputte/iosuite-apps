@@ -79,7 +79,7 @@ struct API {
         return f?.error ?? f?.detail ?? f?.details?.error ?? ""
     }
 
-    private func call<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
+    func call<T: Decodable>(_ method: String, _ path: String, body: Data? = nil) async throws -> T {
         guard let url = URL(string: account.server + path) else { throw APIError.unreachable("The start page's address is not usable.") }
         var req = URLRequest(url: url)
         req.httpMethod = method
@@ -123,6 +123,15 @@ struct API {
 
     func addTask(_ t: NewTask) async throws -> Added { try await call("POST", "/dav/ext/tasks", body: try JSONEncoder().encode(t)) }
     func addEvent(_ e: NewEvent) async throws -> Added { try await call("POST", "/dav/ext/events", body: try JSONEncoder().encode(e)) }
+
+    // MARK: the Today screen
+
+    struct Tick: Encodable { var done: Bool; var undo: String?; var timezone: String }
+    /// A task ticked off (or, with `done` false and the step the tick gave, put back as it was).
+    func tick(_ id: SuiteID, done: Bool, undo: String? = nil) async throws -> Ticked {
+        let path = "/dav/ext/tasks/" + (id.description.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "") + "/done"
+        return try await call("POST", path, body: try JSONEncoder().encode(Tick(done: done, undo: undo, timezone: TimeZone.current.identifier)))
+    }
 
     private struct Changes: Encodable { var base: Int; var ops: [Op] }
 

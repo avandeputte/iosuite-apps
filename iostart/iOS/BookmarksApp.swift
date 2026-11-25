@@ -23,15 +23,33 @@ struct BookmarksApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @StateObject private var news = NewsModel()
+    /// The tab the app was last on: it opens there again.
+    @AppStorage("tab") private var tab = "today"
 
     var body: some View {
         Group {
             if model.account == nil {
                 SignInView()
             } else {
-                NavigationStack {
-                    FolderView(folderID: nil)
-                        .navigationDestination(for: Int.self) { FolderView(folderID: $0) }
+                TabView(selection: $tab) {
+                    TodayView()
+                        .tabItem { Label("Today", systemImage: "sun.max") }
+                        .tag("today")
+                    NewsView()
+                        .tabItem { Label("News", systemImage: "newspaper") }
+                        .badge(news.overview.unread)
+                        .tag("news")
+                    NavigationStack {
+                        FolderView(folderID: nil)
+                            .navigationDestination(for: Int.self) { FolderView(folderID: $0) }
+                    }
+                    .tabItem { Label("Bookmarks", systemImage: "bookmark") }
+                    .tag("bookmarks")
+                }
+                .environmentObject(news)
+                .onChange(of: model.account) { _, now in
+                    if now == nil { news.forget() }
                 }
             }
         }

@@ -1,9 +1,33 @@
 # ioStart for iPhone and iPad
 
-**ioStart**, the iPhone and iPad app for the bookmarks of the
-[ioStart start page](https://github.com/avandeputte/iosuite/tree/main/iostart).
+**ioStart**, the iPhone and iPad app for the
+[ioStart start page](https://github.com/avandeputte/iosuite/tree/main/iostart): your day, your news feeds and the
+bookmarks, a tab each. The app opens on the tab it was last on.
 
-## ioStart
+## Today
+
+What the start page's Today card lists (`/dav/ext/today`), with what you switched off there (Customize) left out here too:
+
+- Today's events, tasks and birthdays in one list: what is late first, then birthdays, all-day events, then by the hour.
+  Under them the coming days, as far as your Today card goes (the week, or the days you chose).
+- Tap a task's circle to tick it off in ioTask; tap it again to take that back. A repeating task moves on to its next time.
+- The week's bills from ioMoney, with the accounts about to run low and the bank links that are behind.
+- A row opens its app (ioCalendar on that day, the task, the person, ioMoney) as bookmarks open: Settings › Open bookmarks.
+- With no connection it shows what the start page said last, and says so.
+
+## News
+
+The start page's feed reader (`/api/news…`): the same feeds, and what is read or starred is the same on both.
+
+- All feeds, Starred, then each folder with its feeds and how many articles are unread; the News tab shows the total.
+- A list shows Unread or All, the newest first; pull down to have the start page look for new articles; search titles
+  and text. Swipe an article right to mark it read or unread, left to star it; the check marks everything read.
+- An article opens as the feed has it, in the phone's type and dark mode, and is marked read. The arrows step through the
+  list; a link in the text, and Open the page, open as bookmarks do.
+- + follows a feed by its address or its site's (the start page finds the feed). Swipe a feed to rename it, move it to
+  a folder, take its headlines off the start page, or unfollow it. Importing and exporting OPML stay on the start page.
+
+## Bookmarks
 
 - The whole tree, as the start page has it: folders, links with their sites' icons, search over everything.
 - Add, rename, move, reorder (Edit, then drag) and delete; a change here reaches the start page at once, and every
