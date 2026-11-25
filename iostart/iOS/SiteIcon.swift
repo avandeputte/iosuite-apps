@@ -62,7 +62,24 @@ actor IconStore {
             memory.setObject(img, forKey: host as NSString)
             return img
         }
-        guard let url = API(account: account).iconURL(for: node.id) else { return nil }
+        return await fetch(API(account: account).iconURL(for: node.id), as: host, file: file, account: account)
+    }
+
+    /// A followed feed's site icon (`path`: where the start page serves it, as its list of feeds says).
+    func icon(at path: String, site: String, account: Account) async -> UIImage? {
+        guard !path.isEmpty, let host = URL(string: site)?.host?.lowercased() else { return nil }
+        if let hit = memory.object(forKey: host as NSString) { return hit }
+        if missing.contains(host) { return nil }
+        let file = dir.appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
+        if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
+            memory.setObject(img, forKey: host as NSString)
+            return img
+        }
+        return await fetch(URL(string: account.server + "/" + path), as: host, file: file, account: account)
+    }
+
+    private func fetch(_ url: URL?, as host: String, file: URL, account: Account) async -> UIImage? {
+        guard let url else { return nil }
         var req = URLRequest(url: url)
         req.setValue(API.bearer(account), forHTTPHeaderField: "Authorization")
         guard let (data, resp) = try? await API.session.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200,

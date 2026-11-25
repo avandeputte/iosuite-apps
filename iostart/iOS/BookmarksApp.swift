@@ -23,15 +23,33 @@ struct BookmarksApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @StateObject private var news = NewsModel()
+    /// The app opens on Today; its two buttons, and the tab bar, lead to the news and the bookmarks.
+    @State private var tab = "today"
 
     var body: some View {
         Group {
             if model.account == nil {
                 SignInView()
             } else {
-                NavigationStack {
-                    FolderView(folderID: nil)
-                        .navigationDestination(for: Int.self) { FolderView(folderID: $0) }
+                TabView(selection: $tab) {
+                    TodayView(tab: $tab)
+                        .tabItem { Label("Today", systemImage: "sun.max") }
+                        .tag("today")
+                    NewsView()
+                        .tabItem { Label("News", systemImage: "newspaper") }
+                        .badge(news.overview.unread)
+                        .tag("news")
+                    NavigationStack {
+                        FolderView(folderID: nil)
+                            .navigationDestination(for: Int.self) { FolderView(folderID: $0) }
+                    }
+                    .tabItem { Label("Bookmarks", systemImage: "bookmark") }
+                    .tag("bookmarks")
+                }
+                .environmentObject(news)
+                .onChange(of: model.account) { _, now in
+                    if now == nil { news.forget() }
                 }
             }
         }
