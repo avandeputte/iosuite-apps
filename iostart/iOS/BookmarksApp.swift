@@ -24,8 +24,8 @@ struct BookmarksApp: App {
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var news = NewsModel()
-    /// The tab the app was last on: it opens there again.
-    @AppStorage("tab") private var tab = "today"
+    /// The app opens on Today; its two buttons, and the tab bar, lead to the news and the bookmarks.
+    @State private var tab = "today"
 
     var body: some View {
         Group {
@@ -33,7 +33,7 @@ struct RootView: View {
                 SignInView()
             } else {
                 TabView(selection: $tab) {
-                    TodayView()
+                    TodayView(tab: $tab)
                         .tabItem { Label("Today", systemImage: "sun.max") }
                         .tag("today")
                     NewsView()

@@ -103,7 +103,10 @@ private struct DayPlan {
 /// days, and the week's bills. What the person switched off on the page (Customize) is left out here too.
 struct TodayView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var news: NewsModel
     @Environment(\.scenePhase) private var phase
+    /// The app's tab: the two buttons on top go to the news and the bookmarks.
+    @Binding var tab: String
 
     @State private var data: TodayData?
     @State private var keptAt: Date?
@@ -129,6 +132,7 @@ struct TodayView: View {
                 data = kept.data
                 keptAt = kept.at
             }
+            await news.refresh(model.account)  // the unread count on the News button
             await load()
         }
         .onChange(of: phase) { _, now in
@@ -139,21 +143,31 @@ struct TodayView: View {
     @ViewBuilder private var content: some View {
         if let data {
             list(data, DayPlan(data, now: Date()))
-        } else if let problem {
-            ContentUnavailableView {
-                Label("Today is not available", systemImage: "calendar.badge.exclamationmark")
-            } description: {
-                Text(problem)
-            } actions: {
-                Button("Try again") { Task { await load() } }
-            }
         } else {
-            ProgressView()
+            // the two buttons stay, whatever the day's answer
+            List {
+                doors
+                Section {
+                    if let problem {
+                        VStack(spacing: 10) {
+                            Label("Today is not available", systemImage: "calendar.badge.exclamationmark").font(.headline)
+                            Text(problem).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            Button("Try again") { Task { await load() } }.buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    } else {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
         }
     }
 
     private func list(_ d: TodayData, _ plan: DayPlan) -> some View {
         List {
+            doors
             if let problem {
                 Section {
                     Label(problem, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.secondary)
@@ -193,6 +207,36 @@ struct TodayView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    /// News and Bookmarks, side by side on top of the day: the rest of the app, one tap away.
+    private var doors: some View {
+        Section {
+            HStack(spacing: 12) {
+                door("News", "newspaper.fill", news.loaded ? (news.overview.unread > 0 ? "\(news.overview.unread) unread" : "Nothing new") : "Your feeds", to: "news")
+                door("Bookmarks", "bookmark.fill", model.loaded ? "\(model.tree.linkCount) links" : "Your links", to: "bookmarks")
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private func door(_ name: String, _ icon: String, _ detail: String, to: String) -> some View {
+        Button { tab = to } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: icon).font(.title2).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.headline).foregroundStyle(.primary)
+                    Text(detail).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(name), \(detail)")
     }
 
     /// The switch of the Today card a part of the answer goes with.

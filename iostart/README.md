@@ -2,7 +2,8 @@
 
 **ioStart**, the iPhone and iPad app for the
 [ioStart start page](https://github.com/avandeputte/iosuite/tree/main/iostart): your day, your news feeds and the
-bookmarks, a tab each. The app opens on the tab it was last on.
+bookmarks, a tab each. The app opens on Today, which has a large button for the news (with how many articles are
+unread) and one for the bookmarks on top.
 
 ## Today
 
