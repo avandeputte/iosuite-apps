@@ -11,6 +11,8 @@ Each app is a folder of this repository and builds on its own. The servers they 
 | [`ionote/`](ionote/) | ioNote | Mac, iPhone, iPad | [ioNote](https://github.com/avandeputte/iosuite/tree/main/ionote) |
 | [`iohealth/`](iohealth/) | ioHealthSync | iPhone: Apple Health data to your own server | [iohealth](https://github.com/avandeputte/iosuite/tree/main/iohealth) |
 | [`iostart/`](iostart/) | ioStart | iPhone, iPad: the bookmarks of the start page | [iostart](https://github.com/avandeputte/iosuite/tree/main/iostart) |
+| [`iorecipe/`](iorecipe/) | ioRecipe | iPhone, iPad: the family's recipes, to cook from | [iorecipe](https://github.com/avandeputte/iosuite/tree/main/iorecipe) |
+| [`iomoney/`](iomoney/) | ioMoney | iPhone, iPad: the household's accounts, spending and bills | [iomoney](https://github.com/avandeputte/iosuite/tree/main/iomoney) |
 
 ## Build
 
