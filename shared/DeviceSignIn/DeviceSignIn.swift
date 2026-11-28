@@ -4,7 +4,7 @@ import Security
 import UIKit
 #endif
 
-// The one sign-in of the ioSuite apps (ioStart, ioPix, ioNote, ioHealthSync), the same file in each of them.
+// The one sign-in of the ioSuite apps (ioStart, ioPix, ioNote, ioHealthSync, ioRecipe, ioMoney), the same file in each of them.
 //
 // The person types the server's address for apps, their name and password (and the code of two-step sign-in when the
 // server asks for it). POST <app base>/api/auth/device trades them for an app password of this device, which is kept
